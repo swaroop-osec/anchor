@@ -2178,7 +2178,9 @@ fn idl_set_buffer(
                 AccountMeta::new(idl_authority, true),
             ];
             let mut data = anchor_lang::idl::IDL_IX_TAG.to_le_bytes().to_vec();
-            data.append(&mut anchor_lang::prelude::borsh::to_vec(&IdlInstruction::SetBuffer)?);
+            data.append(&mut anchor_lang::prelude::borsh::to_vec(
+                &IdlInstruction::SetBuffer,
+            )?);
             Instruction {
                 program_id,
                 accounts,
@@ -3857,7 +3859,9 @@ fn create_idl_buffer(
             AccountMeta::new_readonly(keypair.pubkey(), true),
         ];
         let mut data = anchor_lang::idl::IDL_IX_TAG.to_le_bytes().to_vec();
-        data.append(&mut anchor_lang::prelude::borsh::to_vec(&IdlInstruction::CreateBuffer)?);
+        data.append(&mut anchor_lang::prelude::borsh::to_vec(
+            &IdlInstruction::CreateBuffer,
+        )?);
         Instruction {
             program_id: *program_id,
             accounts,

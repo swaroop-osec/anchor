@@ -24,7 +24,7 @@ fn gen_borsh_serialize(input: TokenStream) -> TokenStream2 {
 fn generate_struct_serialize(item: &syn::ItemStruct) -> TokenStream2 {
     let struct_name = &item.ident;
     let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
-    
+
     let serialize_fields = match &item.fields {
         Fields::Named(fields) => {
             let field_names = fields.named.iter().map(|f| &f.ident);
@@ -58,14 +58,16 @@ fn generate_struct_serialize(item: &syn::ItemStruct) -> TokenStream2 {
 fn generate_enum_serialize(item: &syn::ItemEnum) -> TokenStream2 {
     let enum_name = &item.ident;
     let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
-    
+
     let serialize_variants = item.variants.iter().enumerate().map(|(idx, variant)| {
         let variant_name = &variant.ident;
         let idx_u8 = idx as u8;
-        
+
         match &variant.fields {
             Fields::Named(fields) => {
-                let field_names: Vec<_> = fields.named.iter()
+                let field_names: Vec<_> = fields
+                    .named
+                    .iter()
                     .map(|f| f.ident.as_ref().unwrap())
                     .collect();
                 quote! {
@@ -113,10 +115,7 @@ fn generate_enum_serialize(item: &syn::ItemEnum) -> TokenStream2 {
 }
 
 fn generate_union_serialize(item: &syn::ItemUnion) -> TokenStream2 {
-    syn::Error::new_spanned(
-        item,
-        "Unions are not supported by borsh"
-    ).to_compile_error()
+    syn::Error::new_spanned(item, "Unions are not supported by borsh").to_compile_error()
 }
 
 #[proc_macro_derive(AnchorSerialize, attributes(borsh_skip))]
@@ -165,10 +164,12 @@ fn gen_borsh_deserialize(input: TokenStream) -> TokenStream2 {
 fn generate_struct_deserialize(item: &syn::ItemStruct) -> TokenStream2 {
     let struct_name = &item.ident;
     let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
-    
+
     let deserialize_fields = match &item.fields {
         Fields::Named(fields) => {
-            let field_names: Vec<_> = fields.named.iter()
+            let field_names: Vec<_> = fields
+                .named
+                .iter()
                 .map(|f| f.ident.as_ref().unwrap())
                 .collect();
             quote! {
@@ -208,14 +209,16 @@ fn generate_struct_deserialize(item: &syn::ItemStruct) -> TokenStream2 {
 fn generate_enum_deserialize(item: &syn::ItemEnum) -> TokenStream2 {
     let enum_name = &item.ident;
     let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
-    
+
     let deserialize_variants = item.variants.iter().enumerate().map(|(idx, variant)| {
         let variant_name = &variant.ident;
         let idx_u8 = idx as u8;
-        
+
         let construct = match &variant.fields {
             Fields::Named(fields) => {
-                let field_names: Vec<_> = fields.named.iter()
+                let field_names: Vec<_> = fields
+                    .named
+                    .iter()
                     .map(|f| f.ident.as_ref().unwrap())
                     .collect();
                 quote! {
@@ -242,7 +245,7 @@ fn generate_enum_deserialize(item: &syn::ItemEnum) -> TokenStream2 {
                 }
             }
         };
-        
+
         quote! {
             #idx_u8 => Ok(#construct),
         }
@@ -266,10 +269,7 @@ fn generate_enum_deserialize(item: &syn::ItemEnum) -> TokenStream2 {
 }
 
 fn generate_union_deserialize(item: &syn::ItemUnion) -> TokenStream2 {
-    syn::Error::new_spanned(
-        item,
-        "Unions are not supported by borsh"
-    ).to_compile_error()
+    syn::Error::new_spanned(item, "Unions are not supported by borsh").to_compile_error()
 }
 
 #[proc_macro_derive(AnchorDeserialize, attributes(borsh_skip, borsh_init))]

@@ -120,7 +120,7 @@ mod tests {
 
     macro_rules! len {
         ($val: expr) => {
-                            borsh::to_vec(&$val).unwrap().len()
+            borsh::to_vec(&$val).unwrap().len()
         };
     }
 
