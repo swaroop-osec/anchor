@@ -1,0 +1,18 @@
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[programs.localnet]
+declare_id = "FJcF5c8HncdfAgjPjTH49GAEypkJCG2ZADh2xhduNi5B"
+
+[scripts]
+test = "yarn run ts-mocha -t 1000000 tests/*.ts"
+
+[test.validator]
+url = "https://api.mainnet-beta.solana.com"
+ 
+[[test.validator.clone]]
+address = "9cxLzxjrTeodcbaEU3KCNGE1a4yFZEcdJ7uEXN378S4U"
+
+[[test.validator.clone]]
+address = "PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY"
