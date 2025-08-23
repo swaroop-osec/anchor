@@ -23,7 +23,9 @@ describe("custom_program", () => {
           genericProgram: new anchor.web3.PublicKey(CUSTOM_PROGRAM_ID),
           systemProgram: anchor.web3.SystemProgram.programId,
           customProgramInput: program.programId,
-          customProgramAddress: new anchor.web3.PublicKey(CUSTOM_PROGRAM_ADDRESS),
+          customProgramAddress: new anchor.web3.PublicKey(
+            CUSTOM_PROGRAM_ADDRESS
+          ),
         })
         .rpc();
       assert.ok(true);
@@ -40,12 +42,13 @@ describe("custom_program", () => {
           genericProgram: new anchor.web3.PublicKey(CUSTOM_PROGRAM_ID),
           systemProgram: anchor.web3.SystemProgram.programId,
           customProgramInput: program.programId,
-          customProgramAddress: new anchor.web3.PublicKey(NON_EXECUTABLE_ACCOUNT_ID),
+          customProgramAddress: new anchor.web3.PublicKey(
+            NON_EXECUTABLE_ACCOUNT_ID
+          ),
         })
         .rpc();
       assert.ok(false);
-    }
-    catch (_err) {
+    } catch (_err) {
       assert.ok(true);
       assert.isTrue(_err instanceof AnchorError);
       const err: AnchorError = _err;
@@ -69,8 +72,7 @@ describe("custom_program", () => {
         })
         .rpc();
       assert.ok(false);
-    }
-    catch (_err) {
+    } catch (_err) {
       assert.ok(true);
       assert.isTrue(_err instanceof AnchorError);
       const err: AnchorError = _err;

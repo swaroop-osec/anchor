@@ -499,7 +499,7 @@ fn parse_program_account(path: &syn::Path) -> ParseResult<syn::TypePath> {
                         ident: syn::Ident::new("__SolanaProgramUnitType", proc_macro2::Span::call_site()),
                         arguments: PathArguments::None,
                     };
-                    
+
                     Ok(syn::TypePath {
                         qself: None,
                         path: Path {
