@@ -20,7 +20,7 @@ pub fn gen_events_mod(idl: &Idl) -> proc_macro2::TokenStream {
 
             impl anchor_lang::Event for #name {
                 fn data(&self) -> Vec<u8> {
-                    let mut data = Vec::with_capacity(256);
+                    let mut data = Vec::new();
                     data.extend_from_slice(#name::DISCRIMINATOR);
                     self.serialize(&mut data).unwrap();
                     data

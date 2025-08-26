@@ -70,7 +70,7 @@ fn gen_cpi_instructions(idl: &Idl) -> proc_macro2::TokenStream {
             ) -> #ret_type {
                 let ix = {
                     let ix = internal::args::#arg_value;
-                    let mut data = Vec::with_capacity(256);
+                    let mut data = Vec::new();
                     data.extend_from_slice(internal::args::#accounts_ident::DISCRIMINATOR);
                     AnchorSerialize::serialize(&ix, &mut data)
                         .map_err(|_| anchor_lang::error::ErrorCode::InstructionDidNotSerialize)?;
