@@ -49,8 +49,12 @@ describe("duplicate-mutable-accounts", () => {
 
   it("Should fail with duplicate mutable accounts", async () => {
     // Ensure the accounts are initialized
-    const account1 = await program.account.counter.fetch(dataAccount1.publicKey);
-    const account2 = await program.account.counter.fetch(dataAccount2.publicKey);
+    const account1 = await program.account.counter.fetch(
+      dataAccount1.publicKey
+    );
+    const account2 = await program.account.counter.fetch(
+      dataAccount2.publicKey
+    );
     assert.strictEqual(account1.count.toNumber(), 100);
     assert.strictEqual(account2.count.toNumber(), 300);
 
