@@ -157,6 +157,9 @@ pub fn generate_constraints(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         .map(|f| constraints::generate(f, accs))
         .collect();
 
+    // Generate duplicate mutable account validation
+    let duplicate_checks = generate_duplicate_mutable_checks(accs);
+
     // Constraint checks for each account fields.
     let access_checks: Vec<proc_macro2::TokenStream> = non_init_fields
         .iter()
@@ -168,6 +171,7 @@ pub fn generate_constraints(accs: &AccountsStruct) -> proc_macro2::TokenStream {
 
     quote! {
         #(#init_fields)*
+        #duplicate_checks
         #(#access_checks)*
     }
 }
@@ -200,5 +204,53 @@ fn is_init(af: &AccountField) -> bool {
     match af {
         AccountField::CompositeField(_s) => false,
         AccountField::Field(f) => f.constraints.init.is_some(),
+    }
+}
+
+// Generates duplicate mutable account validation logic
+fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::TokenStream {
+    // Find all mutable account fields that don't have dup constraint
+    let check_required_fields: Vec<_> = accs
+        .fields
+        .iter()
+        .filter_map(|af| match af {
+            AccountField::Field(f) if f.constraints.is_mutable() && !f.constraints.is_dup() => {
+                Some(f)
+            }
+            _ => None,
+        })
+        .collect();
+
+    if check_required_fields.len() <= 1 {
+        // If there's 0 or 1 fields to check, no duplicates possible
+        return quote! {};
+    }
+
+    // Generate validation code using BTreeSet like realloc pattern
+    let field_keys: Vec<_> = check_required_fields
+        .iter()
+        .map(|f| {
+            let name = &f.ident;
+            quote! { #name.key() }
+        })
+        .collect();
+
+    let field_name_strs: Vec<_> = check_required_fields
+        .iter()
+        .map(|f| f.ident.to_string())
+        .collect();
+
+    quote! {
+        // Duplicate mutable account validation - using pattern similar to realloc
+        {
+            let mut __mutable_accounts = std::collections::BTreeSet::new();
+            #(
+                if !__mutable_accounts.insert(#field_keys) {
+                    return Err(anchor_lang::error::Error::from(
+                        anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
+                    ).with_account_name(#field_name_strs));
+                }
+            )*
+        }
     }
 }
