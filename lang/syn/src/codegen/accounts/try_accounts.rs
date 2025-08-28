@@ -236,7 +236,11 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         .iter()
         .map(|f| {
             let name = &f.ident;
-            quote! { #name.key() }
+            if f.is_optional {
+                quote! { #name.as_ref().map(|f| f.key()) }
+            } else {
+                quote! { Some(#name.key()) }
+            }
         })
         .collect();
 
@@ -250,10 +254,12 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         {
             let mut __mutable_accounts = std::collections::BTreeSet::new();
             #(
-                if !__mutable_accounts.insert(#field_keys) {
-                    return Err(anchor_lang::error::Error::from(
-                        anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
-                    ).with_account_name(#field_name_strs));
+                if let Some(key) = #field_keys {
+                    if !__mutable_accounts.insert(key) {
+                        return Err(anchor_lang::error::Error::from(
+                            anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
+                        ).with_account_name(#field_name_strs));
+                    }
                 }
             )*
         }
