@@ -52,7 +52,7 @@ Solana version: 2.1.0
 | boxedAccountEmpty2          | 1,116         | -                     |
 | boxedAccountEmptyInit4      | 18,682        | 🔴 **+764 (4.26%)**   |
 | boxedAccountEmpty4          | 1,872         | -                     |
-| boxedAccountEmptyInit8      | 36,497        | 🔴 **+1,544 (4.42%)** |
+| boxedAccountEmptyInit8      | 36,893        | 🔴 **+1,940 (5.55%)** |
 | boxedAccountEmpty8          | 3,401         | -                     |
 | boxedAccountSizedInit1      | 5,512         | 🔴 **+241 (4.57%)**   |
 | boxedAccountSized1          | 783           | -                     |
