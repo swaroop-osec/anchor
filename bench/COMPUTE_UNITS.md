@@ -22,7 +22,7 @@ Solana version: 2.1.0
 | accountInfo2                | 895           | -                     |
 | accountInfo4                | 1,553         | -                     |
 | accountInfo8                | 2,923         | -                     |
-| accountEmptyInit1           | 5,260         | 🔴 **+177 (3.48%)**   |
+| accountEmptyInit1           | 5,323         | 🔴 **+240 (4.72%)**   |
 | accountEmpty1               | 645           | -                     |
 | accountEmptyInit2           | 9,724         | 🔴 **+423 (4.55%)**   |
 | accountEmpty2               | 1,007         | -                     |
