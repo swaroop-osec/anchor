@@ -3,7 +3,7 @@ cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [programs.localnet]
-declare_id = "4D6rvpR7TSPwmFottLGa5gpzMcJ76kN8bimQHV9rogjH"
+duplicate_mutable_accounts = "4D6rvpR7TSPwmFottLGa5gpzMcJ76kN8bimQHV9rogjH"
 
 [scripts]
 test = "yarn run ts-mocha -t 1000000 tests/*.ts"
