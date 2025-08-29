@@ -26,33 +26,33 @@ Solana version: 2.1.0
 | accountEmpty1               | 645           | -                     |
 | accountEmptyInit2           | 9,724         | 🔴 **+423 (4.55%)**   |
 | accountEmpty2               | 1,007         | -                     |
-| accountEmptyInit4           | 18,629        | 🔴 **+865 (4.87%)**   |
+| accountEmptyInit4           | 18,558        | 🔴 **+794 (4.47%)**   |
 | accountEmpty4               | 1,724         | -                     |
-| accountEmptyInit8           | 36,519        | 🔴 **+1,796 (5.17%)** |
+| accountEmptyInit8           | 36,239        | 🔴 **+1,516 (4.37%)** |
 | accountEmpty8               | 3,163         | -                     |
 | accountSizedInit1           | 5,432         | 🔴 **+240 (4.62%)**   |
 | accountSized1               | 693           | -                     |
-| accountSizedInit2           | 9,912         | 🔴 **+423 (4.46%)**   |
+| accountSizedInit2           | 9,908         | 🔴 **+419 (4.42%)**   |
 | accountSized2               | 1,075         | -                     |
-| accountSizedInit4           | 18,936        | 🔴 **+766 (4.22%)**   |
+| accountSizedInit4           | 19,036        | 🔴 **+866 (4.77%)**   |
 | accountSized4               | 1,848         | -                     |
-| accountSizedInit8           | 37,294        | 🔴 **+1,861 (5.25%)** |
+| accountSizedInit8           | 37,238        | 🔴 **+1,805 (5.09%)** |
 | accountSized8               | 3,387         | -                     |
 | accountUnsizedInit1         | 5,546         | 🔴 **+241 (4.54%)**   |
 | accountUnsized1             | 746           | -                     |
 | accountUnsizedInit2         | 10,180        | 🔴 **+421 (4.31%)**   |
 | accountUnsized2             | 1,163         | -                     |
-| accountUnsizedInit4         | 19,301        | 🔴 **+698 (3.75%)**   |
+| accountUnsizedInit4         | 19,476        | 🔴 **+873 (4.69%)**   |
 | accountUnsized4             | 2,002         | -                     |
-| accountUnsizedInit8         | 37,682        | 🔴 **+1,689 (4.69%)** |
+| accountUnsizedInit8         | 37,758        | 🔴 **+1,765 (4.90%)** |
 | accountUnsized8             | 3,673         | -                     |
 | boxedAccountEmptyInit1      | 5,416         | 🔴 **+241 (4.66%)**   |
 | boxedAccountEmpty1          | 734           | -                     |
 | boxedAccountEmptyInit2      | 9,840         | 🔴 **+426 (4.53%)**   |
 | boxedAccountEmpty2          | 1,116         | -                     |
-| boxedAccountEmptyInit4      | 18,798        | 🔴 **+880 (4.91%)**   |
+| boxedAccountEmptyInit4      | 18,794        | 🔴 **+876 (4.89%)**   |
 | boxedAccountEmpty4          | 1,872         | -                     |
-| boxedAccountEmptyInit8      | 36,861        | 🔴 **+1,908 (5.46%)** |
+| boxedAccountEmptyInit8      | 37,037        | 🔴 **+2,084 (5.96%)** |
 | boxedAccountEmpty8          | 3,401         | -                     |
 | boxedAccountSizedInit1      | 5,512         | 🔴 **+241 (4.57%)**   |
 | boxedAccountSized1          | 783           | -                     |
@@ -60,15 +60,15 @@ Solana version: 2.1.0
 | boxedAccountSized2          | 1,190         | -                     |
 | boxedAccountSizedInit4      | 19,102        | 🔴 **+872 (4.78%)**   |
 | boxedAccountSized4          | 1,996         | -                     |
-| boxedAccountSizedInit8      | 37,521        | 🔴 **+1,968 (5.54%)** |
+| boxedAccountSizedInit8      | 37,397        | 🔴 **+1,844 (5.19%)** |
 | boxedAccountSized8          | 3,628         | -                     |
 | boxedAccountUnsizedInit1    | 5,612         | 🔴 **+241 (4.49%)**   |
 | boxedAccountUnsized1        | 836           | -                     |
-| boxedAccountUnsizedInit2    | 10,181        | 🔴 **+422 (4.32%)**   |
+| boxedAccountUnsizedInit2    | 10,185        | 🔴 **+426 (4.37%)**   |
 | boxedAccountUnsized2        | 1,270         | -                     |
-| boxedAccountUnsizedInit4    | 19,434        | 🔴 **+876 (4.72%)**   |
+| boxedAccountUnsizedInit4    | 19,359        | 🔴 **+801 (4.32%)**   |
 | boxedAccountUnsized4        | 2,132         | -                     |
-| boxedAccountUnsizedInit8    | 37,781        | 🔴 **+1,596 (4.41%)** |
+| boxedAccountUnsizedInit8    | 37,805        | 🔴 **+1,620 (4.48%)** |
 | boxedAccountUnsized8        | 3,881         | -                     |
 | boxedInterfaceAccountMint1  | 1,351         | -                     |
 | boxedInterfaceAccountMint2  | 2,123         | -                     |
