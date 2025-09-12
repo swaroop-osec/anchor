@@ -3,10 +3,10 @@
 //! should be used instead.
 
 use crate::error::ErrorCode;
+use crate::solana_program::account_info::AccountInfo;
+use crate::solana_program::instruction::AccountMeta;
+use crate::solana_program::pubkey::Pubkey;
 use crate::{Accounts, AccountsExit, Key, Result, ToAccountInfos, ToAccountMetas};
-use solana_program::account_info::AccountInfo;
-use solana_program::instruction::AccountMeta;
-use solana_program::pubkey::Pubkey;
 use std::collections::BTreeSet;
 
 impl<'info, B> Accounts<'info, B> for AccountInfo<'info> {
@@ -26,7 +26,7 @@ impl<'info, B> Accounts<'info, B> for AccountInfo<'info> {
     }
 }
 
-impl<'info> ToAccountMetas for AccountInfo<'info> {
+impl ToAccountMetas for AccountInfo<'_> {
     fn to_account_metas(&self, is_signer: Option<bool>) -> Vec<AccountMeta> {
         let is_signer = is_signer.unwrap_or(self.is_signer);
         let meta = match self.is_writable {
@@ -45,7 +45,7 @@ impl<'info> ToAccountInfos<'info> for AccountInfo<'info> {
 
 impl<'info> AccountsExit<'info> for AccountInfo<'info> {}
 
-impl<'info> Key for AccountInfo<'info> {
+impl Key for AccountInfo<'_> {
     fn key(&self) -> Pubkey {
         *self.key
     }

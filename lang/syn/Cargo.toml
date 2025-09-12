@@ -1,28 +1,31 @@
 [package]
 name = "anchor-syn"
-version = "0.29.0"
+version = "0.31.1"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 repository = "https://github.com/coral-xyz/anchor"
 license = "Apache-2.0"
 description = "Anchor syntax parsing and code generation tools"
-rust-version = "1.60"
 edition = "2021"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 allow-missing-optionals = []
 anchor-debug = []
 event-cpi = []
 hash = []
-idl-build = ["idl-parse", "idl-types"]
-idl-parse = ["idl-types"]
-idl-types = []
+idl-build = ["cargo_toml"]
 init-if-needed = []
 interface-instructions = []
-seeds = []
 
 [dependencies]
 anyhow = "1"
 bs58 = "0.5"
+
+# `idl-build` feature only
+cargo_toml = { version = "0.19", optional = true }
 heck = "0.3"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 quote = "1"

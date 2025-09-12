@@ -5,10 +5,6 @@ pub mod event_cpi;
 use crate::parser::docs;
 use crate::*;
 use syn::parse::{Error as ParseError, Result as ParseResult};
-use syn::punctuated::Punctuated;
-use syn::spanned::Spanned;
-use syn::token::Comma;
-use syn::Expr;
 use syn::Path;
 
 pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
@@ -18,7 +14,7 @@ pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
         .find(|a| {
             a.path
                 .get_ident()
-                .map_or(false, |ident| ident == "instruction")
+                .is_some_and(|ident| ident == "instruction")
         })
         .map(|ix_attr| ix_attr.parse_args_with(Punctuated::<Expr, Comma>::parse_terminated))
         .transpose()?;
@@ -96,6 +92,19 @@ fn constraints_cross_checks(fields: &[AccountField]) -> ParseResult<()> {
             _ => None,
         })
         .collect();
+
+    for field in &init_fields {
+        if matches!(field.ty, Ty::SystemAccount) {
+            return Err(ParseError::new(
+                field.ident.span(),
+                "Cannot use `init` on a `SystemAccount`. \
+                    The `SystemAccount` type represents an already-existing account \
+                    owned by the system program and cannot be initialized. \
+                    If you need to create a new account, use a more specific account type \
+                    or `UncheckedAccount` and perform manual initialization instead.",
+            ));
+        }
+    }
 
     if !init_fields.is_empty() {
         // init needs system program.
@@ -202,7 +211,7 @@ fn constraints_cross_checks(fields: &[AccountField]) -> ParseResult<()> {
                     }
                 }
 
-                // Make sure initialiazed token accounts are always declared after their corresponding mint.
+                // Make sure initialized token accounts are always declared after their corresponding mint.
                 InitKind::Mint { .. } => {
                     if init_fields.iter().enumerate().any(|(f_pos, f)| {
                         match &f.constraints.init.as_ref().unwrap().kind {
@@ -338,6 +347,7 @@ fn is_field_primitive(f: &syn::Field) -> ParseResult<bool> {
             | "UncheckedAccount"
             | "AccountLoader"
             | "Account"
+            | "LazyAccount"
             | "Program"
             | "Interface"
             | "InterfaceAccount"
@@ -356,6 +366,7 @@ fn parse_ty(f: &syn::Field) -> ParseResult<(Ty, bool)> {
         "UncheckedAccount" => Ty::UncheckedAccount,
         "AccountLoader" => Ty::AccountLoader(parse_program_account_loader(&path)?),
         "Account" => Ty::Account(parse_account_ty(&path)?),
+        "LazyAccount" => Ty::LazyAccount(parse_lazy_account_ty(&path)?),
         "Program" => Ty::Program(parse_program_ty(&path)?),
         "Interface" => Ty::Interface(parse_interface_ty(&path)?),
         "InterfaceAccount" => Ty::InterfaceAccount(parse_interface_account_ty(&path)?),
@@ -446,6 +457,11 @@ fn parse_account_ty(path: &syn::Path) -> ParseResult<AccountTy> {
         account_type_path,
         boxed,
     })
+}
+
+fn parse_lazy_account_ty(path: &syn::Path) -> ParseResult<LazyAccountTy> {
+    let account_type_path = parse_account(path)?;
+    Ok(LazyAccountTy { account_type_path })
 }
 
 fn parse_interface_account_ty(path: &syn::Path) -> ParseResult<InterfaceAccountTy> {

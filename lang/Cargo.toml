@@ -1,12 +1,15 @@
 [package]
 name = "anchor-lang"
-version = "0.29.0"
+version = "0.31.1"
 authors = ["Anchor Maintainers <accounts@200ms.io>"]
 repository = "https://github.com/coral-xyz/anchor"
-rust-version = "1.60"
 edition = "2021"
 license = "Apache-2.0"
 description = "Solana Sealevel eDSL"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 allow-missing-optionals = ["anchor-derive-accounts/allow-missing-optionals"]
@@ -17,7 +20,7 @@ anchor-debug = [
     "anchor-attribute-error/anchor-debug",
     "anchor-attribute-event/anchor-debug",
     "anchor-attribute-program/anchor-debug",
-    "anchor-derive-accounts/anchor-debug"
+    "anchor-derive-accounts/anchor-debug",
 ]
 derive = []
 event-cpi = ["anchor-attribute-event/event-cpi"]
@@ -29,32 +32,52 @@ idl-build = [
     "anchor-attribute-program/idl-build",
     "anchor-derive-accounts/idl-build",
     "anchor-derive-serde/idl-build",
-    "anchor-syn/idl-build",
+    "anchor-lang-idl/build",
 ]
 init-if-needed = ["anchor-derive-accounts/init-if-needed"]
 interface-instructions = ["anchor-attribute-program/interface-instructions"]
+lazy-account = ["anchor-attribute-account/lazy-account", "anchor-derive-serde/lazy-account"]
 
 [dependencies]
-anchor-attribute-access-control = { path = "./attribute/access-control", version = "0.29.0" }
-anchor-attribute-account = { path = "./attribute/account", version = "0.29.0" }
-anchor-attribute-constant = { path = "./attribute/constant", version = "0.29.0" }
-anchor-attribute-error = { path = "./attribute/error", version = "0.29.0" }
-anchor-attribute-event = { path = "./attribute/event", version = "0.29.0" }
-anchor-attribute-program = { path = "./attribute/program", version = "0.29.0" }
-anchor-derive-accounts = { path = "./derive/accounts", version = "0.29.0" }
-anchor-derive-serde = { path = "./derive/serde", version = "0.29.0" }
-anchor-derive-space = { path = "./derive/space", version = "0.29.0" }
+anchor-attribute-access-control = { path = "./attribute/access-control", version = "0.31.1" }
+anchor-attribute-account = { path = "./attribute/account", version = "0.31.1" }
+anchor-attribute-constant = { path = "./attribute/constant", version = "0.31.1" }
+anchor-attribute-error = { path = "./attribute/error", version = "0.31.1" }
+anchor-attribute-event = { path = "./attribute/event", version = "0.31.1" }
+anchor-attribute-program = { path = "./attribute/program", version = "0.31.1" }
+anchor-derive-accounts = { path = "./derive/accounts", version = "0.31.1" }
+anchor-derive-serde = { path = "./derive/serde", version = "0.31.1" }
+anchor-derive-space = { path = "./derive/space", version = "0.31.1" }
 
-# `anchor-syn` should only be included with `idl-build` feature
-anchor-syn = { path = "./syn", version = "0.29.0", optional = true }
+# `anchor-lang-idl` should only be included with `idl-build` feature
+anchor-lang-idl = { path = "../idl", version = "0.1.2", optional = true }
 
-arrayref = "0.3"
 base64 = "0.21"
 bincode = "1"
-borsh = ">=0.9, <0.11"
-bytemuck = "1"
-solana-program = "1.16"
+borsh = "0.10.3"
+bytemuck = { version = "1", features = ["derive"] }
+solana-account-info = "2"
+solana-clock = "2"
+solana-cpi = "2"
+solana-define-syscall = "2"
+solana-feature-gate-interface = "2"
+solana-instruction = "2"
+solana-instructions-sysvar = "2"
+solana-invoke = "0.4.0"
+solana-loader-v3-interface = { version = "3", features = ["bincode"] }
+solana-msg = "2"
+solana-program-entrypoint = "2"
+solana-program-error = { version = "2", features = ["borsh"] }
+solana-program-memory = "2"
+solana-program-option = "2"
+solana-program-pack = "2"
+solana-pubkey = { version = "2", features = ["borsh", "bytemuck", "serde"] }
+solana-sdk-ids = "2"
+solana-system-interface = "1"
+solana-sysvar = { version = "2", features = ["bincode"] }
+solana-sysvar-id = "2"
 thiserror = "1"
 
-# TODO: Remove. This crate has been added to fix a build error with the 1.16.0 release.
-getrandom = { version = "0.2", features = ["custom"] }
+[lints.rust.unexpected_cfgs]
+ level = "warn"
+ check-cfg = ['cfg(target_os, values("solana"))']

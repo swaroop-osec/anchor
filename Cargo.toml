@@ -1,22 +1,20 @@
-[profile.release]
-lto = true
-
-[profile.release.package.anchor-cli]
-codegen-units = 1
 
 [workspace]
 members = [
     "avm",
     "cli",
     "client",
+    "idl",
     "lang",
     "lang/attribute/*",
     "lang/derive/*",
     "lang/syn",
     "spl",
 ]
-exclude = [
-    "tests/swap/deps/openbook-dex",
-    "tests/cfo/deps/openbook-dex",
-]
+exclude = ["tests/cfo/deps/openbook-dex", "tests/swap/deps/openbook-dex"]
 resolver = "2"
+[profile.release]
+lto = true
+
+[profile.release.package.anchor-cli]
+codegen-units = 1

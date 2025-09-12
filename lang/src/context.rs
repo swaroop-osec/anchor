@@ -1,9 +1,9 @@
 //! Data structures that are used to provide non-argument inputs to program endpoints
 
+use crate::solana_program::account_info::AccountInfo;
+use crate::solana_program::instruction::AccountMeta;
+use crate::solana_program::pubkey::Pubkey;
 use crate::{Accounts, Bumps, ToAccountInfos, ToAccountMetas};
-use solana_program::account_info::AccountInfo;
-use solana_program::instruction::AccountMeta;
-use solana_program::pubkey::Pubkey;
 use std::fmt;
 
 /// Provides non-argument inputs to the program.
@@ -36,7 +36,7 @@ pub struct Context<'a, 'b, 'c, 'info, T: Bumps> {
     pub bumps: T::Bumps,
 }
 
-impl<'a, 'b, 'c, 'info, T> fmt::Debug for Context<'a, 'b, 'c, 'info, T>
+impl<T> fmt::Debug for Context<'_, '_, '_, '_, T>
 where
     T: fmt::Debug + Bumps,
 {
