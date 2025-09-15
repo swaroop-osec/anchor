@@ -21,12 +21,12 @@ pub mod declare_program {
         require_keys_eq!(external::accounts::MyAccount::owner(), external::ID);
         require_eq!(cpi_my_account.field, 0);
 
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.external_program.to_account_info(),
+        let cpi_ctx = CpiContext::new_with_id(
             external::cpi::accounts::Update {
                 authority: ctx.accounts.authority.to_account_info(),
                 my_account: cpi_my_account.to_account_info(),
             },
+            ctx.accounts.external_program.key(),
         );
         external::cpi::update(cpi_ctx, value)?;
 
@@ -40,22 +40,21 @@ pub mod declare_program {
         let cpi_my_account = &mut ctx.accounts.cpi_my_account;
 
         // Composite accounts that's also an instruction
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.external_program.to_account_info(),
+        let cpi_ctx = CpiContext::new_with_id(
             external::cpi::accounts::UpdateComposite {
                 update: external::cpi::accounts::Update {
                     authority: ctx.accounts.authority.to_account_info(),
                     my_account: cpi_my_account.to_account_info(),
                 },
             },
+            ctx.accounts.external_program.key(),
         );
         external::cpi::update_composite(cpi_ctx, 42)?;
         cpi_my_account.reload()?;
         require_eq!(cpi_my_account.field, 42);
 
         // Composite accounts but not an actual instruction
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.external_program.to_account_info(),
+        let cpi_ctx = CpiContext::new_with_id(
             external::cpi::accounts::UpdateNonInstructionComposite {
                 non_instruction_update: external::cpi::accounts::NonInstructionUpdate {
                     authority: ctx.accounts.authority.to_account_info(),
@@ -63,6 +62,7 @@ pub mod declare_program {
                     program: ctx.accounts.external_program.to_account_info(),
                 },
             },
+            ctx.accounts.external_program.key(),
         );
         external::cpi::update_non_instruction_composite(cpi_ctx, value)?;
         cpi_my_account.reload()?;
