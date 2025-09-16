@@ -214,7 +214,11 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         .fields
         .iter()
         .filter_map(|af| match af {
-            AccountField::Field(f) if f.constraints.is_mutable() && !f.constraints.is_dup() && f.constraints.init.is_none() => {
+            AccountField::Field(f)
+                if f.constraints.is_mutable()
+                    && !f.constraints.is_dup()
+                    && f.constraints.init.is_none() =>
+            {
                 match &f.ty {
                     crate::Ty::UncheckedAccount => None, // unchecked by design
                     _ => Some(f),
@@ -242,10 +246,7 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         })
         .collect();
 
-    let field_name_strs: Vec<_> = candidates
-        .iter()
-        .map(|f| f.ident.to_string())
-        .collect();
+    let field_name_strs: Vec<_> = candidates.iter().map(|f| f.ident.to_string()).collect();
 
     quote! {
         // Duplicate mutable account validation - using BTreeSet for efficiency
