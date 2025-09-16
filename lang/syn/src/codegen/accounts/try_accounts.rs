@@ -209,16 +209,14 @@ fn is_init(af: &AccountField) -> bool {
 
 // Generates duplicate mutable account validation logic
 fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::TokenStream {
-    // Find all mutable account fields that don't have dup constraint
-    // Exclude UncheckedAccount types as they are unchecked by design
-    let check_required_fields: Vec<_> = accs
+    // Collect all mutable account fields without `dup` constraint, excluding UncheckedAccount & init accounts.
+    let candidates: Vec<_> = accs
         .fields
         .iter()
         .filter_map(|af| match af {
-            AccountField::Field(f) if f.constraints.is_mutable() && !f.constraints.is_dup() => {
-                // Exclude UncheckedAccount types from duplicate checks
+            AccountField::Field(f) if f.constraints.is_mutable() && !f.constraints.is_dup() && f.constraints.init.is_none() => {
                 match &f.ty {
-                    crate::Ty::UncheckedAccount => None,
+                    crate::Ty::UncheckedAccount => None, // unchecked by design
                     _ => Some(f),
                 }
             }
@@ -226,13 +224,13 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         })
         .collect();
 
-    if check_required_fields.len() <= 1 {
-        // If there's 0 or 1 fields to check, no duplicates possible
+    if candidates.len() <= 1 {
+        // 0 or 1 -> no duplicates possible
         return quote! {};
     }
 
-    // Generate validation code using BTreeSet like realloc pattern
-    let field_keys: Vec<_> = check_required_fields
+    // Generate validation code using BTreeSet
+    let field_keys: Vec<_> = candidates
         .iter()
         .map(|f| {
             let name = &f.ident;
@@ -244,17 +242,18 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         })
         .collect();
 
-    let field_name_strs: Vec<_> = check_required_fields
+    let field_name_strs: Vec<_> = candidates
         .iter()
         .map(|f| f.ident.to_string())
         .collect();
 
     quote! {
-        // Duplicate mutable account validation - using pattern similar to realloc
+        // Duplicate mutable account validation - using BTreeSet for efficiency
         {
             let mut __mutable_accounts = std::collections::BTreeSet::new();
             #(
                 if let Some(key) = #field_keys {
+                    // Check for duplicates and insert the key and account name
                     if !__mutable_accounts.insert(key) {
                         return Err(anchor_lang::error::Error::from(
                             anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
