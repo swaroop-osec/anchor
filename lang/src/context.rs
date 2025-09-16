@@ -127,7 +127,7 @@ where
 /// pub mod caller {
 ///     use super::*;
 ///     pub fn do_cpi(ctx: Context<DoCpi>, data: u64) -> Result<()> {
-///         let callee_id = ctx.accounts.callee.to_account_info();
+///         let callee_id = ctx.accounts.callee.key();
 ///         let callee_accounts = callee::cpi::accounts::SetData {
 ///             data_acc: ctx.accounts.data_acc.to_account_info(),
 ///             authority: ctx.accounts.callee_authority.to_account_info(),
@@ -174,7 +174,7 @@ where
 {
     pub accounts: T,
     pub remaining_accounts: Vec<AccountInfo<'info>>,
-    pub program_id: Option<Pubkey>,
+    pub program_id: Pubkey,
     pub signer_seeds: &'a [&'b [&'c [u8]]],
 }
 
@@ -183,53 +183,27 @@ where
     T: ToAccountMetas + ToAccountInfos<'info>,
 {
     #[must_use]
-    pub fn new(accounts: T) -> Self {
+    pub fn new(program_id: Pubkey, accounts: T) -> Self {
         Self {
             accounts,
-            program_id: None,
+            program_id,
             remaining_accounts: Vec::new(),
             signer_seeds: &[],
         }
     }
 
     #[must_use]
-    pub fn new_with_id(accounts: T, program_id: Pubkey) -> Self {
-        Self {
-            accounts,
-            program_id: Some(program_id),
-            remaining_accounts: Vec::new(),
-            signer_seeds: &[],
-        }
-    }
-
-    #[must_use]
-    pub fn new_with_signer(accounts: T, signer_seeds: &'a [&'b [&'c [u8]]]) -> Self {
-        Self {
-            accounts,
-            program_id: None,
-            signer_seeds,
-            remaining_accounts: Vec::new(),
-        }
-    }
-
-    #[must_use]
-    pub fn new_with_id_and_signer(
-        accounts: T,
+    pub fn new_with_signer(
         program_id: Pubkey,
+        accounts: T,
         signer_seeds: &'a [&'b [&'c [u8]]],
     ) -> Self {
         Self {
             accounts,
-            program_id: Some(program_id),
+            program_id,
             signer_seeds,
             remaining_accounts: Vec::new(),
         }
-    }
-
-    #[must_use]
-    pub fn with_program_id(mut self, program_id: Pubkey) -> Self {
-        self.program_id = Some(program_id);
-        self
     }
 
     #[must_use]
