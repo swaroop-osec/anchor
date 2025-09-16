@@ -234,19 +234,21 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
     }
 
     // Generate validation code using BTreeSet
-    let field_keys: Vec<_> = candidates
-        .iter()
-        .map(|f| {
-            let name = &f.ident;
-            if f.is_optional {
-                quote! { #name.as_ref().map(|f| f.key()) }
-            } else {
-                quote! { Some(#name.key()) }
-            }
-        })
-        .collect();
+    let mut field_keys = Vec::with_capacity(candidates.len());
+    let mut field_name_strs = Vec::with_capacity(candidates.len());
 
-    let field_name_strs: Vec<_> = candidates.iter().map(|f| f.ident.to_string()).collect();
+    for f in candidates.iter() {
+        let name = &f.ident;
+
+        if f.is_optional {
+            field_keys.push(quote! { #name.as_ref().map(|f| f.key()) });
+        } else {
+            field_keys.push(quote! { Some(#name.key()) });
+        }
+
+        // Use stringify! to avoid runtime allocation
+        field_name_strs.push(quote! { stringify!(#name) });
+    }
 
     quote! {
         // Duplicate mutable account validation - using BTreeSet for efficiency
