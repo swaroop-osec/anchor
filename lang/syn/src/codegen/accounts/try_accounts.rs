@@ -251,9 +251,9 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
     }
 
     quote! {
-        // Duplicate mutable account validation - using BTreeSet for efficiency
+        // Duplicate mutable account validation - using HashSet
         {
-            let mut __mutable_accounts = std::collections::BTreeSet::new();
+            let mut __mutable_accounts = std::collections::HashSet::new();
             #(
                 if let Some(key) = #field_keys {
                     // Check for duplicates and insert the key and account name
