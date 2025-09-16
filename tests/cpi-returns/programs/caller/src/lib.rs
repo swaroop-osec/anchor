@@ -16,10 +16,11 @@ pub mod caller {
     }
 
     pub fn cpi_call_return_u64(ctx: Context<CpiReturnContext>) -> Result<()> {
+        let cpi_program_id = ctx.accounts.cpi_return_program.key();
         let cpi_accounts = CpiReturn {
             account: ctx.accounts.cpi_return.to_account_info(),
         };
-        let cpi_ctx = CpiContext::new(cpi_accounts);
+        let cpi_ctx = CpiContext::new(cpi_program_id, cpi_accounts);
         let result = callee::cpi::return_u64(cpi_ctx)?;
         let solana_return = result.get();
         anchor_lang::solana_program::log::sol_log_data(&[&solana_return.try_to_vec().unwrap()]);
@@ -27,10 +28,11 @@ pub mod caller {
     }
 
     pub fn cpi_call_return_struct(ctx: Context<CpiReturnContext>) -> Result<()> {
+        let cpi_program_id = ctx.accounts.cpi_return_program.key();
         let cpi_accounts = CpiReturn {
             account: ctx.accounts.cpi_return.to_account_info(),
         };
-        let cpi_ctx = CpiContext::new(cpi_accounts);
+        let cpi_ctx = CpiContext::new(cpi_program_id, cpi_accounts);
         let result = callee::cpi::return_struct(cpi_ctx)?;
         let solana_return = result.get();
         anchor_lang::solana_program::log::sol_log_data(&[&solana_return.try_to_vec().unwrap()]);
@@ -38,10 +40,11 @@ pub mod caller {
     }
 
     pub fn cpi_call_return_vec(ctx: Context<CpiReturnContext>) -> Result<()> {
+        let cpi_program_id = ctx.accounts.cpi_return_program.key();
         let cpi_accounts = CpiReturn {
             account: ctx.accounts.cpi_return.to_account_info(),
         };
-        let cpi_ctx = CpiContext::new(cpi_accounts);
+        let cpi_ctx = CpiContext::new(cpi_program_id, cpi_accounts);
         let result = callee::cpi::return_vec(cpi_ctx)?;
         let solana_return = result.get();
         anchor_lang::solana_program::log::sol_log_data(&[&solana_return.try_to_vec().unwrap()]);

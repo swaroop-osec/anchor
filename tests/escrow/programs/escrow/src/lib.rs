@@ -200,7 +200,7 @@ impl<'info> From<&mut InitializeEscrow<'info>>
             current_authority: accounts.initializer.to_account_info(),
         };
         let cpi_program_id = accounts.token_program.key();
-        CpiContext::new_with_id(cpi_accounts, cpi_program_id)
+        CpiContext::new(cpi_program_id, cpi_accounts)
     }
 }
 
@@ -211,7 +211,7 @@ impl<'info> CancelEscrow<'info> {
             current_authority: self.pda_account.clone(),
         };
         let cpi_program_id = self.token_program.key();
-        CpiContext::new_with_id(cpi_accounts, cpi_program_id)
+        CpiContext::new(cpi_program_id, cpi_accounts)
     }
 }
 
@@ -222,7 +222,7 @@ impl<'info> Exchange<'info> {
             current_authority: self.pda_account.clone(),
         };
         let cpi_program_id = self.receive_token_program.key();
-        CpiContext::new_with_id(cpi_accounts, cpi_program_id)
+        CpiContext::new(cpi_program_id, cpi_accounts)
     }
 }
 
@@ -237,7 +237,7 @@ impl<'info> Exchange<'info> {
             authority: self.pda_account.clone(),
         };
         let cpi_program_id = self.receive_token_program.key();
-        CpiContext::new_with_id(cpi_accounts, cpi_program_id)
+        CpiContext::new(cpi_program_id, cpi_accounts)
     }
 }
 
@@ -255,6 +255,6 @@ impl<'info> Exchange<'info> {
             authority: self.taker.clone(),
         };
         let cpi_program_id = self.deposit_token_program.key();
-        CpiContext::new_with_id(cpi_accounts, cpi_program_id)
+        CpiContext::new(cpi_program_id, cpi_accounts)
     }
 }

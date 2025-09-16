@@ -31,7 +31,7 @@ mod token_proxy {
                     authority: ctx.accounts.authority.clone(),
                 };
                 let cpi_program_id = token_program.key();
-                let cpi_context = CpiContext::new_with_id(cpi_accounts, cpi_program_id);
+                let cpi_context = CpiContext::new(cpi_program_id, cpi_accounts);
                 token_interface::transfer_checked(cpi_context, amount, mint.decimals)
             } else {
                 let cpi_accounts = Transfer {
@@ -40,7 +40,7 @@ mod token_proxy {
                     authority: ctx.accounts.authority.clone(),
                 };
                 let cpi_program_id = token_program.key();
-                let cpi_context = CpiContext::new_with_id(cpi_accounts, cpi_program_id);
+                let cpi_context = CpiContext::new(cpi_program_id, cpi_accounts);
                 #[allow(deprecated)]
                 token_interface::transfer(cpi_context, amount)
             }
@@ -214,7 +214,7 @@ impl<'a, 'b, 'c, 'info> From<&mut ProxyTransfer<'info>>
             authority: accounts.authority.clone(),
         };
         let cpi_program_id = accounts.token_program.key();
-        CpiContext::new_with_id(cpi_accounts, cpi_program_id)
+        CpiContext::new(cpi_program_id, cpi_accounts)
     }
 }
 
@@ -228,7 +228,7 @@ impl<'a, 'b, 'c, 'info> From<&mut ProxyMintTo<'info>>
             authority: accounts.authority.clone(),
         };
         let cpi_program_id = accounts.token_program.key();
-        CpiContext::new_with_id(cpi_accounts, cpi_program_id)
+        CpiContext::new(cpi_program_id, cpi_accounts)
     }
 }
 
@@ -240,7 +240,7 @@ impl<'a, 'b, 'c, 'info> From<&mut ProxyBurn<'info>> for CpiContext<'a, 'b, 'c, '
             authority: accounts.authority.clone(),
         };
         let cpi_program_id = accounts.token_program.key();
-        CpiContext::new_with_id(cpi_accounts, cpi_program_id)
+        CpiContext::new(cpi_program_id, cpi_accounts)
     }
 }
 
@@ -255,7 +255,7 @@ impl<'a, 'b, 'c, 'info> From<&mut ProxySetAuthority<'info>>
             current_authority: accounts.current_authority.clone(),
         }; // TODO: Support multisig signers
         let cpi_program_id = accounts.token_program.key();
-        CpiContext::new_with_id(cpi_accounts, cpi_program_id)
+        CpiContext::new(cpi_program_id, cpi_accounts)
     }
 }
 
