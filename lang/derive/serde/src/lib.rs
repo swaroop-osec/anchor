@@ -10,15 +10,13 @@ use syn::{Fields, Ident, Item};
 
 fn gen_borsh_serialize(input: TokenStream) -> TokenStream2 {
     let item: Item = syn::parse(input).unwrap();
-    let res = match item {
+    match item {
         Item::Struct(item) => generate_struct_serialize(&item),
         Item::Enum(item) => generate_enum_serialize(&item),
         Item::Union(item) => generate_union_serialize(&item),
         // Derive macros can only be defined on structs, enums, and unions.
         _ => unreachable!(),
-    };
-
-    res
+    }
 }
 
 fn generate_struct_serialize(item: &syn::ItemStruct) -> TokenStream2 {
@@ -150,15 +148,13 @@ pub fn anchor_serialize(input: TokenStream) -> TokenStream {
 
 fn gen_borsh_deserialize(input: TokenStream) -> TokenStream2 {
     let item: Item = syn::parse(input).unwrap();
-    let res = match item {
+    match item {
         Item::Struct(item) => generate_struct_deserialize(&item),
         Item::Enum(item) => generate_enum_deserialize(&item),
         Item::Union(item) => generate_union_deserialize(&item),
         // Derive macros can only be defined on structs, enums, and unions.
         _ => unreachable!(),
-    };
-
-    res
+    }
 }
 
 fn generate_struct_deserialize(item: &syn::ItemStruct) -> TokenStream2 {
