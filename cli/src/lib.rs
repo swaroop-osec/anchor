@@ -348,6 +348,14 @@ pub enum Command {
         #[clap(long)]
         confirm_key: bool,
     },
+    /// Get your balance
+    Balance {
+        /// Account to check balance for (defaults to configured wallet)
+        pubkey: Option<Pubkey>,
+        /// Display balance in lamports instead of SOL
+        #[clap(long)]
+        lamports: bool,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -902,6 +910,7 @@ fn process_command(opts: Opts) -> Result<()> {
             Ok(())
         }
         Command::Address { confirm_key } => address(&opts.cfg_override, confirm_key),
+        Command::Balance { pubkey, lamports } => balance(&opts.cfg_override, pubkey, lamports),
     }
 }
 
@@ -4054,6 +4063,56 @@ fn address(cfg_override: &ConfigOverride, _confirm_key: bool) -> Result<()> {
 
     // Print the public key
     println!("{}", keypair.pubkey());
+
+    Ok(())
+}
+
+fn balance(cfg_override: &ConfigOverride, pubkey: Option<Pubkey>, lamports: bool) -> Result<()> {
+    // Get cluster URL and wallet path, handling both workspace and standalone scenarios
+    let (cluster_url, wallet_path) = match Config::discover(cfg_override) {
+        Ok(Some(cfg)) => (
+            cfg.provider.cluster.url().to_string(),
+            cfg.provider.wallet.to_string(),
+        ),
+        _ => {
+            // Not in workspace - use cluster override or default, and standard Solana CLI path
+            let cluster = cfg_override
+                .cluster
+                .as_ref()
+                .unwrap_or(&Cluster::Mainnet);
+            let default_wallet = dirs::home_dir()
+                .map(|home| {
+                    home.join(".config/solana/id.json")
+                        .to_string_lossy()
+                        .to_string()
+                })
+                .unwrap_or_else(|| "~/.config/solana/id.json".to_string());
+            (cluster.url().to_string(), default_wallet)
+        }
+    };
+
+    // Create RPC client
+    let client = RpcClient::new(cluster_url);
+
+    // Determine which account to check
+    let account_pubkey = if let Some(pubkey) = pubkey {
+        pubkey
+    } else {
+        // Load keypair from wallet path and get pubkey
+        let keypair = Keypair::read_from_file(&wallet_path)
+            .map_err(|e| anyhow!("Failed to read keypair from {}: {}", wallet_path, e))?;
+        keypair.pubkey()
+    };
+
+    // Get balance
+    let balance = client.get_balance(&account_pubkey)?;
+
+    // Format and display output
+    if lamports {
+        println!("{}", balance);
+    } else {
+        println!("{:.8} SOL", balance as f64 / 1_000_000_000.0);
+    }
 
     Ok(())
 }
