@@ -18,6 +18,7 @@ use regex::{Regex, RegexBuilder};
 use rust_template::{ProgramTemplate, TestTemplate};
 use semver::{Version, VersionReq};
 use serde_json::{json, Map, Value as JsonValue};
+use solana_cli_config::Config as SolanaCliConfig;
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
@@ -271,11 +272,12 @@ pub enum Command {
         #[clap(required = false, last = true)]
         solana_args: Vec<String>,
     },
-    #[cfg(feature = "dev")]
-    /// Runs an airdrop loop, continuously funding the configured wallet.
+    /// Request an airdrop of SOL
     Airdrop {
-        #[clap(short, long)]
-        url: Option<String>,
+        /// Amount of SOL to airdrop
+        amount: f64,
+        /// Recipient address (defaults to configured wallet)
+        pubkey: Option<Pubkey>,
     },
     /// Cluster commands.
     Cluster {
@@ -869,8 +871,7 @@ fn process_command(opts: Opts) -> Result<()> {
             cargo_args,
             arch,
         ),
-        #[cfg(feature = "dev")]
-        Command::Airdrop { .. } => airdrop(&opts.cfg_override),
+        Command::Airdrop { amount, pubkey } => airdrop(&opts.cfg_override, amount, pubkey),
         Command::Cluster { subcmd } => cluster(subcmd),
         Command::Shell => shell(&opts.cfg_override),
         Command::Run {
@@ -3609,29 +3610,53 @@ fn set_workspace_dir_or_exit() {
     }
 }
 
-#[cfg(feature = "dev")]
-fn airdrop(cfg_override: &ConfigOverride) -> Result<()> {
-    let url = cfg_override
-        .cluster
-        .as_ref()
-        .unwrap_or(&Cluster::Devnet)
-        .url();
-    loop {
-        let exit = std::process::Command::new("solana")
-            .arg("airdrop")
-            .arg("10")
-            .arg("--url")
-            .arg(url)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output()
-            .expect("Must airdrop");
-        if !exit.status.success() {
-            println!("There was a problem airdropping: {:?}.", exit);
-            std::process::exit(exit.status.code().unwrap_or(1));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10000));
-    }
+fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -> Result<()> {
+    // Get cluster URL and wallet path
+    let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
+
+    // Create RPC client
+    let client = RpcClient::new(cluster_url);
+
+    // Determine recipient
+    let recipient_pubkey = if let Some(pubkey) = pubkey {
+        pubkey
+    } else {
+        // Load keypair from wallet path and get pubkey
+        let keypair = Keypair::read_from_file(&wallet_path)
+            .map_err(|e| anyhow!("Failed to read keypair from {}: {}", wallet_path, e))?;
+        keypair.pubkey()
+    };
+
+    // Convert SOL to lamports
+    let lamports = (amount * 1_000_000_000.0) as u64;
+
+    // Request airdrop
+    println!("Requesting airdrop of {} SOL", amount);
+
+    let signature = client
+        .request_airdrop(&recipient_pubkey, lamports)
+        .map_err(|e| anyhow!("Airdrop request failed: {}", e))?;
+
+    println!("Signature: {}", signature);
+
+    // Confirm the transaction
+    let recent_blockhash = client
+        .get_latest_blockhash()
+        .map_err(|e| anyhow!("Failed to get recent blockhash: {}", e))?;
+
+    client
+        .confirm_transaction_with_spinner(
+            &signature,
+            &recent_blockhash,
+            CommitmentConfig::confirmed(),
+        )
+        .map_err(|e| anyhow!("Transaction confirmation failed: {}", e))?;
+
+    // Get and display the new balance
+    let balance = client.get_balance(&recipient_pubkey)?;
+    println!("{}", format_sol(balance));
+
+    Ok(())
 }
 
 fn cluster(_cmd: ClusterCommand) -> Result<()> {
@@ -4041,6 +4066,63 @@ fn create_client<U: ToString>(url: U) -> RpcClient {
     RpcClient::new_with_commitment(url, CommitmentConfig::confirmed())
 }
 
+/// Format lamports as SOL, removing trailing zeros
+fn format_sol(lamports: u64) -> String {
+    let sol = lamports as f64 / 1_000_000_000.0;
+    let formatted = format!("{:.8}", sol);
+
+    // Remove trailing zeros and decimal point if not needed
+    let trimmed = formatted.trim_end_matches('0').trim_end_matches('.');
+    format!("{} SOL", trimmed)
+}
+
+/// Get cluster URL and wallet path from Anchor config, CLI overrides, or Solana CLI config
+fn get_cluster_and_wallet(cfg_override: &ConfigOverride) -> Result<(String, String)> {
+    // Try to get from Anchor workspace config first
+    if let Ok(Some(cfg)) = Config::discover(cfg_override) {
+        return Ok((
+            cfg.provider.cluster.url().to_string(),
+            cfg.provider.wallet.to_string(),
+        ));
+    }
+
+    // Try to load Solana CLI config
+    let (cluster_url, wallet_path) = if let Some(config_file) = solana_cli_config::CONFIG_FILE.as_ref() {
+        match SolanaCliConfig::load(config_file) {
+            Ok(cli_config) => (
+                cli_config.json_rpc_url.clone(),
+                cli_config.keypair_path.clone(),
+            ),
+            Err(_) => {
+                // Fallback to defaults if Solana CLI config doesn't exist
+                (
+                    "http://localhost:8899".to_string(),
+                    dirs::home_dir()
+                        .map(|home| home.join(".config/solana/id.json").to_string_lossy().to_string())
+                        .unwrap_or_else(|| "~/.config/solana/id.json".to_string()),
+                )
+            }
+        }
+    } else {
+        // If CONFIG_FILE is not available, use defaults
+        (
+            "http://localhost:8899".to_string(),
+            dirs::home_dir()
+                .map(|home| home.join(".config/solana/id.json").to_string_lossy().to_string())
+                .unwrap_or_else(|| "~/.config/solana/id.json".to_string()),
+        )
+    };
+
+    // Apply any CLI overrides
+    let final_cluster_url = cfg_override
+        .cluster
+        .as_ref()
+        .map(|c| c.url().to_string())
+        .unwrap_or(cluster_url);
+
+    Ok((final_cluster_url, wallet_path))
+}
+
 fn address(cfg_override: &ConfigOverride, _confirm_key: bool) -> Result<()> {
     // Get wallet path from config or use default
     let wallet_path = match Config::discover(cfg_override) {
@@ -4068,28 +4150,8 @@ fn address(cfg_override: &ConfigOverride, _confirm_key: bool) -> Result<()> {
 }
 
 fn balance(cfg_override: &ConfigOverride, pubkey: Option<Pubkey>, lamports: bool) -> Result<()> {
-    // Get cluster URL and wallet path, handling both workspace and standalone scenarios
-    let (cluster_url, wallet_path) = match Config::discover(cfg_override) {
-        Ok(Some(cfg)) => (
-            cfg.provider.cluster.url().to_string(),
-            cfg.provider.wallet.to_string(),
-        ),
-        _ => {
-            // Not in workspace - use cluster override or default, and standard Solana CLI path
-            let cluster = cfg_override
-                .cluster
-                .as_ref()
-                .unwrap_or(&Cluster::Mainnet);
-            let default_wallet = dirs::home_dir()
-                .map(|home| {
-                    home.join(".config/solana/id.json")
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .unwrap_or_else(|| "~/.config/solana/id.json".to_string());
-            (cluster.url().to_string(), default_wallet)
-        }
-    };
+    // Get cluster URL and wallet path
+    let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
     // Create RPC client
     let client = RpcClient::new(cluster_url);
@@ -4111,7 +4173,7 @@ fn balance(cfg_override: &ConfigOverride, pubkey: Option<Pubkey>, lamports: bool
     if lamports {
         println!("{}", balance);
     } else {
-        println!("{:.8} SOL", balance as f64 / 1_000_000_000.0);
+        println!("{}", format_sol(balance));
     }
 
     Ok(())
