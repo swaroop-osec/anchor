@@ -4103,7 +4103,7 @@ fn get_cluster_and_wallet(cfg_override: &ConfigOverride) -> Result<(String, Stri
                 Err(_) => {
                     // Fallback to defaults if Solana CLI config doesn't exist
                     (
-                        "http://localhost:8899".to_string(),
+                        "https://api.mainnet-beta.solana.com".to_string(),
                         dirs::home_dir()
                             .map(|home| {
                                 home.join(".config/solana/id.json")
@@ -4117,7 +4117,7 @@ fn get_cluster_and_wallet(cfg_override: &ConfigOverride) -> Result<(String, Stri
         } else {
             // If CONFIG_FILE is not available, use defaults
             (
-                "http://localhost:8899".to_string(),
+                "https://api.mainnet-beta.solana.com".to_string(),
                 dirs::home_dir()
                     .map(|home| {
                         home.join(".config/solana/id.json")
