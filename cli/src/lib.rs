@@ -19,7 +19,9 @@ use rust_template::{ProgramTemplate, TestTemplate};
 use semver::{Version, VersionReq};
 use serde_json::{json, Map, Value as JsonValue};
 use solana_cli_config::Config as SolanaCliConfig;
+use solana_pubsub_client::pubsub_client::PubsubClient;
 use solana_rpc_client::rpc_client::RpcClient;
+use solana_rpc_client_api::config::{RpcTransactionLogsConfig, RpcTransactionLogsFilter};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signer};
@@ -362,6 +364,13 @@ pub enum Command {
     Epoch,
     /// Get information about the current epoch
     EpochInfo,
+    /// Stream transaction logs
+    Logs {
+        #[clap(long)]
+        include_votes: bool,
+        #[clap(long)]
+        mentions: Option<Vec<Pubkey>>,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -918,6 +927,10 @@ fn process_command(opts: Opts) -> Result<()> {
         Command::Balance { pubkey, lamports } => balance(&opts.cfg_override, pubkey, lamports),
         Command::Epoch => epoch(&opts.cfg_override),
         Command::EpochInfo => epoch_info(&opts.cfg_override),
+        Command::Logs {
+            include_votes,
+            mentions,
+        } => logs_subscribe(&opts.cfg_override, include_votes, mentions),
     }
 }
 
@@ -4310,6 +4323,66 @@ fn epoch_info(cfg_override: &ConfigOverride) -> Result<()> {
     Ok(())
 }
 
+fn logs_subscribe(
+    cfg_override: &ConfigOverride,
+    include_votes: bool,
+    mentions: Option<Vec<Pubkey>>,
+) -> Result<()> {
+    // Get cluster URL
+    let (cluster_url, _) = get_cluster_and_wallet(cfg_override)?;
+
+    // Convert HTTP(S) URL to WebSocket URL
+    let ws_url = cluster_url
+        .replace("https://", "wss://")
+        .replace("http://", "ws://");
+
+    println!("Connecting to {}", ws_url);
+
+    let filter = match (include_votes, mentions) {
+        (true, Some(mentions)) => {
+            RpcTransactionLogsFilter::Mentions(mentions.iter().map(|p| p.to_string()).collect())
+        }
+        (true, None) => RpcTransactionLogsFilter::AllWithVotes,
+        (false, Some(mentions)) => {
+            RpcTransactionLogsFilter::Mentions(mentions.iter().map(|p| p.to_string()).collect())
+        }
+        (false, None) => RpcTransactionLogsFilter::All,
+    };
+
+    let (_client, receiver) = PubsubClient::logs_subscribe(
+        &ws_url,
+        filter,
+        RpcTransactionLogsConfig {
+            commitment: cfg_override
+                .commitment
+                .map(|commitment| CommitmentConfig { commitment }),
+        },
+    )?;
+
+    loop {
+        match receiver.recv() {
+            Ok(logs) => {
+                println!("Transaction executed in slot {}:", logs.context.slot);
+                println!("  Signature: {}", logs.value.signature);
+                println!(
+                    "  Status: {}",
+                    logs.value
+                        .err
+                        .map(|err| err.to_string())
+                        .unwrap_or_else(|| "Ok".to_string())
+                );
+                println!("  Log Messages:");
+                for log in logs.value.logs {
+                    println!("    {log}");
+                }
+            }
+            Err(err) => {
+                return Err(anyhow!("Disconnected: {err}"));
+            }
+        }
+    }
+}
+
 /// Format seconds into human-readable duration (e.g., "1day 5h 49m 8s")
 fn format_duration_secs(total_seconds: u64) -> String {
     let seconds = total_seconds % 60;
@@ -4347,6 +4420,7 @@ mod tests {
             &ConfigOverride {
                 cluster: None,
                 wallet: None,
+                commitment: None,
             },
             "await".to_string(),
             true,
@@ -4367,6 +4441,7 @@ mod tests {
             &ConfigOverride {
                 cluster: None,
                 wallet: None,
+                commitment: None,
             },
             "fn".to_string(),
             true,
@@ -4387,6 +4462,7 @@ mod tests {
             &ConfigOverride {
                 cluster: None,
                 wallet: None,
+                commitment: None,
             },
             "1project".to_string(),
             true,
