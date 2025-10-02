@@ -366,10 +366,12 @@ pub enum Command {
     EpochInfo,
     /// Stream transaction logs
     Logs {
+        /// Include vote transactions when monitoring all transactions
         #[clap(long)]
         include_votes: bool,
+        /// Addresses to filter logs by
         #[clap(long)]
-        mentions: Option<Vec<Pubkey>>,
+        address: Option<Vec<Pubkey>>,
     },
 }
 
@@ -929,8 +931,8 @@ fn process_command(opts: Opts) -> Result<()> {
         Command::EpochInfo => epoch_info(&opts.cfg_override),
         Command::Logs {
             include_votes,
-            mentions,
-        } => logs_subscribe(&opts.cfg_override, include_votes, mentions),
+            address,
+        } => logs_subscribe(&opts.cfg_override, include_votes, address),
     }
 }
 
