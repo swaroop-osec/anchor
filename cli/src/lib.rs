@@ -45,6 +45,7 @@ use std::str::FromStr;
 use std::string::ToString;
 use std::sync::LazyLock;
 
+mod account;
 mod checks;
 pub mod config;
 pub mod rust_template;
@@ -379,6 +380,12 @@ pub enum Command {
         /// Addresses to filter logs by
         #[clap(long)]
         address: Option<Vec<Pubkey>>,
+    },
+    /// Show the contents of an account
+    #[clap(name = "show-account")]
+    ShowAccount {
+        #[clap(flatten)]
+        cmd: account::ShowAccountCommand,
     },
 }
 
@@ -952,6 +959,7 @@ fn process_command(opts: Opts) -> Result<()> {
             include_votes,
             address,
         } => logs_subscribe(&opts.cfg_override, include_votes, address),
+        Command::ShowAccount { cmd } => account::show_account(&opts.cfg_override, cmd),
     }
 }
 
