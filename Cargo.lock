@@ -85,7 +85,7 @@ dependencies = [
  "agave-feature-set",
  "bincode",
  "digest 0.10.7",
- "ed25519-dalek",
+ "ed25519-dalek 1.0.1",
  "lazy_static",
  "libsecp256k1",
  "openssl",
@@ -214,13 +214,16 @@ dependencies = [
  "chrono",
  "clap 4.5.17",
  "clap_complete",
+ "console",
  "dirs",
+ "ed25519-dalek 2.2.0",
  "flate2",
  "heck 0.4.1",
  "pathdiff",
  "portpicker",
  "regex",
  "reqwest",
+ "rpassword",
  "semver",
  "serde",
  "serde_json",
@@ -233,6 +236,8 @@ dependencies = [
  "solana-sdk",
  "syn 1.0.109",
  "tar",
+ "tempfile",
+ "tiny-bip39 2.0.0",
  "toml 0.7.8",
  "walkdir",
 ]
@@ -1419,16 +1424,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "ed25519"
+version = "2.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53"
+dependencies = [
+ "pkcs8",
+ "signature 2.2.0",
+]
+
+[[package]]
 name = "ed25519-dalek"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c762bae6dcaf24c4c84667b8579785430908723d5c889f469d76a41d59cc7a9d"
 dependencies = [
  "curve25519-dalek 3.2.0",
- "ed25519",
+ "ed25519 1.5.3",
  "rand 0.7.3",
  "serde",
  "sha2 0.9.9",
+ "zeroize",
+]
+
+[[package]]
+name = "ed25519-dalek"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
+dependencies = [
+ "curve25519-dalek 4.1.3",
+ "ed25519 2.2.3",
+ "serde",
+ "sha2 0.10.8",
+ "subtle",
  "zeroize",
 ]
 
@@ -1439,7 +1468,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d2be62a4061b872c8c0873ee4fc6f101ce7b889d039f019c5fa2af471a59908"
 dependencies = [
  "derivation-path",
- "ed25519-dalek",
+ "ed25519-dalek 1.0.1",
  "hmac 0.12.1",
  "sha2 0.10.8",
 ]
@@ -2714,6 +2743,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pbkdf2"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
+dependencies = [
+ "digest 0.10.7",
+ "hmac 0.12.1",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3744,7 +3783,7 @@ dependencies = [
  "solana-signature",
  "solana-signer",
  "thiserror 2.0.14",
- "tiny-bip39",
+ "tiny-bip39 0.8.2",
  "uriparse",
  "url",
 ]
@@ -3962,7 +4001,7 @@ checksum = "a1feafa1691ea3ae588f99056f4bdd1293212c7ece28243d7da257c443e84753"
 dependencies = [
  "bytemuck",
  "bytemuck_derive",
- "ed25519-dalek",
+ "ed25519-dalek 1.0.1",
  "solana-feature-set",
  "solana-instruction 2.2.1",
  "solana-precompile-error",
@@ -4411,7 +4450,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3dbb7042c2e0c561afa07242b2099d55c57bd1b1da3b6476932197d84e15e3e4"
 dependencies = [
  "bs58",
- "ed25519-dalek",
+ "ed25519-dalek 1.0.1",
  "ed25519-dalek-bip32",
  "rand 0.7.3",
  "solana-derivation-path",
@@ -5562,7 +5601,7 @@ version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64c8ec8e657aecfc187522fc67495142c12f35e55ddeca8698edbb738b8dbd8c"
 dependencies = [
- "ed25519-dalek",
+ "ed25519-dalek 1.0.1",
  "five8",
  "rand 0.8.5",
  "serde",
@@ -6810,6 +6849,23 @@ dependencies = [
  "rand 0.7.3",
  "rustc-hash",
  "sha2 0.9.9",
+ "thiserror 1.0.66",
+ "unicode-normalization",
+ "wasm-bindgen",
+ "zeroize",
+]
+
+[[package]]
+name = "tiny-bip39"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a30fd743a02bf35236f6faf99adb03089bb77e91c998dac2c2ad76bb424f668c"
+dependencies = [
+ "once_cell",
+ "pbkdf2 0.12.2",
+ "rand 0.8.5",
+ "rustc-hash",
+ "sha2 0.10.8",
  "thiserror 1.0.66",
  "unicode-normalization",
  "wasm-bindgen",
