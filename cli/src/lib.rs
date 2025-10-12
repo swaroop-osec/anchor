@@ -49,6 +49,7 @@ mod account;
 mod checks;
 pub mod config;
 mod keygen;
+mod program;
 pub mod rust_template;
 
 // Version of the docker image.
@@ -393,6 +394,11 @@ pub enum Command {
         #[clap(subcommand)]
         subcmd: KeygenCommand,
     },
+    /// Program deployment and management (BPF Loader Upgradeable)
+    Program {
+        #[clap(subcommand)]
+        subcmd: ProgramCommand,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -453,6 +459,131 @@ pub enum KeygenCommand {
         pubkey: Pubkey,
         /// Keypair filepath (defaults to configured wallet)
         keypair: Option<String>,
+    },
+}
+
+#[derive(Debug, Parser)]
+pub enum ProgramCommand {
+    /// Deploy an upgradeable program
+    Deploy {
+        /// Program filepath (e.g., target/deploy/my_program.so)
+        program_filepath: String,
+        /// Program keypair filepath (defaults to target/deploy/{program_name}-keypair.json)
+        #[clap(long)]
+        program_keypair: Option<String>,
+        /// Upgrade authority keypair (defaults to configured wallet)
+        #[clap(long)]
+        upgrade_authority: Option<String>,
+        /// Program id to deploy to (derived from program-keypair if not specified)
+        #[clap(long)]
+        program_id: Option<Pubkey>,
+        /// Buffer account to use for deployment
+        #[clap(long)]
+        buffer: Option<Pubkey>,
+        /// Maximum transaction length (BPF loader upgradeable limit)
+        #[clap(long)]
+        max_len: Option<usize>,
+        /// Don't upload IDL during deployment (IDL is uploaded by default)
+        #[clap(long)]
+        no_idl: bool,
+        /// Additional arguments to configure deployment (e.g., --with-compute-unit-price 1000)
+        #[clap(required = false, last = true)]
+        solana_args: Vec<String>,
+    },
+    /// Write a program into a buffer account
+    WriteBuffer {
+        /// Program filepath
+        program_filepath: String,
+        /// Buffer account keypair (defaults to new keypair)
+        #[clap(long)]
+        buffer: Option<String>,
+        /// Buffer authority (defaults to configured wallet)
+        #[clap(long)]
+        buffer_authority: Option<String>,
+        /// Maximum transaction length
+        #[clap(long)]
+        max_len: Option<usize>,
+    },
+    /// Set a new buffer authority
+    SetBufferAuthority {
+        /// Buffer account address
+        buffer: Pubkey,
+        /// New buffer authority
+        new_buffer_authority: Pubkey,
+    },
+    /// Set a new program authority
+    SetUpgradeAuthority {
+        /// Program id
+        program_id: Pubkey,
+        /// New upgrade authority pubkey
+        #[clap(long)]
+        new_upgrade_authority: Option<Pubkey>,
+        /// New upgrade authority signer (keypair file). Required unless --skip-new-upgrade-authority-signer-check is used.
+        /// When provided, both current and new authority will sign (checked mode, recommended)
+        #[clap(long)]
+        new_upgrade_authority_signer: Option<String>,
+        /// Skip new upgrade authority signer check. Allows setting authority with only current authority signature.
+        /// WARNING: Less safe - use only if you're confident the pubkey is correct
+        #[clap(long)]
+        skip_new_upgrade_authority_signer_check: bool,
+        /// Make the program immutable (cannot be upgraded)
+        #[clap(long = "final")]
+        make_final: bool,
+        /// Current upgrade authority keypair (defaults to configured wallet)
+        #[clap(long)]
+        upgrade_authority: Option<String>,
+    },
+    /// Display information about a buffer or program
+    Show {
+        /// Account address (buffer or program)
+        account: Pubkey,
+        /// Get account information from the Solana config file
+        #[clap(long)]
+        get_programs: bool,
+        /// Get account information from the Solana config file
+        #[clap(long)]
+        get_buffers: bool,
+        /// Show all accounts
+        #[clap(long)]
+        all: bool,
+    },
+    /// Upgrade an upgradeable program
+    Upgrade {
+        /// Program id to upgrade
+        program_id: Pubkey,
+        /// New program buffer account
+        buffer: Pubkey,
+        /// Upgrade authority (defaults to configured wallet)
+        #[clap(long)]
+        upgrade_authority: Option<String>,
+    },
+    /// Write the program data to a file
+    Dump {
+        /// Program account address
+        account: Pubkey,
+        /// Output file path
+        output_file: String,
+    },
+    /// Close a program or buffer account and withdraw all lamports
+    Close {
+        /// Account address to close (buffer or program)
+        account: Pubkey,
+        /// Authority keypair (defaults to configured wallet)
+        #[clap(long)]
+        authority: Option<String>,
+        /// Recipient address for reclaimed lamports (defaults to authority)
+        #[clap(long)]
+        recipient: Option<Pubkey>,
+        /// Bypass warning prompts
+        #[clap(long)]
+        bypass_warning: bool,
+    },
+    /// Extend the length of an upgradeable program
+    Extend {
+        /// Program id to extend
+        program_id: Pubkey,
+        /// Additional bytes to allocate
+        additional_bytes: usize,
     },
 }
 
@@ -1016,6 +1147,7 @@ fn process_command(opts: Opts) -> Result<()> {
         } => logs_subscribe(&opts.cfg_override, include_votes, address),
         Command::ShowAccount { cmd } => account::show_account(&opts.cfg_override, cmd),
         Command::Keygen { subcmd } => keygen::keygen(&opts.cfg_override, subcmd),
+        Command::Program { subcmd } => program::program(&opts.cfg_override, subcmd),
     }
 }
 
@@ -2215,9 +2347,9 @@ fn idl_init(
         let idl = fs::read(idl_filepath)?;
         let idl = convert_idl(&idl)?;
 
-        let idl_address = create_idl_account(cfg, &keypair, &program_id, &idl, priority_fee)?;
+        // Silently create the IDL account
+        let _ = create_idl_account(cfg, &keypair, &program_id, &idl, priority_fee)?;
 
-        println!("Idl account created: {idl_address:?}");
         Ok(())
     })
 }
@@ -2534,12 +2666,9 @@ fn idl_write(
         e.finish()?
     };
 
-    println!("Idl data length: {:?} bytes", idl_data.len());
-
     const MAX_WRITE_SIZE: usize = 600;
     let mut offset = 0;
     while offset < idl_data.len() {
-        println!("Step {offset}/{} ", idl_data.len());
         // Instruction data.
         let data = {
             let start = offset;
@@ -4482,7 +4611,7 @@ fn get_node_version() -> Result<Version> {
     Version::parse(output).map_err(Into::into)
 }
 
-fn add_recommended_deployment_solana_args(
+pub fn add_recommended_deployment_solana_args(
     client: &RpcClient,
     args: Vec<String>,
 ) -> Result<Vec<String>> {
@@ -4522,7 +4651,7 @@ fn add_recommended_deployment_solana_args(
     Ok(augmented_args)
 }
 
-fn get_recommended_micro_lamport_fee(client: &RpcClient) -> Result<u64> {
+pub fn get_recommended_micro_lamport_fee(client: &RpcClient) -> Result<u64> {
     let mut fees = client.get_recent_prioritization_fees(&[])?;
     if fees.is_empty() {
         // Fees may be empty, e.g. on localnet
@@ -4544,7 +4673,7 @@ fn get_recommended_micro_lamport_fee(client: &RpcClient) -> Result<u64> {
 
 /// Prepend a compute unit ix, if the priority fee is greater than 0.
 /// This helps to improve the chances that the transaction will land.
-fn prepend_compute_unit_ix(
+pub fn prepend_compute_unit_ix(
     instructions: Vec<Instruction>,
     client: &RpcClient,
     priority_fee: Option<u64>,
