@@ -46,6 +46,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
     match cmd {
         ProgramCommand::Deploy {
             program_filepath,
+            program_name,
             program_keypair,
             upgrade_authority,
             program_id,
@@ -56,6 +57,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
         } => program_deploy(
             cfg_override,
             program_filepath,
+            program_name,
             program_keypair,
             upgrade_authority,
             program_id,
@@ -142,7 +144,8 @@ fn get_rpc_client_and_config(
 #[allow(clippy::too_many_arguments)]
 fn program_deploy(
     cfg_override: &ConfigOverride,
-    program_filepath: String,
+    program_filepath: Option<String>,
+    program_name: Option<String>,
     program_keypair: Option<String>,
     upgrade_authority: Option<String>,
     program_id: Option<Pubkey>,
@@ -153,6 +156,37 @@ fn program_deploy(
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = config.wallet_kp()?;
+
+    // Determine the program filepath
+    let program_filepath = if let Some(filepath) = program_filepath {
+        // Explicit filepath provided
+        filepath
+    } else {
+        // Discover from workspace
+        let cfg = Config::discover(cfg_override)?
+            .ok_or_else(|| anyhow!("Not in anchor workspace. Either provide a program filepath or run from workspace."))?;
+
+        let programs = cfg.get_programs(program_name.clone())?;
+
+        if programs.is_empty() {
+            return Err(anyhow!("No programs found in workspace"));
+        }
+
+        if programs.len() > 1 && program_name.is_none() {
+            let program_names: Vec<_> = programs.iter().map(|p| p.lib_name.as_str()).collect();
+            return Err(anyhow!(
+                "Multiple programs found: {}. Use --program-name to specify which one to deploy",
+                program_names.join(", ")
+            ));
+        }
+
+        let program = &programs[0];
+        let binary_path = program.binary_path(false); // false = not verifiable build
+
+        println!("Deploying program: {}", program.lib_name);
+
+        binary_path.display().to_string()
+    };
 
     // Augment solana_args with recommended defaults (priority fees, max sign attempts, buffer)
     let solana_args = crate::add_recommended_deployment_solana_args(&rpc_client, solana_args)?;

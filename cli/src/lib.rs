@@ -459,8 +459,12 @@ pub enum KeygenCommand {
 pub enum ProgramCommand {
     /// Deploy an upgradeable program
     Deploy {
-        /// Program filepath (e.g., target/deploy/my_program.so)
-        program_filepath: String,
+        /// Program filepath (e.g., target/deploy/my_program.so).
+        /// If not provided, discovers programs from workspace
+        program_filepath: Option<String>,
+        /// Program name to deploy (from workspace). Used when program_filepath is not provided
+        #[clap(short, long)]
+        program_name: Option<String>,
         /// Program keypair filepath (defaults to target/deploy/{program_name}-keypair.json)
         #[clap(long)]
         program_keypair: Option<String>,
