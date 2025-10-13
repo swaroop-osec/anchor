@@ -1086,13 +1086,13 @@ fn process_command(opts: Opts) -> Result<()> {
 
             program::process_deploy(
                 &opts.cfg_override,
-                None,          // program_filepath
+                None, // program_filepath
                 program_name,
                 program_keypair,
-                None,          // upgrade_authority
-                None,          // program_id
-                None,          // buffer
-                None,          // max_len
+                None, // upgrade_authority
+                None, // program_id
+                None, // buffer
+                None, // max_len
                 verifiable,
                 no_idl,
                 make_final,
@@ -3282,17 +3282,17 @@ fn test(
         if (!is_localnet || skip_local_validator) && !skip_deploy {
             program::process_deploy(
                 cfg_override,
-                None,    // program_filepath
-                None,    // program_name
-                None,    // program_keypair
-                None,    // upgrade_authority
-                None,    // program_id
-                None,    // buffer
-                None,    // max_len
-                false,   // verifiable
-                true,    // no_idl
-                false,   // make_final
-                vec![],  // solana_args
+                None,   // program_filepath
+                None,   // program_name
+                None,   // program_keypair
+                None,   // upgrade_authority
+                None,   // program_id
+                None,   // buffer
+                None,   // max_len
+                false,  // verifiable
+                true,   // no_idl
+                false,  // make_final
+                vec![], // solana_args
             )?;
         }
         let mut is_first_suite = true;
