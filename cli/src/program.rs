@@ -41,6 +41,154 @@ fn parse_priority_fee_from_args(args: &[String]) -> Option<u64> {
         .and_then(|pair| pair[1].parse().ok())
 }
 
+/// Public entry point for deploying programs - validates and routes to appropriate handler
+#[allow(clippy::too_many_arguments)]
+pub fn process_deploy(
+    cfg_override: &ConfigOverride,
+    program_filepath: Option<String>,
+    program_name: Option<String>,
+    program_keypair: Option<String>,
+    upgrade_authority: Option<String>,
+    program_id: Option<Pubkey>,
+    buffer: Option<Pubkey>,
+    max_len: Option<usize>,
+    verifiable: bool,
+    no_idl: bool,
+    make_final: bool,
+    solana_args: Vec<String>,
+) -> Result<()> {
+    // If explicit filepath provided, deploy single program
+    if program_filepath.is_some() {
+        return program_deploy(
+            cfg_override,
+            program_filepath,
+            program_name,
+            program_keypair,
+            upgrade_authority,
+            program_id,
+            buffer,
+            max_len,
+            no_idl,
+            make_final,
+            solana_args,
+        );
+    }
+
+    // Discover from workspace
+    let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
+        anyhow!(
+            "Not in anchor workspace. Either provide a program filepath or run from workspace."
+        )
+    })?;
+
+    let programs = cfg.get_programs(program_name.clone())?;
+
+    if programs.is_empty() {
+        return Err(anyhow!("No programs found in workspace"));
+    }
+
+    // Multiple programs and no specific program requested -> deploy all
+    if programs.len() > 1 && program_name.is_none() {
+        // Validate that single-program options aren't used
+        if program_id.is_some() {
+            return Err(anyhow!(
+                "Cannot specify --program-id when deploying multiple programs. Use --program-name to deploy a specific program."
+            ));
+        }
+        if buffer.is_some() {
+            return Err(anyhow!(
+                "Cannot specify --buffer when deploying multiple programs. Use --program-name to deploy a specific program."
+            ));
+        }
+        if upgrade_authority.is_some() {
+            return Err(anyhow!(
+                "Cannot specify --upgrade-authority when deploying multiple programs. Use --program-name to deploy a specific program."
+            ));
+        }
+        if max_len.is_some() {
+            return Err(anyhow!(
+                "Cannot specify --max-len when deploying multiple programs. Use --program-name to deploy a specific program."
+            ));
+        }
+
+        // Delegate to deploy_workspace
+        return deploy_workspace(
+            cfg_override,
+            None, // program_name - deploy all
+            program_keypair,
+            verifiable,
+            no_idl,
+            make_final,
+            solana_args,
+        );
+    }
+
+    // Single program or specific program requested -> deploy single
+    program_deploy(
+        cfg_override,
+        program_filepath,
+        program_name,
+        program_keypair,
+        upgrade_authority,
+        program_id,
+        buffer,
+        max_len,
+        no_idl,
+        make_final,
+        solana_args,
+    )
+}
+
+/// Deploy all programs in workspace using native implementation
+fn deploy_workspace(
+    cfg_override: &ConfigOverride,
+    program_name: Option<String>,
+    program_keypair: Option<String>,
+    verifiable: bool,
+    no_idl: bool,
+    make_final: bool,
+    solana_args: Vec<String>,
+) -> Result<()> {
+    crate::with_workspace(cfg_override, |cfg| {
+        let url = crate::cluster_url(cfg, &cfg.test_validator);
+        let keypair = cfg.provider.wallet.to_string();
+
+        println!("Deploying cluster: {url}");
+        println!("Upgrade authority: {keypair}");
+
+        let programs = cfg.get_programs(program_name.clone())?;
+
+        for program in programs {
+            let binary_path = program.binary_path(verifiable);
+
+            println!("\nDeploying program: {}", program.lib_name);
+
+            let program_keypair_filepath = match &program_keypair {
+                Some(path) => Some(path.clone()),
+                None => Some(program.keypair_file()?.path().display().to_string()),
+            };
+
+            // Use the native program_deploy implementation
+            program_deploy(
+                cfg_override,
+                Some(binary_path.display().to_string()),
+                None, // program_name - not needed since we have filepath
+                program_keypair_filepath,
+                None, // upgrade_authority - uses wallet
+                None, // program_id - derived from keypair
+                None, // buffer
+                None, // max_len
+                no_idl,
+                make_final,
+                solana_args.clone(),
+            )?;
+        }
+
+        println!("\nDeploy success");
+        Ok(())
+    })
+}
+
 // Main entry point for all program commands
 pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()> {
     match cmd {
@@ -53,8 +201,9 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             max_len,
             no_idl,
+            make_final,
             solana_args,
-        } => program_deploy(
+        } => process_deploy(
             cfg_override,
             program_filepath,
             program_name,
@@ -63,17 +212,21 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             program_id,
             buffer,
             max_len,
+            false, // verifiable
             no_idl,
+            make_final,
             solana_args,
         ),
         ProgramCommand::WriteBuffer {
             program_filepath,
+            program_name,
             buffer,
             buffer_authority,
             max_len,
         } => program_write_buffer(
             cfg_override,
             program_filepath,
+            program_name,
             buffer,
             buffer_authority,
             max_len,
@@ -106,23 +259,43 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
         } => program_show(cfg_override, account, get_programs, get_buffers, all),
         ProgramCommand::Upgrade {
             program_id,
+            program_filepath,
             buffer,
             upgrade_authority,
-        } => program_upgrade(cfg_override, program_id, buffer, upgrade_authority),
+            max_retries,
+            solana_args,
+        } => program_upgrade(
+            cfg_override,
+            program_id,
+            program_filepath,
+            buffer,
+            upgrade_authority,
+            max_retries,
+            solana_args,
+        ),
         ProgramCommand::Dump {
             account,
             output_file,
         } => program_dump(cfg_override, account, output_file),
         ProgramCommand::Close {
             account,
+            program_name,
             authority,
             recipient,
             bypass_warning,
-        } => program_close(cfg_override, account, authority, recipient, bypass_warning),
+        } => program_close(
+            cfg_override,
+            account,
+            program_name,
+            authority,
+            recipient,
+            bypass_warning,
+        ),
         ProgramCommand::Extend {
             program_id,
+            program_name,
             additional_bytes,
-        } => program_extend(cfg_override, program_id, additional_bytes),
+        } => program_extend(cfg_override, program_id, program_name, additional_bytes),
     }
 }
 
@@ -141,6 +314,7 @@ fn get_rpc_client_and_config(
     Ok((rpc_client, config))
 }
 
+/// Deploy a single program (either from explicit filepath or workspace) - private implementation
 #[allow(clippy::too_many_arguments)]
 fn program_deploy(
     cfg_override: &ConfigOverride,
@@ -152,6 +326,7 @@ fn program_deploy(
     buffer: Option<Pubkey>,
     max_len: Option<usize>,
     no_idl: bool,
+    make_final: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
@@ -163,21 +338,16 @@ fn program_deploy(
         filepath
     } else {
         // Discover from workspace
-        let cfg = Config::discover(cfg_override)?
-            .ok_or_else(|| anyhow!("Not in anchor workspace. Either provide a program filepath or run from workspace."))?;
+        let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
+            anyhow!(
+                "Not in anchor workspace. Either provide a program filepath or run from workspace."
+            )
+        })?;
 
         let programs = cfg.get_programs(program_name.clone())?;
 
         if programs.is_empty() {
             return Err(anyhow!("No programs found in workspace"));
-        }
-
-        if programs.len() > 1 && program_name.is_none() {
-            let program_names: Vec<_> = programs.iter().map(|p| p.lib_name.as_str()).collect();
-            return Err(anyhow!(
-                "Multiple programs found: {}. Use --program-name to specify which one to deploy",
-                program_names.join(", ")
-            ));
         }
 
         let program = &programs[0];
@@ -278,7 +448,7 @@ fn program_deploy(
             )?
         };
 
-        // Upgrade the program
+        // Upgrade the program (skip verification - already done above at line 324)
         upgrade_program(
             &rpc_client,
             &payer,
@@ -286,6 +456,7 @@ fn program_deploy(
             &buffer_pubkey,
             &upgrade_authority,
             priority_fee,
+            true, // skip_program_verification
         )?;
     } else {
         // New deployment
@@ -340,8 +511,6 @@ fn program_deploy(
         let idl_filepath = format!("target/idl/{}.json", program_name);
 
         if Path::new(&idl_filepath).exists() {
-            println!("Deploying IDL...");
-
             // Read and update the IDL with the program address
             let idl_content = fs::read_to_string(&idl_filepath)
                 .map_err(|e| anyhow!("Failed to read IDL file {}: {}", idl_filepath, e))?;
@@ -402,6 +571,31 @@ fn program_deploy(
                 idl_filepath
             );
         }
+    }
+
+    // Make program immutable if --final flag is set
+    if make_final {
+        println!("\nMaking program immutable...");
+
+        let set_authority_ix = loader_v3_instruction::set_upgrade_authority(
+            &program_id,
+            &upgrade_authority.pubkey(),
+            None, // None = remove upgrade authority = immutable
+        );
+
+        let recent_blockhash = rpc_client.get_latest_blockhash()?;
+        let tx = Transaction::new_signed_with_payer(
+            &[set_authority_ix],
+            Some(&payer.pubkey()),
+            &[&payer, &upgrade_authority],
+            recent_blockhash,
+        );
+
+        rpc_client
+            .send_and_confirm_transaction(&tx)
+            .map_err(|e| anyhow!("Failed to make program immutable: {}", e))?;
+
+        println!("✓ Program is now immutable (cannot be upgraded)");
     }
 
     Ok(())
@@ -540,8 +734,6 @@ fn deploy_program(
     max_data_len: usize,
     priority_fee: Option<u64>,
 ) -> Result<()> {
-    println!("Deploying program from buffer...");
-
     let program_id = program_keypair.pubkey();
     let mut deploy_ixs = loader_v3_instruction::deploy_with_max_program_len(
         &payer.pubkey(),
@@ -569,7 +761,6 @@ fn deploy_program(
         .send_and_confirm_transaction(&deploy_tx)
         .map_err(|e| anyhow!("Failed to deploy program: {}", e))?;
 
-    println!("Program deployed successfully!");
     Ok(())
 }
 
@@ -580,11 +771,12 @@ fn upgrade_program(
     buffer: &Pubkey,
     upgrade_authority: &Keypair,
     priority_fee: Option<u64>,
+    skip_program_verification: bool,
 ) -> Result<()> {
-    // Verify the program can be upgraded
-    // Note: This may be redundant if called from program_deploy,
-    // but necessary when called directly from program_upgrade command
-    verify_program_can_be_upgraded(rpc_client, program_id, upgrade_authority)?;
+    // Verify program can be upgraded (unless caller already verified)
+    if !skip_program_verification {
+        verify_program_can_be_upgraded(rpc_client, program_id, upgrade_authority)?;
+    }
 
     // Verify the buffer account is valid
     verify_buffer_account(rpc_client, buffer, &upgrade_authority.pubkey())?;
@@ -612,20 +804,53 @@ fn upgrade_program(
     let signature = rpc_client
         .send_and_confirm_transaction(&upgrade_tx)
         .map_err(|e| anyhow!("Failed to upgrade program: {}", e))?;
-    println!("Program upgraded successfully!");
     println!("Signature: {}", signature);
     Ok(())
 }
 
 fn program_write_buffer(
     cfg_override: &ConfigOverride,
-    program_filepath: String,
+    program_filepath: Option<String>,
+    program_name: Option<String>,
     _buffer: Option<String>,
     buffer_authority: Option<String>,
     max_len: Option<usize>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = config.wallet_kp()?;
+
+    // Determine the program filepath
+    let program_filepath = if let Some(filepath) = program_filepath {
+        filepath
+    } else {
+        // Discover from workspace
+        let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
+            anyhow!(
+                "Not in anchor workspace. Either provide a program filepath or run from workspace."
+            )
+        })?;
+
+        let programs = cfg.get_programs(program_name.clone())?;
+
+        if programs.is_empty() {
+            return Err(anyhow!("No programs found in workspace"));
+        }
+
+        if programs.len() > 1 && program_name.is_none() {
+            let program_names: Vec<_> = programs.iter().map(|p| p.lib_name.as_str()).collect();
+            return Err(anyhow!(
+                "Multiple programs found: {}. Use --program-name to specify which one to write",
+                program_names.join(", ")
+            ));
+        }
+
+        let program = &programs[0];
+        let binary_path = program.binary_path(false);
+
+        println!("Writing buffer for program: {}", program.lib_name);
+
+        binary_path.display().to_string()
+    };
 
     // Read program data
     let program_data = fs::read(&program_filepath)
@@ -936,11 +1161,24 @@ fn program_show(
 fn program_upgrade(
     cfg_override: &ConfigOverride,
     program_id: Pubkey,
-    buffer: Pubkey,
+    program_filepath: Option<String>,
+    buffer: Option<Pubkey>,
     upgrade_authority: Option<String>,
+    max_retries: u32,
+    solana_args: Vec<String>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = config.wallet_kp()?;
+
+    // Augment solana_args with recommended defaults if provided
+    let solana_args = if !solana_args.is_empty() {
+        crate::add_recommended_deployment_solana_args(&rpc_client, solana_args)?
+    } else {
+        solana_args
+    };
+
+    // Parse priority fee from solana_args
+    let priority_fee = parse_priority_fee_from_args(&solana_args);
 
     // Determine upgrade authority
     let upgrade_authority_keypair = if let Some(auth_path) = upgrade_authority {
@@ -952,14 +1190,98 @@ fn program_upgrade(
         payer.insecure_clone()
     };
 
-    upgrade_program(
-        &rpc_client,
-        &payer,
-        &program_id,
-        &buffer,
-        &upgrade_authority_keypair,
-        None, // No priority fee specified for standalone upgrade command
-    )?;
+    // Verify the program can be upgraded BEFORE doing expensive operations
+    // This prevents wasting time/money on buffer writes if the program is closed or immutable
+    verify_program_can_be_upgraded(&rpc_client, &program_id, &upgrade_authority_keypair)?;
+
+    // Case 1: Using existing buffer (no retries needed)
+    if let Some(buffer_pubkey) = buffer {
+        return upgrade_program(
+            &rpc_client,
+            &payer,
+            &program_id,
+            &buffer_pubkey,
+            &upgrade_authority_keypair,
+            priority_fee,
+            true, // skip_program_verification - already done above
+        );
+    }
+
+    // Case 2: Creating buffer from program file (with retries)
+    let program_filepath = program_filepath
+        .ok_or_else(|| anyhow!("Either --program-filepath or --buffer must be provided"))?;
+
+    let program_data = fs::read(&program_filepath)
+        .map_err(|e| anyhow!("Failed to read program file {}: {}", program_filepath, e))?;
+
+    // Retry loop for buffer creation and upgrade
+    for retry in 0..(1 + max_retries) {
+        if max_retries > 0 {
+            println!("\nAttempt {}/{}", retry + 1, max_retries + 1);
+        }
+
+        // Create a new buffer for each attempt
+        let buffer_keypair = Keypair::new();
+
+        // Write to buffer
+        let result = write_program_buffer(
+            &rpc_client,
+            &payer,
+            &program_data,
+            &upgrade_authority_keypair.pubkey(),
+            &buffer_keypair,
+            None, // max_len
+            CommitmentConfig::confirmed(),
+            RpcSendTransactionConfig {
+                skip_preflight: false,
+                preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
+                encoding: None,
+                max_retries: None,
+                min_context_slot: None,
+            },
+        );
+
+        let buffer_pubkey = match result {
+            Ok(pubkey) => pubkey,
+            Err(e) => {
+                println!("Buffer write failed: {}", e);
+                if retry < max_retries {
+                    println!("Retrying {} more time(s)...", max_retries - retry);
+                    continue;
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+
+        // Upgrade the program (skip verification - already done before retry loop)
+        let result = upgrade_program(
+            &rpc_client,
+            &payer,
+            &program_id,
+            &buffer_pubkey,
+            &upgrade_authority_keypair,
+            priority_fee,
+            true, // skip_program_verification
+        );
+
+        match result {
+            Ok(_) => {
+                if max_retries > 0 {
+                    println!("\nUpgrade success");
+                }
+                return Ok(());
+            }
+            Err(e) => {
+                println!("Upgrade failed: {}", e);
+                if retry < max_retries {
+                    println!("Retrying {} more time(s)...", max_retries - retry);
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
 
     Ok(())
 }
@@ -1013,19 +1335,58 @@ fn program_dump(cfg_override: &ConfigOverride, account: Pubkey, output_file: Str
     file.write_all(&program_data)
         .map_err(|e| anyhow!("Failed to write program data: {}", e))?;
 
-    println!("Program dumped successfully!");
+    println!("Program dumped to {}", output_file);
     Ok(())
 }
 
 fn program_close(
     cfg_override: &ConfigOverride,
-    account: Pubkey,
+    account: Option<Pubkey>,
+    program_name: Option<String>,
     authority: Option<String>,
     recipient: Option<Pubkey>,
     bypass_warning: bool,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = config.wallet_kp()?;
+
+    // Determine the account to close
+    let account = if let Some(acc) = account {
+        acc
+    } else if let Some(name) = program_name {
+        // Discover from workspace
+        let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
+            anyhow!(
+                "Not in anchor workspace. Either provide an account address or run from workspace."
+            )
+        })?;
+
+        let programs = cfg.get_programs(Some(name.clone()))?;
+
+        if programs.is_empty() {
+            return Err(anyhow!("Program '{}' not found in workspace", name));
+        }
+
+        let program = &programs[0];
+
+        // Get the program keypair to derive program ID
+        let keypair_path = program.keypair_file()?.path().display().to_string();
+        let program_keypair = Keypair::read_from_file(&keypair_path).map_err(|e| {
+            anyhow!(
+                "Failed to read program keypair from {}: {}",
+                keypair_path,
+                e
+            )
+        })?;
+
+        let program_id = program_keypair.pubkey();
+        println!("Closing program: {} ({})", program.lib_name, program_id);
+        program_id
+    } else {
+        return Err(anyhow!(
+            "Must provide either account address or --program-name"
+        ));
+    };
 
     // Fetch the account to determine its type
     let account_data = rpc_client
@@ -1116,14 +1477,15 @@ fn program_close(
         .send_and_confirm_transaction(&tx)
         .map_err(|e| anyhow!("Failed to close account: {}", e))?;
 
-    println!("{} account closed successfully!", account_type);
+    println!("{} account closed", account_type);
     println!("Reclaimed lamports sent to: {}", recipient_pubkey);
     Ok(())
 }
 
 fn program_extend(
     cfg_override: &ConfigOverride,
-    program_id: Pubkey,
+    program_id: Option<Pubkey>,
+    program_name: Option<String>,
     additional_bytes: usize,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
@@ -1132,6 +1494,40 @@ fn program_extend(
     if additional_bytes == 0 {
         return Err(anyhow!("Additional bytes must be greater than zero"));
     }
+
+    // Determine the program ID
+    let program_id = if let Some(id) = program_id {
+        id
+    } else if let Some(name) = program_name {
+        // Discover from workspace
+        let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
+            anyhow!("Not in anchor workspace. Either provide a program ID or run from workspace.")
+        })?;
+
+        let programs = cfg.get_programs(Some(name.clone()))?;
+
+        if programs.is_empty() {
+            return Err(anyhow!("Program '{}' not found in workspace", name));
+        }
+
+        let program = &programs[0];
+
+        // Get the program keypair to derive program ID
+        let keypair_path = program.keypair_file()?.path().display().to_string();
+        let program_keypair = Keypair::read_from_file(&keypair_path).map_err(|e| {
+            anyhow!(
+                "Failed to read program keypair from {}: {}",
+                keypair_path,
+                e
+            )
+        })?;
+
+        let program_id = program_keypair.pubkey();
+        println!("Extending program: {} ({})", program.lib_name, program_id);
+        program_id
+    } else {
+        return Err(anyhow!("Must provide either program ID or --program-name"));
+    };
 
     println!("Extending program data...");
     println!("Program ID: {}", program_id);
@@ -1212,7 +1608,7 @@ fn program_extend(
         .send_and_confirm_transaction(&tx)
         .map_err(|e| anyhow!("Failed to extend program: {}", e))?;
 
-    println!("Program extended successfully!");
+    println!("Program extended succesfully!");
     Ok(())
 }
 
