@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-access-control"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -71,7 +71,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-account"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anchor-syn",
  "bs58",
@@ -82,7 +82,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-constant"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -91,7 +91,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-error"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -100,7 +100,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-event"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anchor-syn",
  "proc-macro2",
@@ -110,7 +110,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-attribute-program"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anchor-lang-idl",
  "anchor-syn",
@@ -125,7 +125,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-accounts"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anchor-syn",
  "quote",
@@ -134,7 +134,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-serde"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anchor-syn",
  "borsh-derive-internal",
@@ -145,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-derive-space"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -154,7 +154,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-lang"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anchor-attribute-access-control",
  "anchor-attribute-account",
@@ -177,6 +177,7 @@ dependencies = [
  "solana-feature-gate-interface",
  "solana-instruction",
  "solana-instructions-sysvar",
+ "solana-invoke",
  "solana-loader-v3-interface 3.0.0",
  "solana-msg",
  "solana-program-entrypoint",
@@ -215,7 +216,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-spl"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anchor-lang",
  "mpl-token-metadata",
@@ -229,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "anchor-syn"
-version = "0.31.1"
+version = "0.32.1"
 dependencies = [
  "anyhow",
  "bs58",
@@ -1625,6 +1626,19 @@ dependencies = [
  "solana-sdk-ids",
  "solana-serialize-utils",
  "solana-sysvar-id",
+]
+
+[[package]]
+name = "solana-invoke"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58f5693c6de226b3626658377168b0184e94e8292ff16e3d31d4766e65627565"
+dependencies = [
+ "solana-account-info",
+ "solana-define-syscall",
+ "solana-instruction",
+ "solana-program-entrypoint",
+ "solana-stable-layout",
 ]
 
 [[package]]

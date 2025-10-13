@@ -22,7 +22,7 @@ use regex::{Regex, RegexBuilder};
 use rust_template::{ProgramTemplate, TestTemplate};
 use semver::{Version, VersionReq};
 use serde_json::{json, Map, Value as JsonValue};
-use solana_client::rpc_client::RpcClient;
+use solana_rpc_client::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::instruction::{AccountMeta, Instruction};
@@ -3624,12 +3624,55 @@ fn deploy(
 
                 // Upload the IDL to the cluster by default (unless no_idl is set)
                 if !no_idl {
-                    idl_init(
-                        cfg_override,
-                        program_id,
-                        idl_filepath.display().to_string(),
-                        None,
-                    )?;
+                    // Wait for the program to be confirmed before initializing IDL to prevent
+                    // race condition where the program isn't yet available in validator cache
+                    let client = create_client(&url);
+                    let max_retries = 5;
+                    let retry_delay = std::time::Duration::from_millis(500);
+                    let cache_delay = std::time::Duration::from_secs(2);
+
+                    println!("Waiting for program {} to be confirmed...", program_id);
+
+                    for attempt in 0..max_retries {
+                        if let Ok(account) = client.get_account(&program_id) {
+                            if account.executable {
+                                println!("Program confirmed on-chain");
+                                std::thread::sleep(cache_delay);
+                                break;
+                            }
+                        }
+
+                        if attempt == max_retries - 1 {
+                            return Err(anyhow!(
+                                "Timeout waiting for program {} to be confirmed",
+                                program_id
+                            ));
+                        }
+
+                        std::thread::sleep(retry_delay);
+                    }
+
+                    // Check if IDL account already exists
+                    let idl_address = IdlAccount::address(&program_id);
+                    let idl_account_exists = client.get_account(&idl_address).is_ok();
+
+                    if idl_account_exists {
+                        // IDL account exists, upgrade it
+                        idl_upgrade(
+                            cfg_override,
+                            program_id,
+                            idl_filepath.display().to_string(),
+                            None,
+                        )?;
+                    } else {
+                        // IDL account doesn't exist, create it
+                        idl_init(
+                            cfg_override,
+                            program_id,
+                            idl_filepath.display().to_string(),
+                            None,
+                        )?;
+                    }
                 }
             }
         }
@@ -3966,14 +4009,14 @@ fn airdrop(cfg_override: &ConfigOverride) -> Result<()> {
     let url = cfg_override
         .cluster
         .as_ref()
-        .unwrap_or_else(|| &Cluster::Devnet)
+        .unwrap_or(&Cluster::Devnet)
         .url();
     loop {
         let exit = std::process::Command::new("solana")
             .arg("airdrop")
             .arg("10")
             .arg("--url")
-            .arg(&url)
+            .arg(url)
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .output()
