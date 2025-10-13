@@ -45,12 +45,20 @@ mod keygen;
 mod program;
 pub mod rust_template;
 
+use keygen::get_default_wallet_path;
+
 // Version of the docker image.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DOCKER_BUILDER_VERSION: &str = VERSION;
 
 /// Default RPC port
 pub const DEFAULT_RPC_PORT: u16 = 8899;
+
+/// Default Solana mainnet RPC URL
+pub const DEFAULT_MAINNET_RPC_URL: &str = "https://api.mainnet-beta.solana.com";
+
+/// Default Solana wallet path relative to home directory
+pub const DEFAULT_WALLET_PATH: &str = ".config/solana/id.json";
 
 pub static AVM_HOME: LazyLock<PathBuf> = LazyLock::new(|| {
     if let Ok(avm_home) = std::env::var("AVM_HOME") {
@@ -4110,7 +4118,7 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
 
 fn cluster(_cmd: ClusterCommand) -> Result<()> {
     println!("Cluster Endpoints:\n");
-    println!("* Mainnet - https://api.mainnet-beta.solana.com");
+    println!("* Mainnet - {}", DEFAULT_MAINNET_RPC_URL);
     println!("* Devnet  - https://api.devnet.solana.com");
     println!("* Testnet - https://api.testnet.solana.com");
     Ok(())
@@ -4551,28 +4559,16 @@ fn get_cluster_and_wallet(cfg_override: &ConfigOverride) -> Result<(String, Stri
                 Err(_) => {
                     // Fallback to defaults if Solana CLI config doesn't exist
                     (
-                        "https://api.mainnet-beta.solana.com".to_string(),
-                        dirs::home_dir()
-                            .map(|home| {
-                                home.join(".config/solana/id.json")
-                                    .to_string_lossy()
-                                    .to_string()
-                            })
-                            .unwrap_or_else(|| "~/.config/solana/id.json".to_string()),
+                        DEFAULT_MAINNET_RPC_URL.to_string(),
+                        get_default_wallet_path()?,
                     )
                 }
             }
         } else {
             // If CONFIG_FILE is not available, use defaults
             (
-                "https://api.mainnet-beta.solana.com".to_string(),
-                dirs::home_dir()
-                    .map(|home| {
-                        home.join(".config/solana/id.json")
-                            .to_string_lossy()
-                            .to_string()
-                    })
-                    .unwrap_or_else(|| "~/.config/solana/id.json".to_string()),
+                DEFAULT_MAINNET_RPC_URL.to_string(),
+                get_default_wallet_path()?,
             )
         };
 
@@ -4592,13 +4588,7 @@ fn address(cfg_override: &ConfigOverride, _confirm_key: bool) -> Result<()> {
         Ok(Some(cfg)) => cfg.provider.wallet.to_string(),
         _ => {
             // Not in workspace - use default Solana CLI path
-            dirs::home_dir()
-                .map(|home| {
-                    home.join(".config/solana/id.json")
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .unwrap_or_else(|| "~/.config/solana/id.json".to_string())
+            get_default_wallet_path()?
         }
     };
 

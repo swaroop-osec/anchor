@@ -17,7 +17,7 @@ use solana_sdk::{
     signer::EncodableKey,
 };
 
-use crate::{config::ConfigOverride, get_keypair, KeygenCommand};
+use crate::{config::ConfigOverride, get_keypair, KeygenCommand, DEFAULT_WALLET_PATH};
 
 /// Secure password input with asterisk visual feedback
 /// - show_spaces: if true, spaces are visible (for seed phrases); if false, all characters are asterisks (for passphrases)
@@ -69,6 +69,15 @@ fn print_step(step: &str) {
     println!("✓ {}", step);
 }
 
+/// Get the default wallet path from the home directory
+pub fn get_default_wallet_path() -> Result<String> {
+    let Some(home) = home_dir() else {
+        bail!("Unable to determine home directory for default wallet path");
+    };
+
+    Ok(home.join(DEFAULT_WALLET_PATH).to_string_lossy().to_string())
+}
+
 pub fn keygen(_cfg_override: &ConfigOverride, cmd: KeygenCommand) -> Result<()> {
     match cmd {
         KeygenCommand::New {
@@ -97,13 +106,10 @@ fn keygen_new(
     word_count: usize,
 ) -> Result<()> {
     // Determine output file path
-    let outfile_path = outfile.unwrap_or_else(|| {
-        let mut path = home_dir().expect("home directory");
-        path.push(".config");
-        path.push("solana");
-        path.push("id.json");
-        path.to_str().unwrap().to_string()
-    });
+    let outfile_path = match outfile {
+        Some(path) => path,
+        None => get_default_wallet_path()?,
+    };
 
     // Check for overwrite
     if Path::new(&outfile_path).exists() {
@@ -212,13 +218,10 @@ fn keygen_new(
 }
 
 fn keygen_pubkey(keypair_path: Option<String>) -> Result<()> {
-    let path = keypair_path.unwrap_or_else(|| {
-        let mut p = home_dir().expect("home directory");
-        p.push(".config");
-        p.push("solana");
-        p.push("id.json");
-        p.to_str().unwrap().to_string()
-    });
+    let path = match keypair_path {
+        Some(path) => path,
+        None => get_default_wallet_path()?,
+    };
 
     let keypair = get_keypair(&path)?;
     println!("{}", keypair.pubkey());
@@ -235,13 +238,10 @@ fn keygen_recover(
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     // Determine output file path
-    let outfile_path = outfile.unwrap_or_else(|| {
-        let mut path = home_dir().expect("home directory");
-        path.push(".config");
-        path.push("solana");
-        path.push("id.json");
-        path.to_str().unwrap().to_string()
-    });
+    let outfile_path = match outfile {
+        Some(path) => path,
+        None => get_default_wallet_path()?,
+    };
 
     // Check for overwrite
     if Path::new(&outfile_path).exists() {
@@ -324,13 +324,10 @@ fn keygen_verify(pubkey: Pubkey, keypair_path: Option<String>) -> Result<()> {
     println!("\n🔍 Verifying keypair");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    let path = keypair_path.unwrap_or_else(|| {
-        let mut p = home_dir().expect("home directory");
-        p.push(".config");
-        p.push("solana");
-        p.push("id.json");
-        p.to_str().unwrap().to_string()
-    });
+    let path = match keypair_path {
+        Some(path) => path,
+        None => get_default_wallet_path()?,
+    };
 
     print_step(&format!("Loading keypair from {}", path));
     let keypair = get_keypair(&path)?;
