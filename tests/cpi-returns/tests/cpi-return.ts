@@ -28,7 +28,12 @@ describe("CPI return", () => {
 
   const cpiReturn = anchor.web3.Keypair.generate();
 
-  const confirmOptions: ConfirmOptions = { commitment: "confirmed" };
+  const confirmOptions: ConfirmOptions = {
+    commitment: "confirmed",
+    preflightCommitment: "confirmed",
+    skipPreflight: true,
+    maxRetries: 3,
+  };
 
   it("can initialize", async () => {
     await calleeProgram.methods
@@ -39,7 +44,7 @@ describe("CPI return", () => {
         systemProgram: SystemProgram.programId,
       })
       .signers([cpiReturn])
-      .rpc();
+      .rpc(confirmOptions);
   });
 
   it("can return u64 from a cpi", async () => {
@@ -52,6 +57,7 @@ describe("CPI return", () => {
       .rpc(confirmOptions);
     let t = await provider.connection.getTransaction(tx, {
       commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
     });
 
     const [key, data, buffer] = getReturnLog(t);
@@ -93,6 +99,7 @@ describe("CPI return", () => {
       .rpc(confirmOptions);
     let t = await provider.connection.getTransaction(tx, {
       commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
     });
 
     const [key, data, buffer] = getReturnLog(t);
@@ -131,6 +138,7 @@ describe("CPI return", () => {
       .rpc(confirmOptions);
     let t = await provider.connection.getTransaction(tx, {
       commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
     });
 
     const [key, data, buffer] = getReturnLog(t);
