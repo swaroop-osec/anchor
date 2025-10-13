@@ -76,9 +76,7 @@ pub fn process_deploy(
 
     // Discover from workspace
     let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
-        anyhow!(
-            "Not in anchor workspace. Either provide a program filepath or run from workspace."
-        )
+        anyhow!("Not in anchor workspace. Either provide a program filepath or run from workspace.")
     })?;
 
     let programs = cfg.get_programs(program_name.clone())?;
