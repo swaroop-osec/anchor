@@ -7,7 +7,10 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
-use crate::config::{Config, ConfigOverride};
+use crate::{
+    config::{Config, ConfigOverride},
+    DEFAULT_MAINNET_RPC_URL,
+};
 
 #[derive(Debug, Parser)]
 pub struct ShowAccountCommand {
@@ -33,7 +36,7 @@ pub fn show_account(cfg_override: &ConfigOverride, cmd: ShowAccountCommand) -> R
             if let Some(ref cluster) = cfg_override.cluster {
                 cluster.url().to_string()
             } else {
-                "https://api.mainnet-beta.solana.com".to_string()
+                DEFAULT_MAINNET_RPC_URL.to_string()
             }
         }
     };
