@@ -3625,7 +3625,10 @@ fn stream_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<LogStream
                 ) {
                     Ok(result) => result,
                     Err(e) => {
-                        eprintln!("Warning: Failed to subscribe to logs for program {}: {}", &entry.address, e);
+                        eprintln!(
+                            "Warning: Failed to subscribe to logs for program {}: {}",
+                            &entry.address, e
+                        );
                         continue;
                     }
                 };
