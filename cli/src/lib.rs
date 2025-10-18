@@ -3300,7 +3300,7 @@ fn run_test_suite(
         }
     }
 
-    // Explicitly shutdown log streams - closes WebSocket subscriptions and waits for threads
+    // Explicitly shutdown log streams - closes WebSocket subscriptions
     if let Some(log_streams) = log_streams {
         for handle in log_streams {
             handle.shutdown();
@@ -3501,18 +3501,54 @@ fn validator_flags(
 /// Call `shutdown()` to cleanly stop the thread.
 struct LogStreamHandle {
     subscription: PubsubClientSubscription<RpcResponse<RpcLogsResponse>>,
-    thread: std::thread::JoinHandle<()>,
 }
 
 impl LogStreamHandle {
     /// Explicitly shutdown the log stream
     fn shutdown(self) {
-        // Drop subscription to close WebSocket
-        drop(self.subscription);
-
-        // Wait for thread to finish
-        let _ = self.thread.join();
+        // Send unsubscribe in a background thread to avoid blocking
+        // PubsubClientSubscription::send_unsubscribe() can block indefinitely if WebSocket is stuck
+        // The receiver threads will exit when the subscription closes
+        std::thread::spawn(move || {
+            let _ = self.subscription.send_unsubscribe();
+        });
     }
+}
+
+/// Spawns a thread to receive logs from a subscription and write them to a file
+fn spawn_log_receiver_thread<R>(receiver: R, log_file_path: PathBuf)
+where
+    R: IntoIterator<Item = RpcResponse<RpcLogsResponse>> + Send + 'static,
+{
+    std::thread::spawn(move || {
+        if let Ok(mut file) = File::create(&log_file_path) {
+            for response in receiver {
+                let _ = writeln!(
+                    file,
+                    "Transaction executed in slot {}:",
+                    response.context.slot
+                );
+                let _ = writeln!(file, "  Signature: {}", response.value.signature);
+                let _ = writeln!(
+                    file,
+                    "  Status: {}",
+                    response
+                        .value
+                        .err
+                        .map(|err| err.to_string())
+                        .unwrap_or_else(|| "Ok".to_string())
+                );
+                let _ = writeln!(file, "  Log Messages:");
+                for log in response.value.logs {
+                    let _ = writeln!(file, "    {}", log);
+                }
+                let _ = writeln!(file); // Empty line between transactions
+                let _ = file.flush();
+            }
+        } else {
+            eprintln!("Failed to create log file: {:?}", log_file_path);
+        }
+    });
 }
 
 fn stream_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<LogStreamHandle>> {
@@ -3532,8 +3568,8 @@ fn stream_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<LogStream
             .unwrap_or(DEFAULT_RPC_PORT);
 
         let ws_port = rpc_port + WEBSOCKET_PORT_OFFSET;
-
-        format!("ws://127.0.0.1:{}", ws_port)
+        let url = format!("ws://127.0.0.1:{}", ws_port);
+        url
     } else {
         // Remote cluster: use same URL but replace http(s) with ws(s)
         rpc_url
@@ -3575,37 +3611,12 @@ fn stream_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<LogStream
                 continue;
             }
         };
+
         // Spawn thread to write logs to file
-        let thread = std::thread::spawn(move || {
-            if let Ok(mut file) = File::create(&log_file_path) {
-                while let Ok(response) = receiver.recv() {
-                    let _ = writeln!(
-                        file,
-                        "Transaction executed in slot {}:",
-                        response.context.slot
-                    );
-                    let _ = writeln!(file, "  Signature: {}", response.value.signature);
-                    let _ = writeln!(
-                        file,
-                        "  Status: {}",
-                        response
-                            .value
-                            .err
-                            .map(|err| err.to_string())
-                            .unwrap_or_else(|| "Ok".to_string())
-                    );
-                    let _ = writeln!(file, "  Log Messages:");
-                    for log in response.value.logs {
-                        let _ = writeln!(file, "    {}", log);
-                    }
-                    let _ = writeln!(file); // Empty line between transactions
-                    let _ = file.flush();
-                }
-            }
-        });
+        spawn_log_receiver_thread(receiver, log_file_path);
+
         handles.push(LogStreamHandle {
             subscription: client,
-            thread,
         });
     }
 
@@ -3626,7 +3637,7 @@ fn stream_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<LogStream
                     Ok(result) => result,
                     Err(e) => {
                         eprintln!(
-                            "Warning: Failed to subscribe to logs for program {}: {}",
+                            "Warning: Failed to subscribe to logs for genesis program {}: {}",
                             &entry.address, e
                         );
                         continue;
@@ -3634,37 +3645,10 @@ fn stream_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<LogStream
                 };
 
                 // Spawn thread to write logs to file
-                let thread = std::thread::spawn(move || {
-                    if let Ok(mut file) = File::create(&log_file_path) {
-                        while let Ok(response) = receiver.recv() {
-                            let _ = writeln!(
-                                file,
-                                "Transaction executed in slot {}:",
-                                response.context.slot
-                            );
-                            let _ = writeln!(file, "  Signature: {}", response.value.signature);
-                            let _ = writeln!(
-                                file,
-                                "  Status: {}",
-                                response
-                                    .value
-                                    .err
-                                    .map(|err| err.to_string())
-                                    .unwrap_or_else(|| "Ok".to_string())
-                            );
-                            let _ = writeln!(file, "  Log Messages:");
-                            for log in response.value.logs {
-                                let _ = writeln!(file, "    {}", log);
-                            }
-                            let _ = writeln!(file); // Empty line between transactions
-                            let _ = file.flush();
-                        }
-                    }
-                });
+                spawn_log_receiver_thread(receiver, log_file_path);
 
                 handles.push(LogStreamHandle {
                     subscription: client,
-                    thread,
                 });
             }
         }
@@ -4423,7 +4407,13 @@ fn localnet(
         // Setup log reader - kept alive until end of scope
         let url = test_validator_rpc_url(&cfg.test_validator);
         let log_streams = match stream_logs(cfg, &url) {
-            Ok(streams) => Some(streams),
+            Ok(streams) => {
+                println!(
+                    "Log streams set up successfully ({} streams)",
+                    streams.len()
+                );
+                Some(streams)
+            }
             Err(e) => {
                 eprintln!("Warning: Failed to setup program log streaming: {:#}", e);
                 eprintln!("  Program logs will still be visible in the validator output.");
@@ -4442,7 +4432,7 @@ fn localnet(
             );
         }
 
-        // Explicitly shutdown log streams - closes WebSocket subscriptions and waits for threads
+        // Explicitly shutdown log streams - closes WebSocket subscriptions
         if let Some(log_streams) = log_streams {
             for handle in log_streams {
                 handle.shutdown();
