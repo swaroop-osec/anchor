@@ -30,7 +30,7 @@ use std::{
 };
 
 use crate::{
-    config::{Config, WithPath},
+    config::{Config, Manifest, Program, WithPath},
     ConfigOverride, ProgramCommand,
 };
 
@@ -39,6 +39,141 @@ fn parse_priority_fee_from_args(args: &[String]) -> Option<u64> {
     args.windows(2)
         .find(|pair| pair[0] == "--with-compute-unit-price")
         .and_then(|pair| pair[1].parse().ok())
+}
+
+/// Discover Solana programs from a non-Anchor Cargo workspace
+pub fn discover_solana_programs(program_name: Option<String>) -> Result<Vec<Program>> {
+    let current_dir = std::env::current_dir()?;
+    let mut program_paths = Vec::new();
+
+    // Check if current directory has Cargo.toml
+    let cargo_toml_path = current_dir.join("Cargo.toml");
+    if cargo_toml_path.exists() {
+        let cargo_content = fs::read_to_string(&cargo_toml_path)?;
+        let cargo_toml: toml::Value = toml::from_str(&cargo_content)?;
+
+        // Check if it's a workspace Cargo.toml
+        if let Some(workspace) = cargo_toml.get("workspace") {
+            // It's a workspace - iterate over members
+            if let Some(members) = workspace.get("members").and_then(|m| m.as_array()) {
+                for member in members {
+                    if let Some(member_path) = member.as_str() {
+                        let full_path = current_dir.join(member_path);
+                        if full_path.is_dir() && full_path.join("Cargo.toml").exists() {
+                            program_paths.push(full_path);
+                        }
+                    }
+                }
+            }
+        } else if is_solana_program(&current_dir)? {
+            // It's a single program Cargo.toml with cdylib - use current directory
+            program_paths.push(current_dir.clone());
+        }
+    }
+
+    // If no programs found yet, fallback to looking in programs/ directory
+    if program_paths.is_empty() {
+        let programs_dir = current_dir.join("programs");
+        if programs_dir.is_dir() {
+            for entry in fs::read_dir(programs_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() && path.join("Cargo.toml").exists() {
+                    program_paths.push(path);
+                }
+            }
+        }
+    }
+
+    // Filter to only Solana programs and build Program structs
+    let mut programs = Vec::new();
+    for path in program_paths {
+        if !is_solana_program(&path)? {
+            continue;
+        }
+
+        let cargo = Manifest::from_path(path.join("Cargo.toml"))?;
+        let lib_name = cargo.lib_name()?;
+
+        // Check if this is the program we're looking for (if name specified)
+        if let Some(ref name) = program_name {
+            let matches = *name == lib_name || *name == path.file_name().unwrap().to_str().unwrap();
+            if !matches {
+                continue;
+            }
+        }
+
+        // Try to read IDL if it exists (will be None for non-Anchor programs)
+        let idl_filepath = current_dir
+            .join("target")
+            .join("idl")
+            .join(&lib_name)
+            .with_extension("json");
+        let idl = fs::read(idl_filepath)
+            .ok()
+            .and_then(|bytes| serde_json::from_reader(&*bytes).ok());
+
+        programs.push(Program {
+            lib_name,
+            path: path.canonicalize()?,
+            idl,
+        });
+    }
+
+    Ok(programs)
+}
+
+/// Check if a given Cargo project is a Solana program
+/// A deployable Solana program must have crate-type = ["cdylib", ...]
+fn is_solana_program(path: &Path) -> Result<bool> {
+    let cargo_path = path.join("Cargo.toml");
+    if !cargo_path.exists() {
+        return Ok(false);
+    }
+
+    let cargo_content = fs::read_to_string(&cargo_path)?;
+    let cargo_toml: toml::Value = toml::from_str(&cargo_content)?;
+
+    // Check if it has cdylib (required for deployable Solana programs)
+    // This is the definitive marker - libraries and client tools won't have this
+    if let Some(lib) = cargo_toml.get("lib") {
+        if let Some(crate_type) = lib.get("crate-type").and_then(|ct| ct.as_array()) {
+            if crate_type.iter().any(|ct| ct.as_str() == Some("cdylib")) {
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(false)
+}
+
+/// Get programs from workspace (Anchor or non-Anchor)
+pub fn get_programs_from_workspace(
+    cfg_override: &ConfigOverride,
+    program_name: Option<String>,
+) -> Result<Vec<Program>> {
+    // First try Anchor workspace
+    if let Some(cfg) = Config::discover(cfg_override)? {
+        return cfg.get_programs(program_name);
+    }
+
+    // Fallback to non-Anchor Solana workspace
+    let programs = discover_solana_programs(program_name.clone())?;
+
+    if programs.is_empty() {
+        if let Some(name) = program_name {
+            return Err(anyhow!(
+                "Program '{}' not found. Make sure you're in a Solana workspace (Anchor or non-Anchor) with programs in the programs/ directory, or provide a program filepath.",
+                name
+            ));
+        } else {
+            return Err(anyhow!(
+                "No Solana programs found. Make sure you're in a Solana workspace (Anchor or non-Anchor) with programs in the programs/ directory, or provide a program filepath."
+            ));
+        }
+    }
+
+    Ok(programs)
 }
 
 /// Public entry point for deploying programs - validates and routes to appropriate handler
@@ -74,16 +209,8 @@ pub fn process_deploy(
         );
     }
 
-    // Discover from workspace
-    let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
-        anyhow!("Not in anchor workspace. Either provide a program filepath or run from workspace.")
-    })?;
-
-    let programs = cfg.get_programs(program_name.clone())?;
-
-    if programs.is_empty() {
-        return Err(anyhow!("No programs found in workspace"));
-    }
+    // Discover from workspace (Anchor or non-Anchor)
+    let programs = get_programs_from_workspace(cfg_override, program_name.clone())?;
 
     // Multiple programs and no specific program requested -> deploy all
     if programs.len() > 1 && program_name.is_none() {
@@ -147,44 +274,56 @@ fn deploy_workspace(
     make_final: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
-    crate::with_workspace(cfg_override, |cfg| {
-        let url = crate::cluster_url(cfg, &cfg.test_validator);
-        let keypair = cfg.provider.wallet.to_string();
+    // Get programs from workspace (Anchor or non-Anchor)
+    let programs = get_programs_from_workspace(cfg_override, program_name.clone())?;
 
+    // For Cargo workspaces, we don't have cluster/wallet in config, so just print basic info
+    if let Ok(Some(cfg)) = Config::discover(cfg_override) {
+        // Anchor workspace - we have cluster/wallet config
+        let url = crate::cluster_url(&cfg, &cfg.test_validator);
+        let keypair = cfg.provider.wallet.to_string();
         println!("Deploying cluster: {url}");
         println!("Upgrade authority: {keypair}");
+    } else {
+        // Cargo workspace - cluster/wallet will come from Solana CLI config or flags
+        println!("Deploying programs from Cargo workspace");
+    }
 
-        let programs = cfg.get_programs(program_name.clone())?;
+    for program in programs {
+        let binary_path = program.binary_path(verifiable);
 
-        for program in programs {
-            let binary_path = program.binary_path(verifiable);
+        println!("\nDeploying program: {}", program.lib_name);
 
-            println!("\nDeploying program: {}", program.lib_name);
+        let program_keypair_filepath = match &program_keypair {
+            Some(path) => Some(path.clone()),
+            None => {
+                // Try to find program keypair
+                let keypair_path = program
+                    .keypair_file()
+                    .ok()
+                    .map(|kp| kp.path().display().to_string());
+                keypair_path
+            }
+        };
 
-            let program_keypair_filepath = match &program_keypair {
-                Some(path) => Some(path.clone()),
-                None => Some(program.keypair_file()?.path().display().to_string()),
-            };
+        // Use the native program_deploy implementation
+        program_deploy(
+            cfg_override,
+            Some(binary_path.display().to_string()),
+            None, // program_name - not needed since we have filepath
+            program_keypair_filepath,
+            None, // upgrade_authority - uses wallet
+            None, // program_id - derived from keypair
+            None, // buffer
+            None, // max_len
+            no_idl,
+            make_final,
+            solana_args.clone(),
+        )?;
+    }
 
-            // Use the native program_deploy implementation
-            program_deploy(
-                cfg_override,
-                Some(binary_path.display().to_string()),
-                None, // program_name - not needed since we have filepath
-                program_keypair_filepath,
-                None, // upgrade_authority - uses wallet
-                None, // program_id - derived from keypair
-                None, // buffer
-                None, // max_len
-                no_idl,
-                make_final,
-                solana_args.clone(),
-            )?;
-        }
-
-        println!("\nDeploy success");
-        Ok(())
-    })
+    println!("\nDeploy success");
+    Ok(())
 }
 
 // Main entry point for all program commands
@@ -299,17 +438,29 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
 
 fn get_rpc_client_and_config(
     cfg_override: &ConfigOverride,
-) -> Result<(RpcClient, WithPath<Config>)> {
-    let config = Config::discover(cfg_override)?.ok_or_else(|| {
-        anyhow!(
-            "Not in anchor workspace. Run `anchor init` or provide cluster with --provider.cluster"
-        )
-    })?;
+) -> Result<(RpcClient, Option<WithPath<Config>>)> {
+    // Try to discover Anchor config first
+    let config = Config::discover(cfg_override)?;
 
-    let url = config.provider.cluster.url().to_string();
+    let (url, _wallet_path) = crate::get_cluster_and_wallet(cfg_override)?;
     let rpc_client = RpcClient::new_with_commitment(url, CommitmentConfig::confirmed());
 
     Ok((rpc_client, config))
+}
+
+/// Get payer keypair from either Anchor config or Solana CLI config
+fn get_payer_keypair(
+    cfg_override: &ConfigOverride,
+    config: &Option<WithPath<Config>>,
+) -> Result<Keypair> {
+    if let Some(cfg) = config {
+        cfg.wallet_kp()
+    } else {
+        // No Anchor config - get wallet from Solana CLI config
+        let (_url, wallet_path) = crate::get_cluster_and_wallet(cfg_override)?;
+        Keypair::read_from_file(&wallet_path)
+            .map_err(|e| anyhow!("Failed to read wallet keypair from {}: {}", wallet_path, e))
+    }
 }
 
 /// Deploy a single program (either from explicit filepath or workspace) - private implementation
@@ -328,25 +479,15 @@ fn program_deploy(
     solana_args: Vec<String>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
-    let payer = config.wallet_kp()?;
+    let payer = get_payer_keypair(cfg_override, &config)?;
 
     // Determine the program filepath
     let program_filepath = if let Some(filepath) = program_filepath {
         // Explicit filepath provided
         filepath
     } else {
-        // Discover from workspace
-        let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
-            anyhow!(
-                "Not in anchor workspace. Either provide a program filepath or run from workspace."
-            )
-        })?;
-
-        let programs = cfg.get_programs(program_name.clone())?;
-
-        if programs.is_empty() {
-            return Err(anyhow!("No programs found in workspace"));
-        }
+        // Discover from workspace (Anchor or non-Anchor)
+        let programs = get_programs_from_workspace(cfg_override, program_name.clone())?;
 
         let program = &programs[0];
         let binary_path = program.binary_path(false); // false = not verifiable build
@@ -815,24 +956,14 @@ fn program_write_buffer(
     max_len: Option<usize>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
-    let payer = config.wallet_kp()?;
+    let payer = get_payer_keypair(cfg_override, &config)?;
 
     // Determine the program filepath
     let program_filepath = if let Some(filepath) = program_filepath {
         filepath
     } else {
-        // Discover from workspace
-        let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
-            anyhow!(
-                "Not in anchor workspace. Either provide a program filepath or run from workspace."
-            )
-        })?;
-
-        let programs = cfg.get_programs(program_name.clone())?;
-
-        if programs.is_empty() {
-            return Err(anyhow!("No programs found in workspace"));
-        }
+        // Discover from workspace (Anchor or non-Anchor)
+        let programs = get_programs_from_workspace(cfg_override, program_name.clone())?;
 
         if programs.len() > 1 && program_name.is_none() {
             let program_names: Vec<_> = programs.iter().map(|p| p.lib_name.as_str()).collect();
@@ -890,7 +1021,7 @@ fn program_set_buffer_authority(
     new_buffer_authority: Pubkey,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
-    let payer = config.wallet_kp()?;
+    let payer = get_payer_keypair(cfg_override, &config)?;
 
     println!("Setting buffer authority...");
     println!("Buffer: {}", buffer);
@@ -928,7 +1059,7 @@ fn program_set_upgrade_authority(
     current_upgrade_authority: Option<String>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
-    let payer = config.wallet_kp()?;
+    let payer = get_payer_keypair(cfg_override, &config)?;
 
     // Validate that this is a Program account, not ProgramData
     let program_account = rpc_client
@@ -1166,7 +1297,7 @@ fn program_upgrade(
     solana_args: Vec<String>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
-    let payer = config.wallet_kp()?;
+    let payer = get_payer_keypair(cfg_override, &config)?;
 
     // Augment solana_args with recommended defaults if provided
     let solana_args = if !solana_args.is_empty() {
@@ -1346,24 +1477,14 @@ fn program_close(
     bypass_warning: bool,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
-    let payer = config.wallet_kp()?;
+    let payer = get_payer_keypair(cfg_override, &config)?;
 
     // Determine the account to close
     let account = if let Some(acc) = account {
         acc
     } else if let Some(name) = program_name {
-        // Discover from workspace
-        let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
-            anyhow!(
-                "Not in anchor workspace. Either provide an account address or run from workspace."
-            )
-        })?;
-
-        let programs = cfg.get_programs(Some(name.clone()))?;
-
-        if programs.is_empty() {
-            return Err(anyhow!("Program '{}' not found in workspace", name));
-        }
+        // Discover from workspace (Anchor or non-Anchor)
+        let programs = get_programs_from_workspace(cfg_override, Some(name.clone()))?;
 
         let program = &programs[0];
 
@@ -1487,7 +1608,7 @@ fn program_extend(
     additional_bytes: usize,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
-    let payer = config.wallet_kp()?;
+    let payer = get_payer_keypair(cfg_override, &config)?;
 
     if additional_bytes == 0 {
         return Err(anyhow!("Additional bytes must be greater than zero"));
@@ -1497,16 +1618,8 @@ fn program_extend(
     let program_id = if let Some(id) = program_id {
         id
     } else if let Some(name) = program_name {
-        // Discover from workspace
-        let cfg = Config::discover(cfg_override)?.ok_or_else(|| {
-            anyhow!("Not in anchor workspace. Either provide a program ID or run from workspace.")
-        })?;
-
-        let programs = cfg.get_programs(Some(name.clone()))?;
-
-        if programs.is_empty() {
-            return Err(anyhow!("Program '{}' not found in workspace", name));
-        }
+        // Discover from workspace (Anchor or non-Anchor)
+        let programs = get_programs_from_workspace(cfg_override, Some(name.clone()))?;
 
         let program = &programs[0];
 
