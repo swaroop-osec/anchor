@@ -59,6 +59,7 @@ pub use anchor_attribute_program::{declare_program, instruction, program};
 pub use anchor_derive_accounts::Accounts;
 pub use anchor_derive_serde::{AnchorDeserialize, AnchorSerialize};
 pub use anchor_derive_space::InitSpace;
+pub use const_crypto::ed25519::derive_program_address;
 
 /// Borsh is the default serialization format for instructions and accounts.
 pub use borsh::de::BorshDeserialize as AnchorDeserialize;
@@ -171,6 +172,12 @@ pub use idl::IdlBuild;
 pub use anchor_attribute_program::interface;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
+
+// Deprecated message for AccountInfo usage in Accounts struct
+#[deprecated(
+    note = "Use `UncheckedAccount` instead of `AccountInfo` for safer unchecked accounts."
+)]
+pub fn deprecated_account_info_usage() {}
 
 /// A data structure of validated accounts that can be deserialized from the
 /// input to a Solana program. Implementations of this trait should perform any
