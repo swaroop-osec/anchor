@@ -1,7 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
+import BN from "bn.js";
 import { assert } from "chai";
-import pkg from "@coral-xyz/anchor";
-const { BN } = pkg;
 import type { NewIdl } from "../target/types/new_idl";
 
 describe("New IDL", () => {
