@@ -1317,8 +1317,10 @@ pub fn build(
     check_anchor_version(&cfg).ok();
     check_deps(&cfg).ok();
 
-    // Check for program ID mismatches before building
-    check_program_id_mismatch(&cfg, program_name.clone())?;
+    // Check for program ID mismatches before building (skip if --skip-lint is used)
+    if !skip_lint {
+        check_program_id_mismatch(&cfg, program_name.clone())?;
+    }
 
     let idl_out = match idl {
         Some(idl) => Some(PathBuf::from(idl)),
