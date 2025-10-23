@@ -1317,6 +1317,9 @@ pub fn build(
     check_anchor_version(&cfg).ok();
     check_deps(&cfg).ok();
 
+    // Check for program ID mismatches before building
+    check_program_id_mismatch(&cfg, program_name.clone())?;
+
     let idl_out = match idl {
         Some(idl) => Some(PathBuf::from(idl)),
         None => Some(cfg_parent.join("target").join("idl")),
@@ -4234,6 +4237,51 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
 
         Ok(())
     })
+}
+
+/// Check if there's a mismatch between the program keypair and the `declare_id!` in the source code.
+/// Returns an error if a mismatch is detected, prompting the user to run `anchor keys sync`.
+fn check_program_id_mismatch(cfg: &WithPath<Config>, program_name: Option<String>) -> Result<()> {
+    let declare_id_regex = RegexBuilder::new(r#"^(([\w]+::)*)declare_id!\("(\w*)"\)"#)
+        .multi_line(true)
+        .build()
+        .unwrap();
+
+    for program in cfg.get_programs(program_name)? {
+        // Get the pubkey from the keypair file
+        let actual_program_id = program.pubkey()?.to_string();
+
+        // Check declaration in program files
+        let src_path = program.path.join("src");
+        let files_to_check = vec![src_path.join("lib.rs"), src_path.join("id.rs")];
+
+        for path in files_to_check {
+            let content = match fs::read_to_string(&path) {
+                Ok(content) => content,
+                Err(_) => continue,
+            };
+
+            let incorrect_program_id = declare_id_regex
+                .captures(&content)
+                .and_then(|captures| captures.get(3))
+                .filter(|program_id_match| program_id_match.as_str() != actual_program_id);
+
+            if let Some(program_id_match) = incorrect_program_id {
+                let declared_id = program_id_match.as_str();
+                return Err(anyhow!(
+                    "Program ID mismatch detected for program '{}':\n  \
+                    Keypair file has: {}\n  \
+                    Source code has:  {}\n\n\
+                    Please run 'anchor keys sync' to update the program ID in your source code.",
+                    program.lib_name,
+                    actual_program_id,
+                    declared_id
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn localnet(
