@@ -4274,7 +4274,7 @@ fn check_program_id_mismatch(cfg: &WithPath<Config>, program_name: Option<String
                     "Program ID mismatch detected for program '{}':\n  \
                     Keypair file has: {}\n  \
                     Source code has:  {}\n\n\
-                    Please run 'anchor keys sync' to update the program ID in your source code.",
+                    Please run 'anchor keys sync' to update the program ID in your source code or use the '--skip-lint' flag to skip the lint checks.",
                     program.lib_name,
                     actual_program_id,
                     declared_id
