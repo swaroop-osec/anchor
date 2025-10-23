@@ -12,7 +12,29 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+### Fixes
+
+### Breaking
+
+## [0.32.1] - 2025-10-09
+
+### Features
+
+### Fixes
+
+- lang: Fix deprecation warnings on alloc and add solana-program to prelude
+  ([#3975](https://github.com/solana-foundation/anchor/pull/3975)).
+- cli: Fix race condition that could happen when deploying a program 
+  ([#3976](https://github.com/solana-foundation/anchor/pull/3976)).
+
+### Breaking
+
+## [0.32.0] - 2025-10-08
+
+### Features
+
 - lang: Add `#[error]` attribute to `declare_program!` ([#3757](https://github.com/coral-xyz/anchor/pull/3757)).
+- cli: Replace `anchor verify` to use `solana-verify` under the hood, adding automatic installation via AVM, local path support, and future-proof argument passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
 - lang: Replace `solana-program` crate with smaller crates ([#3819](https://github.com/solana-foundation/anchor/pull/3819)).
 - cli: Make `anchor deploy` to upload the IDL to the cluster by default unless `--no-idl` is passed ([#3863](https://github.com/solana-foundation/anchor/pull/3863)).
 - lang: Disallow duplicate mutable accounts by default. But allows duplicate mutable accounts in instruction contexts using `dup` constraint ([#3946](https://github.com/solana-foundation/anchor/pull/3946)).
@@ -24,6 +46,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Add support for Bun as a package manager ([#3586](https://github.com/solana-foundation/anchor/pull/3586)).
 - lang: Add support for tuple types in space calculation ([#3744](https://github.com/solana-foundation/anchor/pull/3744)).
 - lang: Add missing pubkey const generation ([#3677](https://github.com/solana-foundation/anchor/pull/3677)).
+- cli: Add the Minimum Supported Rust Version (MSRV) to the Rust template, since an arbitrary compiler version isn't supported ([#3873](https://github.com/solana-foundation/anchor/pull/3873)).
 
 ### Fixes
 
