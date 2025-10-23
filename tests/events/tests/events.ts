@@ -55,7 +55,11 @@ describe("Events", () => {
   describe("CPI event", () => {
     it("Works without accounts being specified", async () => {
       const tx = await program.methods.testEventCpi().transaction();
-      const txHash = await program.provider.sendAndConfirm(tx, [], confirmOptions);
+      const txHash = await program.provider.sendAndConfirm(
+        tx,
+        [],
+        confirmOptions
+      );
       const txResult = await program.provider.connection.getTransaction(
         txHash,
         {
