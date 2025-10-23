@@ -45,7 +45,7 @@ describe("custom-discriminator", () => {
         "confirmed"
       );
       const myAccount = await program.account.myAccount.fetch(
-        pubkeys.myAccount
+        pubkeys.myAccount as anchor.web3.PublicKey
       );
       assert.strictEqual(myAccount.field, field);
     });
