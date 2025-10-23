@@ -38,4 +38,6 @@ mv tmp/account-info programs/
 
 rmdir tmp
 
+git reset --hard
+
 echo "Success. As expected, all builds failed that were supposed to fail."
