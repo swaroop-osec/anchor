@@ -52,6 +52,13 @@ describe("Events", () => {
   });
 
   describe("CPI event", () => {
+    const config = {
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+      skipPreflight: true,
+      maxRetries: 3,
+    } as const;
+
     it("Works without accounts being specified", async () => {
       const tx = await program.methods.testEventCpi().transaction();
       const txHash = await program.provider.sendAndConfirm(
