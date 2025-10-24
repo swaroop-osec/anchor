@@ -2,42 +2,36 @@
 
 echo "Building programs"
 
-mkdir -p tmp
-
-# Test unchecked-account
-mv programs/account-info tmp/
-mv programs/ignore-non-accounts tmp/
-output=$(anchor keys sync && anchor build 2>&1 > /dev/null)
+#
+# Build the UncheckedAccount variant.
+#
+pushd programs/unchecked-account/
+output=$(anchor build 2>&1 > /dev/null)
 if ! [[ $output =~ "Struct field \"unchecked\" is unsafe" ]]; then
-   echo "Error: expected /// CHECK error in programs/unchecked-account"
+   echo "Error: expected /// CHECK error"
    exit 1
 fi
-mv tmp/account-info programs/
-mv tmp/ignore-non-accounts programs/
+popd
 
-# Test account-info
-mv programs/unchecked-account tmp/
-mv programs/ignore-non-accounts tmp/
-output=$(anchor keys sync && anchor build 2>&1 > /dev/null)
+#
+# Build the AccountInfo variant.
+#
+pushd programs/account-info/
+output=$(anchor build 2>&1 > /dev/null)
 if ! [[ $output =~ "Struct field \"unchecked\" is unsafe" ]]; then
-   echo "Error: expected /// CHECK error in programs/account-info"
+   echo "Error: expected /// CHECK error"
    exit 1
 fi
-mv tmp/unchecked-account programs/
-mv tmp/ignore-non-accounts programs/
+popd
 
-# Test ignore-non-accounts
-mv programs/unchecked-account tmp/
-mv programs/account-info tmp/
-if ! anchor keys sync && anchor build ; then
-   echo "Error: anchor build failed when it shouldn't have in programs/ignore-non-accounts"
+#
+# Build the control variant.
+#
+pushd programs/ignore-non-accounts/
+if ! anchor build ; then
+   echo "Error: anchor build failed when it shouldn't have"
    exit 1
 fi
-mv tmp/unchecked-account programs/
-mv tmp/account-info programs/
-
-rmdir tmp
-
-git reset --hard
+popd
 
 echo "Success. As expected, all builds failed that were supposed to fail."
