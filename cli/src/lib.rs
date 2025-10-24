@@ -476,9 +476,6 @@ pub enum IdlCommand {
         /// Do not check for safety comments
         #[clap(long)]
         skip_lint: bool,
-        /// Skip checking for program ID mismatch between keypair and declare_id
-        #[clap(long)]
-        ignore_keys: bool,
         /// Arguments to pass to the underlying `cargo test` command
         #[clap(required = false, last = true)]
         cargo_args: Vec<String>,
@@ -2059,7 +2056,6 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             out_ts,
             no_docs,
             skip_lint,
-            ignore_keys,
             cargo_args,
         } => idl_build(
             cfg_override,
@@ -2068,7 +2064,6 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             out_ts,
             no_docs,
             skip_lint,
-            ignore_keys,
             cargo_args,
         ),
         IdlCommand::Fetch { address, out } => idl_fetch(cfg_override, address, out),
@@ -2517,7 +2512,6 @@ fn idl_build(
     out_ts: Option<String>,
     no_docs: bool,
     skip_lint: bool,
-    ignore_keys: bool,
     cargo_args: Vec<String>,
 ) -> Result<()> {
     let cfg = Config::discover(cfg_override)?.expect("Not in workspace");
@@ -4310,6 +4304,7 @@ fn check_program_id_mismatch(cfg: &WithPath<Config>, program_name: Option<String
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn localnet(
     cfg_override: &ConfigOverride,
     skip_build: bool,
