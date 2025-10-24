@@ -107,6 +107,9 @@ pub enum Command {
         /// True if the build should not fail even if there are no "CHECK" comments
         #[clap(long)]
         skip_lint: bool,
+        /// Skip checking for program ID mismatch between keypair and declare_id
+        #[clap(long)]
+        ignore_keys: bool,
         /// Do not build the IDL
         #[clap(long)]
         no_idl: bool,
@@ -196,6 +199,9 @@ pub enum Command {
         /// no "CHECK" comments where normally required
         #[clap(long)]
         skip_lint: bool,
+        /// Skip checking for program ID mismatch between keypair and declare_id
+        #[clap(long)]
+        ignore_keys: bool,
         /// Flag to skip starting a local validator, if the configured cluster
         /// url is a localnet.
         #[clap(long)]
@@ -325,6 +331,9 @@ pub enum Command {
         /// no "CHECK" comments where normally required
         #[clap(long)]
         skip_lint: bool,
+        /// Skip checking for program ID mismatch between keypair and declare_id
+        #[clap(long)]
+        ignore_keys: bool,
         /// Architecture to use when building the program
         #[clap(value_enum, long, default_value = "sbf")]
         arch: ProgramArch,
@@ -467,6 +476,9 @@ pub enum IdlCommand {
         /// Do not check for safety comments
         #[clap(long)]
         skip_lint: bool,
+        /// Skip checking for program ID mismatch between keypair and declare_id
+        #[clap(long)]
+        ignore_keys: bool,
         /// Arguments to pass to the underlying `cargo test` command
         #[clap(required = false, last = true)]
         cargo_args: Vec<String>,
@@ -779,6 +791,7 @@ fn process_command(opts: Opts) -> Result<()> {
             cargo_args,
             env,
             skip_lint,
+            ignore_keys,
             no_docs,
             arch,
         } => build(
@@ -788,6 +801,7 @@ fn process_command(opts: Opts) -> Result<()> {
             idl_ts,
             verifiable,
             skip_lint,
+            ignore_keys,
             program_name,
             solana_version,
             docker_image,
@@ -859,6 +873,7 @@ fn process_command(opts: Opts) -> Result<()> {
             env,
             cargo_args,
             skip_lint,
+            ignore_keys,
             arch,
         } => test(
             &opts.cfg_override,
@@ -867,6 +882,7 @@ fn process_command(opts: Opts) -> Result<()> {
             skip_local_validator,
             skip_build,
             skip_lint,
+            ignore_keys,
             no_idl,
             detach,
             run,
@@ -889,6 +905,7 @@ fn process_command(opts: Opts) -> Result<()> {
             skip_build,
             skip_deploy,
             skip_lint,
+            ignore_keys,
             env,
             cargo_args,
             arch,
@@ -897,6 +914,7 @@ fn process_command(opts: Opts) -> Result<()> {
             skip_build,
             skip_deploy,
             skip_lint,
+            ignore_keys,
             env,
             cargo_args,
             arch,
@@ -1289,6 +1307,7 @@ pub fn build(
     idl_ts: Option<String>,
     verifiable: bool,
     skip_lint: bool,
+    ignore_keys: bool,
     program_name: Option<String>,
     solana_version: Option<String>,
     docker_image: Option<String>,
@@ -1317,8 +1336,8 @@ pub fn build(
     check_anchor_version(&cfg).ok();
     check_deps(&cfg).ok();
 
-    // Check for program ID mismatches before building (skip if --skip-lint is used)
-    if !skip_lint {
+    // Check for program ID mismatches before building (skip if --ignore-keys is used)
+    if !ignore_keys {
         check_program_id_mismatch(&cfg, program_name.clone())?;
     }
 
@@ -2040,6 +2059,7 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             out_ts,
             no_docs,
             skip_lint,
+            ignore_keys,
             cargo_args,
         } => idl_build(
             cfg_override,
@@ -2048,6 +2068,7 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             out_ts,
             no_docs,
             skip_lint,
+            ignore_keys,
             cargo_args,
         ),
         IdlCommand::Fetch { address, out } => idl_fetch(cfg_override, address, out),
@@ -2496,6 +2517,7 @@ fn idl_build(
     out_ts: Option<String>,
     no_docs: bool,
     skip_lint: bool,
+    ignore_keys: bool,
     cargo_args: Vec<String>,
 ) -> Result<()> {
     let cfg = Config::discover(cfg_override)?.expect("Not in workspace");
@@ -2941,6 +2963,7 @@ fn test(
     skip_local_validator: bool,
     skip_build: bool,
     skip_lint: bool,
+    ignore_keys: bool,
     no_idl: bool,
     detach: bool,
     tests_to_run: Vec<String>,
@@ -2968,6 +2991,7 @@ fn test(
                 None,
                 false,
                 skip_lint,
+                ignore_keys,
                 program_name.clone(),
                 None,
                 None,
@@ -4274,7 +4298,7 @@ fn check_program_id_mismatch(cfg: &WithPath<Config>, program_name: Option<String
                     "Program ID mismatch detected for program '{}':\n  \
                     Keypair file has: {}\n  \
                     Source code has:  {}\n\n\
-                    Please run 'anchor keys sync' to update the program ID in your source code or use the '--skip-lint' flag to skip the lint checks.",
+                    Please run 'anchor keys sync' to update the program ID in your source code or use the '--ignore-keys' flag to skip this check.",
                     program.lib_name,
                     actual_program_id,
                     declared_id
@@ -4291,6 +4315,7 @@ fn localnet(
     skip_build: bool,
     skip_deploy: bool,
     skip_lint: bool,
+    ignore_keys: bool,
     env_vars: Vec<String>,
     cargo_args: Vec<String>,
     arch: ProgramArch,
@@ -4305,6 +4330,7 @@ fn localnet(
                 None,
                 false,
                 skip_lint,
+                ignore_keys,
                 None,
                 None,
                 None,
