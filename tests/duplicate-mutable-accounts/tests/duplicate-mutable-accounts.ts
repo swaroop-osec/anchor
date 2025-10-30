@@ -102,6 +102,34 @@ describe("duplicate-mutable-accounts", () => {
     assert.ok(true, "Readonly duplicates are allowed");
   });
 
+  it("Should block nested duplicate accounts", async () => {
+    try {
+      await program.methods
+        .nestedDuplicate()
+        .accounts({
+          wrapper1: {
+            counter: dataAccount1.publicKey,
+          },
+          wrapper2: {
+            counter: dataAccount1.publicKey, // Same counter in both wrappers!
+          },
+        })
+        .rpc();
+
+      assert.fail(
+        "Nested structures with duplicate accounts should be blocked"
+      );
+    } catch (e) {
+      // Should be blocked with the fix
+      assert.ok(
+        e.message.includes("ConstraintDuplicateMutableAccount") ||
+          e.message.includes("duplicate") ||
+          e.message.includes("2040"),
+        "Nested duplicate correctly blocked"
+      );
+    }
+  });
+
   it("Should block duplicate in remainingAccounts", async () => {
     try {
       await program.methods
@@ -128,7 +156,6 @@ describe("duplicate-mutable-accounts", () => {
           e.message.includes("2040"),
         "Successfully blocked with framework-level validation"
       );
-      console.log("✓ Duplicate blocked by Anchor framework:", e.message);
     }
   });
 

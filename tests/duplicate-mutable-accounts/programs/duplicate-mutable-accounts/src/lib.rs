@@ -33,6 +33,14 @@ pub mod duplicate_mutable_accounts {
         Ok(())
     }
 
+    // Test nested account structures
+    pub fn nested_duplicate(ctx: Context<NestedDuplicate>) -> Result<()> {
+        // Both wrappers contain mutable counters
+        ctx.accounts.wrapper1.counter.count += 1;
+        ctx.accounts.wrapper2.counter.count += 1;
+        Ok(())
+    }
+
     // Test that remaining_accounts are accessible and can be used
     pub fn use_remaining_accounts(ctx: Context<UseRemainingAccounts>) -> Result<()> {
         ctx.accounts.account1.count += 1;
@@ -41,7 +49,7 @@ pub mod duplicate_mutable_accounts {
             "Processing {} remaining accounts",
             ctx.remaining_accounts.len()
         );
-        for (i, account_info) in ctx.remaining_accounts.iter().enumerate() {
+        for account_info in ctx.remaining_accounts.iter() {
             if account_info.is_writable {
                 msg!("Remaining account {} is writable", account_info.key);
             }
@@ -86,6 +94,19 @@ pub struct AllowsDuplicateMutable<'info> {
 pub struct AllowsDuplicateReadonly<'info> {
     pub account1: Account<'info, Counter>,
     pub account2: Account<'info, Counter>,
+}
+
+// Nested account structures
+#[derive(Accounts)]
+pub struct CounterWrapper<'info> {
+    #[account(mut)]
+    pub counter: Account<'info, Counter>,
+}
+
+#[derive(Accounts)]
+pub struct NestedDuplicate<'info> {
+    pub wrapper1: CounterWrapper<'info>,
+    pub wrapper2: CounterWrapper<'info>,
 }
 
 // Test using remaining_accounts
