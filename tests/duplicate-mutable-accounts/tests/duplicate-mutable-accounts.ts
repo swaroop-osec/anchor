@@ -78,7 +78,7 @@ describe("duplicate-mutable-accounts", () => {
     }
   });
 
-  it("Should succeed with duplicate mutable accounts", async () => {
+  it("Should succeed with duplicate mutable accounts when using dup constraint", async () => {
     // This instruction MUST have `#[account(mut, dup)]` on at least one account
     await program.methods
       .allowsDuplicateMutable()
@@ -88,5 +88,80 @@ describe("duplicate-mutable-accounts", () => {
       })
       .rpc();
     assert.ok(true);
+  });
+
+  it("Should allow duplicate readonly accounts", async () => {
+    // Readonly accounts can be duplicated without any constraint
+    await program.methods
+      .allowsDuplicateReadonly()
+      .accounts({
+        account1: dataAccount1.publicKey,
+        account2: dataAccount1.publicKey, // same account, both readonly
+      })
+      .rpc();
+    assert.ok(true, "Readonly duplicates are allowed");
+  });
+
+  it("Should block duplicate in remainingAccounts", async () => {
+    try {
+      await program.methods
+        .failsDuplicateMutable()
+        .accounts({
+          account1: dataAccount1.publicKey,
+          account2: dataAccount2.publicKey, // Different account
+        })
+        .remainingAccounts([
+          {
+            pubkey: dataAccount1.publicKey, // duplicate via remainingAccounts
+            isWritable: true,
+            isSigner: false,
+          },
+        ])
+        .rpc();
+
+      assert.fail("Should have been blocked - remainingAccounts bypass failed");
+    } catch (e) {
+      // Should be blocked with framework-level security fix
+      assert.ok(
+        e.message.includes("ConstraintDuplicateMutableAccount") ||
+          e.message.includes("duplicate") ||
+          e.message.includes("2040"),
+        "Successfully blocked with framework-level validation"
+      );
+      console.log("✓ Duplicate blocked by Anchor framework:", e.message);
+    }
+  });
+
+  it("Should allow using remaining_accounts without duplicates", async () => {
+    // Get initial counts
+    const beforeAccount1 = await program.account.counter.fetch(
+      dataAccount1.publicKey
+    );
+
+    // Call with valid remaining accounts (no duplicates)
+    await program.methods
+      .useRemainingAccounts()
+      .accounts({
+        account1: dataAccount1.publicKey,
+      })
+      .remainingAccounts([
+        {
+          pubkey: dataAccount2.publicKey,
+          isWritable: true,
+          isSigner: false,
+        },
+      ])
+      .rpc();
+
+    // Verify account was incremented
+    const afterAccount1 = await program.account.counter.fetch(
+      dataAccount1.publicKey
+    );
+
+    assert.equal(
+      afterAccount1.count.toNumber(),
+      beforeAccount1.count.toNumber() + 1,
+      "Account1 should be incremented"
+    );
   });
 });

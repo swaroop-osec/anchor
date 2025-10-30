@@ -32,6 +32,22 @@ pub mod duplicate_mutable_accounts {
     pub fn allows_duplicate_readonly(_ctx: Context<AllowsDuplicateReadonly>) -> Result<()> {
         Ok(())
     }
+
+    // Test that remaining_accounts are accessible and can be used
+    pub fn use_remaining_accounts(ctx: Context<UseRemainingAccounts>) -> Result<()> {
+        ctx.accounts.account1.count += 1;
+
+        msg!(
+            "Processing {} remaining accounts",
+            ctx.remaining_accounts.len()
+        );
+        for (i, account_info) in ctx.remaining_accounts.iter().enumerate() {
+            if account_info.is_writable {
+                msg!("Remaining account {} is writable", account_info.key);
+            }
+        }
+        Ok(())
+    }
 }
 
 #[account]
@@ -48,7 +64,6 @@ pub struct Initialize<'info> {
     pub system_program: Program<'info, System>,
 }
 
-// No extra accounts here, because tests only pass account1 and account2.
 #[derive(Accounts)]
 pub struct FailsDuplicateMutable<'info> {
     #[account(mut)]
@@ -57,7 +72,7 @@ pub struct FailsDuplicateMutable<'info> {
     pub account2: Account<'info, Counter>,
 }
 
-// Allow the same mutable account to be supplied twice.
+// Allow the same mutable account to be supplied twice via the `dup` constraint.
 #[derive(Accounts)]
 pub struct AllowsDuplicateMutable<'info> {
     #[account(mut)]
@@ -71,4 +86,11 @@ pub struct AllowsDuplicateMutable<'info> {
 pub struct AllowsDuplicateReadonly<'info> {
     pub account1: Account<'info, Counter>,
     pub account2: Account<'info, Counter>,
+}
+
+// Test using remaining_accounts
+#[derive(Accounts)]
+pub struct UseRemainingAccounts<'info> {
+    #[account(mut)]
+    pub account1: Account<'info, Counter>,
 }
