@@ -351,7 +351,7 @@ pub enum Command {
     },
     /// Fetch and deserialize an account using the IDL provided.
     Account {
-        /// Account struct to deserialize
+        /// Account struct to deserialize (format: <program_name>.<Account>)
         account_type: String,
         /// Address of the account to deserialize
         address: Pubkey,
