@@ -1502,6 +1502,109 @@ macro_rules! home_path {
 
 home_path!(WalletPath, ".config/solana/id.json");
 
+/// Config command enum for managing Anchor.toml settings
+#[derive(Debug, Parser)]
+pub enum ConfigCommand {
+    /// Get configuration settings from the local Anchor.toml
+    Get,
+    /// Set configuration settings in the local Anchor.toml
+    Set {
+        /// Cluster to connect to (custom URL). Use -um, -ud, -ut, -ul for standard clusters
+        #[clap(short = 'u', long = "url")]
+        url: Option<String>,
+        /// Path to wallet keypair
+        #[clap(short = 'k', long = "keypair")]
+        keypair: Option<String>,
+    },
+}
+
+/// Handle config commands (get/set)
+pub fn handle_config_command(cfg_override: &ConfigOverride, cmd: ConfigCommand) -> Result<()> {
+    match cmd {
+        ConfigCommand::Get => config_get(cfg_override),
+        ConfigCommand::Set { url, keypair } => {
+            // Parse the url field to handle both full URLs and monikers (-um, -ud, -ut, -ul)
+            let cluster = url.map(|u| {
+                // Check if it's a moniker (single letter)
+                match u.as_str() {
+                    "m" => "mainnet".to_string(),
+                    "d" => "devnet".to_string(),
+                    "t" => "testnet".to_string(),
+                    "l" => "localnet".to_string(),
+                    _ => u, // Otherwise use as-is 
+                }
+            });
+
+            config_set(cfg_override, cluster, keypair)
+        }
+    }
+}
+
+/// Get and display configuration settings
+fn config_get(_cfg_override: &ConfigOverride) -> Result<()> {
+    // Use empty override to avoid applying any overrides when reading config
+    let cfg = Config::discover(&ConfigOverride::default())?
+        .ok_or_else(|| anyhow!("Not in an Anchor workspace"))?;
+
+    // Show all settings
+    println!("Config File: {}", cfg.path().display());
+    println!();
+    println!("Cluster: {}", cfg.provider.cluster);
+    println!("Wallet: {}", cfg.provider.wallet);
+
+    Ok(())
+}
+
+/// Set configuration settings in Anchor.toml
+fn config_set(
+    _cfg_override: &ConfigOverride,
+    cluster: Option<String>,
+    wallet: Option<String>,
+) -> Result<()> {
+    if cluster.is_none() && wallet.is_none() {
+        return Err(anyhow!(
+            "At least one setting must be provided (--url or --keypair)"
+        ));
+    }
+
+    // Update local Anchor.toml
+    // Use empty override to avoid applying any overrides when reading config
+    let mut cfg = Config::discover(&ConfigOverride::default())?
+        .ok_or_else(|| anyhow!("Not in an Anchor workspace"))?;
+
+    let mut updated = false;
+
+    if let Some(c) = cluster {
+        cfg.provider.cluster = c
+            .parse::<Cluster>()
+            .with_context(|| format!("Invalid cluster: {}", c))?;
+        println!("Cluster set to: {}", cfg.provider.cluster);
+        updated = true;
+    }
+
+    if let Some(w) = wallet {
+        let expanded_path = shellexpand::tilde(&w).to_string();
+        let path = PathBuf::from(&expanded_path);
+
+        if !path.exists() {
+            eprintln!("Warning: Wallet file does not exist: {}", path.display());
+        }
+
+        cfg.provider.wallet = expanded_path.parse()?;
+        println!("Wallet set to: {}", w);
+        updated = true;
+    }
+
+    if updated {
+        // Save the updated config
+        let config_path = cfg.path();
+        fs::write(config_path, cfg.to_string())
+            .with_context(|| format!("Failed to write config to {}", config_path.display()))?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

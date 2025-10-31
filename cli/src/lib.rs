@@ -1,7 +1,8 @@
 use crate::config::{
-    get_default_ledger_path, BootstrapMode, BuildConfig, Config, ConfigOverride, HookType,
-    Manifest, PackageManager, ProgramArch, ProgramDeployment, ProgramWorkspace, ScriptsConfig,
-    TestValidator, WithPath, SHUTDOWN_WAIT, STARTUP_WAIT,
+    get_default_ledger_path, handle_config_command, BootstrapMode, BuildConfig, Config,
+    ConfigCommand, ConfigOverride, HookType, Manifest, PackageManager, ProgramArch,
+    ProgramDeployment, ProgramWorkspace, ScriptsConfig, TestValidator, WithPath, SHUTDOWN_WAIT,
+    STARTUP_WAIT,
 };
 use anchor_client::Cluster;
 use anchor_lang::prelude::UpgradeableLoaderState;
@@ -303,6 +304,11 @@ pub enum Command {
     Cluster {
         #[clap(subcommand)]
         subcmd: ClusterCommand,
+    },
+    /// Configuration commands.
+    Config {
+        #[clap(subcommand)]
+        subcmd: ConfigCommand,
     },
     /// Starts a node shell with an Anchor client setup according to the local
     /// config.
@@ -1153,6 +1159,7 @@ fn process_command(opts: Opts) -> Result<()> {
         ),
         Command::Airdrop { amount, pubkey } => airdrop(&opts.cfg_override, amount, pubkey),
         Command::Cluster { subcmd } => cluster(subcmd),
+        Command::Config { subcmd } => handle_config_command(&opts.cfg_override, subcmd),
         Command::Shell => shell(&opts.cfg_override),
         Command::Run {
             script,
