@@ -1531,7 +1531,7 @@ pub fn handle_config_command(cfg_override: &ConfigOverride, cmd: ConfigCommand) 
                     "d" => "devnet".to_string(),
                     "t" => "testnet".to_string(),
                     "l" => "localnet".to_string(),
-                    _ => u, // Otherwise use as-is 
+                    _ => u, // Otherwise use as-is
                 }
             });
 
