@@ -191,4 +191,44 @@ describe("duplicate-mutable-accounts", () => {
       "Account1 should be incremented"
     );
   });
+
+  it("Should allow initializing multiple accounts with the same payer", async () => {
+    // Create two new keypairs for the accounts to be initialized
+    const newAccount1 = anchor.web3.Keypair.generate();
+    const newAccount2 = anchor.web3.Keypair.generate();
+
+    // Initialize both accounts using the same payer
+    // This should succeed because:
+    // 1. The payer is a Signer, which is excluded from duplicate checks
+    // 2. The accounts being initialized are different (newAccount1 vs newAccount2)
+    await program.methods
+      .initMultipleWithSamePayer(new anchor.BN(500), new anchor.BN(600))
+      .accounts({
+        dataAccount1: newAccount1.publicKey,
+        dataAccount2: newAccount2.publicKey,
+        user: user_wallet.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([user_wallet, newAccount1, newAccount2])
+      .rpc();
+
+    // Verify both accounts were created with correct values
+    const account1Data = await program.account.counter.fetch(
+      newAccount1.publicKey
+    );
+    const account2Data = await program.account.counter.fetch(
+      newAccount2.publicKey
+    );
+
+    assert.equal(
+      account1Data.count.toNumber(),
+      500,
+      "First account should have count 500"
+    );
+    assert.equal(
+      account2Data.count.toNumber(),
+      600,
+      "Second account should have count 600"
+    );
+  });
 });

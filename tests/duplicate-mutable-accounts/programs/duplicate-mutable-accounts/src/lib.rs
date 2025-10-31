@@ -56,6 +56,17 @@ pub mod duplicate_mutable_accounts {
         }
         Ok(())
     }
+
+    // Test initializing multiple accounts with the same payer
+    pub fn init_multiple_with_same_payer(
+        ctx: Context<InitMultipleWithSamePayer>,
+        initial1: u64,
+        initial2: u64,
+    ) -> Result<()> {
+        ctx.accounts.data_account1.count = initial1;
+        ctx.accounts.data_account2.count = initial2;
+        Ok(())
+    }
 }
 
 #[account]
@@ -114,4 +125,16 @@ pub struct NestedDuplicate<'info> {
 pub struct UseRemainingAccounts<'info> {
     #[account(mut)]
     pub account1: Account<'info, Counter>,
+}
+
+// Test initializing multiple accounts with the same payer
+#[derive(Accounts)]
+pub struct InitMultipleWithSamePayer<'info> {
+    #[account(init, payer = user, space = 8 + 8)]
+    pub data_account1: Account<'info, Counter>,
+    #[account(init, payer = user, space = 8 + 8)]
+    pub data_account2: Account<'info, Counter>,
+    #[account(mut)]
+    pub user: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
