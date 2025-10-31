@@ -4852,9 +4852,18 @@ fn logs_subscribe(
     let (cluster_url, _) = get_cluster_and_wallet(cfg_override)?;
 
     // Convert HTTP(S) URL to WebSocket URL
-    let ws_url = cluster_url
-        .replace("https://", "wss://")
-        .replace("http://", "ws://");
+    // For localhost, the WebSocket port is typically RPC port + 1
+    let ws_url = if cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1") {
+        // Parse the URL to extract and increment the port
+        cluster_url
+            .replace("https://", "wss://")
+            .replace("http://", "ws://")
+            .replace(":8899", ":8900") // Default test validator ports
+    } else {
+        cluster_url
+            .replace("https://", "wss://")
+            .replace("http://", "ws://")
+    };
 
     println!("Connecting to {}", ws_url);
 
