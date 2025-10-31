@@ -5038,9 +5038,9 @@ fn logs_subscribe(
         &ws_url,
         filter,
         RpcTransactionLogsConfig {
-            commitment: cfg_override
-                .commitment
-                .map(|commitment| CommitmentConfig { commitment }),
+            commitment: cfg_override.commitment.map(|c| CommitmentConfig {
+                commitment: c.into(),
+            }),
         },
     )?;
 
