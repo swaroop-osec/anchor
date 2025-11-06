@@ -2985,7 +2985,7 @@ fn test(
                 None,
                 false,
                 skip_lint,
-                ignore_keys,
+                true,
                 program_name.clone(),
                 None,
                 None,
