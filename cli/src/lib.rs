@@ -199,9 +199,6 @@ pub enum Command {
         /// no "CHECK" comments where normally required
         #[clap(long)]
         skip_lint: bool,
-        /// Skip checking for program ID mismatch between keypair and declare_id
-        #[clap(long)]
-        ignore_keys: bool,
         /// Flag to skip starting a local validator, if the configured cluster
         /// url is a localnet.
         #[clap(long)]
@@ -870,7 +867,6 @@ fn process_command(opts: Opts) -> Result<()> {
             env,
             cargo_args,
             skip_lint,
-            ignore_keys,
             arch,
         } => test(
             &opts.cfg_override,
@@ -879,7 +875,6 @@ fn process_command(opts: Opts) -> Result<()> {
             skip_local_validator,
             skip_build,
             skip_lint,
-            ignore_keys,
             no_idl,
             detach,
             run,
@@ -2957,7 +2952,6 @@ fn test(
     skip_local_validator: bool,
     skip_build: bool,
     skip_lint: bool,
-    ignore_keys: bool,
     no_idl: bool,
     detach: bool,
     tests_to_run: Vec<String>,
@@ -3652,7 +3646,7 @@ fn deploy(
                     let retry_delay = std::time::Duration::from_millis(500);
                     let cache_delay = std::time::Duration::from_secs(2);
 
-                    println!("Waiting for program {} to be confirmed...", program_id);
+                    println!("Waiting for program {program_id} to be confirmed...");
 
                     for attempt in 0..max_retries {
                         if let Ok(account) = client.get_account(&program_id) {
