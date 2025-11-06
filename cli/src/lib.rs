@@ -1333,7 +1333,7 @@ pub fn build(
     check_anchor_version(&cfg).ok();
     check_deps(&cfg).ok();
 
-    // Check for program ID mismatches before building (skip if --ignore-keys is used)
+    // Check for program ID mismatches before building (skip if --ignore-keys is used), Always skipped in anchor test
     if !ignore_keys {
         check_program_id_mismatch(&cfg, program_name.clone())?;
     }
