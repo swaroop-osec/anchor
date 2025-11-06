@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Result};
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -495,11 +497,7 @@ pub fn gen_idl_type(
                 use crate::parser::context::CrateContext;
                 use quote::ToTokens;
 
-                // If no path was found, just return an empty path and let the find_path function handle it
-                let source_path = proc_macro2::Span::call_site()
-                    .unwrap()
-                    .local_file()
-                    .unwrap_or_default();
+                let source_path = PathBuf::from(proc_macro2::Span::call_site().file());
 
                 if let Ok(Ok(ctx)) = find_path("lib.rs", &source_path).map(CrateContext::parse) {
                     let name = path.path.segments.last().unwrap().ident.to_string();
