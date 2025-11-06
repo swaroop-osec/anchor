@@ -15,7 +15,7 @@ popd
 popd
 
 # Run anchor test
-anchor test --skip-lint --ignore-keys
+anchor test --skip-lint
 
 # Generate IDLs
 ./generate.sh $tmp_dir
