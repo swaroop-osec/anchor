@@ -7,6 +7,12 @@ describe("Events", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
   const program = anchor.workspace.Events as anchor.Program<Events>;
+  const confirmOptions: anchor.web3.ConfirmOptions = {
+    commitment: "confirmed",
+    preflightCommitment: "confirmed",
+    skipPreflight: true,
+    maxRetries: 3,
+  };
 
   const confirmOptions = {
     commitment: "confirmed" as const,
@@ -111,7 +117,7 @@ describe("Events", () => {
       );
 
       try {
-        await program.provider.sendAndConfirm(tx, [], config);
+        await program.provider.sendAndConfirm(tx, [], confirmOptions);
       } catch (e) {
         if (e.logs.some((log) => log.includes("ConstraintSigner"))) return;
         console.log(e);
