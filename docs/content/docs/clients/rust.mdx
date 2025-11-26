@@ -170,12 +170,14 @@ Below is the `src/main.rs` file for interacting with the program:
 
 ```rust title="src/main.rs"
 use anchor_client::{
+    Client,
+    Cluster,
     solana_sdk::{
-        commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL,
-        signature::{Keypair, Signer}
+        commitment_config::CommitmentConfig,
+        native_token::LAMPORTS_PER_SOL,
+        signature::{Keypair, Signer},
+        system_program,
     },
-    solana_signer::Signer,
-    Client, Cluster,
 };
 use anchor_lang::prelude::*;
 use std::sync::Arc;
