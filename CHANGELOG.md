@@ -16,6 +16,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- idl: Fix defined types with unsupported fields not producing an error ([#4088](https://github.com/solana-foundation/anchor/pull/4088)).
+
 ### Breaking
 
 ## [0.32.1] - 2025-10-09
@@ -26,7 +28,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 - lang: Fix deprecation warnings on alloc and add solana-program to prelude
   ([#3975](https://github.com/solana-foundation/anchor/pull/3975)).
-- cli: Fix race condition that could happen when deploying a program 
+- cli: Fix race condition that could happen when deploying a program
   ([#3976](https://github.com/solana-foundation/anchor/pull/3976)).
 
 ### Breaking
@@ -49,6 +51,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Add support for tuple types in space calculation ([#3744](https://github.com/solana-foundation/anchor/pull/3744)).
 - lang: Add missing pubkey const generation ([#3677](https://github.com/solana-foundation/anchor/pull/3677)).
 - cli: Add the Minimum Supported Rust Version (MSRV) to the Rust template, since an arbitrary compiler version isn't supported ([#3873](https://github.com/solana-foundation/anchor/pull/3873)).
+- cli: Add `hooks` section to `Anchor.toml` ([#3862](https://github.com/solana-foundation/anchor/pull/3862)).
 
 ### Fixes
 
@@ -64,6 +67,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Breaking
 
+- client: Make sending a tx not panic and instead return an Error when signing fails ([#3865](https://github.com/solana-foundation/anchor/pull/3865)).
 - spl: Update SPL dependencies to latest compatible versions ([#3860](https://github.com/solana-foundation/anchor/pull/3860)).
 - cli: Replace `anchor verify` to use `solana-verify` under the hood, adding automatic installation via AVM, local path support, and future-proof argument passing ([#3768](https://github.com/solana-foundation/anchor/pull/3768)).
 - cli: Upload IDL by default with an option to skip ((#3863)[https://github.com/solana-foundation/anchor/pull/3863]).
@@ -619,7 +623,7 @@ See the [Anchor 0.29 release notes](https://www.anchor-lang.com/release-notes/0.
 - spl: Re-export the `spl_token` crate ([#1665](https://github.com/coral-xyz/anchor/pull/1665)).
 - lang, cli, spl: Update solana toolchain to v1.9.13 ([#1653](https://github.com/coral-xyz/anchor/pull/1653) and [#1751](https://github.com/coral-xyz/anchor/pull/1751)).
 - lang: `Program` type now deserializes `programdata_address` only on demand ([#1723](https://github.com/coral-xyz/anchor/pull/1723)).
-- ts: Make `Provider` an interface and adjust its signatures and add `AnchorProvider` implementor class ([#1707](https://github.com/coral-xyz/anchor/pull/1707)).
+- ts: Make `Provider` an interface and adjust its signatures and add `AnchorProvider` implementer class ([#1707](https://github.com/coral-xyz/anchor/pull/1707)).
 - spl: Change "to" to "from" in `token::burn` ([#1080](https://github.com/coral-xyz/anchor/pull/1080)).
 
 ## [0.23.0] - 2022-03-20

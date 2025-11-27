@@ -7,6 +7,12 @@ describe("Events", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
   const program = anchor.workspace.Events as anchor.Program<Events>;
+  const confirmOptions: anchor.web3.ConfirmOptions = {
+    commitment: "confirmed",
+    preflightCommitment: "confirmed",
+    skipPreflight: true,
+    maxRetries: 3,
+  };
 
   const confirmOptions: anchor.web3.ConfirmOptions = {
     commitment: "confirmed",
@@ -69,10 +75,7 @@ describe("Events", () => {
       );
       const txResult = await program.provider.connection.getTransaction(
         txHash,
-        {
-          commitment: "confirmed",
-          maxSupportedTransactionVersion: 0,
-        }
+        { ...confirmOptions, maxSupportedTransactionVersion: 0 }
       );
 
       const ixData = anchor.utils.bytes.bs58.decode(
@@ -111,7 +114,7 @@ describe("Events", () => {
       );
 
       try {
-        await program.provider.sendAndConfirm(tx, [], config);
+        await program.provider.sendAndConfirm(tx, [], confirmOptions);
       } catch (e) {
         if (e.logs.some((log) => log.includes("ConstraintSigner"))) return;
         console.log(e);
