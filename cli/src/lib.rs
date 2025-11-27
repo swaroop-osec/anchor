@@ -367,10 +367,12 @@ pub enum Command {
     EpochInfo,
     /// Stream transaction logs
     Logs {
+        /// Include vote transactions when monitoring all transactions
         #[clap(long)]
         include_votes: bool,
+        /// Addresses to filter logs by
         #[clap(long)]
-        mentions: Option<Vec<Pubkey>>,
+        address: Option<Vec<Pubkey>>,
     },
 }
 
@@ -934,8 +936,8 @@ fn process_command(opts: Opts) -> Result<()> {
         Command::EpochInfo => epoch_info(&opts.cfg_override),
         Command::Logs {
             include_votes,
-            mentions,
-        } => logs_subscribe(&opts.cfg_override, include_votes, mentions),
+            address,
+        } => logs_subscribe(&opts.cfg_override, include_votes, address),
     }
 }
 
@@ -4409,7 +4411,7 @@ fn format_duration_secs(total_seconds: u64) -> String {
 fn logs_subscribe(
     cfg_override: &ConfigOverride,
     include_votes: bool,
-    mentions: Option<Vec<Pubkey>>,
+    address: Option<Vec<Pubkey>>,
 ) -> Result<()> {
     // Get cluster URL
     let cluster_url = match Config::discover(cfg_override) {
@@ -4422,19 +4424,27 @@ fn logs_subscribe(
     };
 
     // Convert HTTP(S) URL to WebSocket URL
-    let ws_url = cluster_url
-        .replace("https://", "wss://")
-        .replace("http://", "ws://");
+    let ws_url = if cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1") {
+        // Parse the URL to extract and increment the port
+        cluster_url
+            .replace("https://", "wss://")
+            .replace("http://", "ws://")
+            .replace(":8899", ":8900") // Default test validator ports
+    } else {
+        cluster_url
+            .replace("https://", "wss://")
+            .replace("http://", "ws://")
+    };
 
     println!("Connecting to {}", ws_url);
 
-    let filter = match (include_votes, mentions) {
-        (true, Some(mentions)) => {
-            RpcTransactionLogsFilter::Mentions(mentions.iter().map(|p| p.to_string()).collect())
+    let filter = match (include_votes, address) {
+        (true, Some(address)) => {
+            RpcTransactionLogsFilter::Mentions(address.iter().map(|p| p.to_string()).collect())
         }
         (true, None) => RpcTransactionLogsFilter::AllWithVotes,
-        (false, Some(mentions)) => {
-            RpcTransactionLogsFilter::Mentions(mentions.iter().map(|p| p.to_string()).collect())
+        (false, Some(address)) => {
+            RpcTransactionLogsFilter::Mentions(address.iter().map(|p| p.to_string()).collect())
         }
         (false, None) => RpcTransactionLogsFilter::All,
     };
