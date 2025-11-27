@@ -4243,10 +4243,7 @@ fn epoch(cfg_override: &ConfigOverride) -> Result<()> {
         Ok(Some(cfg)) => cfg.provider.cluster.url().to_string(),
         _ => {
             // Not in workspace - use cluster override or default
-            let cluster = cfg_override
-                .cluster
-                .as_ref()
-                .unwrap_or(&Cluster::Mainnet);
+            let cluster = cfg_override.cluster.as_ref().unwrap_or(&Cluster::Mainnet);
             cluster.url().to_string()
         }
     };
@@ -4269,10 +4266,7 @@ fn epoch_info(cfg_override: &ConfigOverride) -> Result<()> {
         Ok(Some(cfg)) => cfg.provider.cluster.url().to_string(),
         _ => {
             // Not in workspace - use cluster override or default
-            let cluster = cfg_override
-                .cluster
-                .as_ref()
-                .unwrap_or(&Cluster::Mainnet);
+            let cluster = cfg_override.cluster.as_ref().unwrap_or(&Cluster::Mainnet);
             cluster.url().to_string()
         }
     };
