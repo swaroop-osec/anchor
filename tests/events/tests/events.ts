@@ -14,13 +14,6 @@ describe("Events", () => {
     maxRetries: 3,
   };
 
-  const confirmOptions: anchor.web3.ConfirmOptions = {
-    commitment: "confirmed",
-    preflightCommitment: "confirmed",
-    skipPreflight: true,
-    maxRetries: 3,
-  };
-
   type Event = anchor.IdlEvents<typeof program["idl"]>;
   const getEvent = async <E extends keyof Event>(
     eventName: E,
