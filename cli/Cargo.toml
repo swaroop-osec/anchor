@@ -49,6 +49,8 @@ solana-signer.workspace = true
 solana-system-interface.workspace = true
 solana-transaction.workspace = true
 solana-rpc-client.workspace = true
+solana-rpc-client-api.workspace = true
+solana-pubsub-client.workspace = true
 syn = { version = "1.0.60", features = ["full", "extra-traits"] }
 tar = "0.4.35"
 toml = "0.7.6"

@@ -21,7 +21,9 @@ use serde_json::{json, Map, Value as JsonValue};
 use solana_commitment_config::CommitmentConfig;
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
+use solana_pubsub_client::pubsub_client::PubsubClient;
 use solana_rpc_client::rpc_client::RpcClient;
+use solana_rpc_client_api::config::{RpcTransactionLogsConfig, RpcTransactionLogsFilter};
 use solana_signer::{EncodableKey, Signer};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -363,6 +365,13 @@ pub enum Command {
     /// Get information about the current epoch
     #[clap(name = "epoch-info")]
     EpochInfo,
+    /// Stream transaction logs
+    Logs {
+        #[clap(long)]
+        include_votes: bool,
+        #[clap(long)]
+        mentions: Option<Vec<Pubkey>>,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -923,6 +932,10 @@ fn process_command(opts: Opts) -> Result<()> {
         Command::Balance { pubkey, lamports } => balance(&opts.cfg_override, pubkey, lamports),
         Command::Epoch => epoch(&opts.cfg_override),
         Command::EpochInfo => epoch_info(&opts.cfg_override),
+        Command::Logs {
+            include_votes,
+            mentions,
+        } => logs_subscribe(&opts.cfg_override, include_votes, mentions),
     }
 }
 
@@ -4393,6 +4406,73 @@ fn format_duration_secs(total_seconds: u64) -> String {
     parts.join(" ")
 }
 
+fn logs_subscribe(
+    cfg_override: &ConfigOverride,
+    include_votes: bool,
+    mentions: Option<Vec<Pubkey>>,
+) -> Result<()> {
+    // Get cluster URL
+    let cluster_url = match Config::discover(cfg_override) {
+        Ok(Some(cfg)) => cfg.provider.cluster.url().to_string(),
+        _ => {
+            // Not in workspace - use cluster override or default
+            let cluster = cfg_override.cluster.as_ref().unwrap_or(&Cluster::Mainnet);
+            cluster.url().to_string()
+        }
+    };
+
+    // Convert HTTP(S) URL to WebSocket URL
+    let ws_url = cluster_url
+        .replace("https://", "wss://")
+        .replace("http://", "ws://");
+
+    println!("Connecting to {}", ws_url);
+
+    let filter = match (include_votes, mentions) {
+        (true, Some(mentions)) => {
+            RpcTransactionLogsFilter::Mentions(mentions.iter().map(|p| p.to_string()).collect())
+        }
+        (true, None) => RpcTransactionLogsFilter::AllWithVotes,
+        (false, Some(mentions)) => {
+            RpcTransactionLogsFilter::Mentions(mentions.iter().map(|p| p.to_string()).collect())
+        }
+        (false, None) => RpcTransactionLogsFilter::All,
+    };
+
+    let (_client, receiver) = PubsubClient::logs_subscribe(
+        &ws_url,
+        filter,
+        RpcTransactionLogsConfig {
+            commitment: cfg_override.commitment.map(|c| CommitmentConfig {
+                commitment: c.into(),
+            }),
+        },
+    )?;
+
+    loop {
+        match receiver.recv() {
+            Ok(logs) => {
+                println!("Transaction executed in slot {}:", logs.context.slot);
+                println!("  Signature: {}", logs.value.signature);
+                println!(
+                    "  Status: {}",
+                    logs.value
+                        .err
+                        .map(|err| err.to_string())
+                        .unwrap_or_else(|| "Ok".to_string())
+                );
+                println!("  Log Messages:");
+                for log in logs.value.logs {
+                    println!("    {log}");
+                }
+            }
+            Err(err) => {
+                return Err(anyhow!("Disconnected: {err}"));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4404,6 +4484,7 @@ mod tests {
             &ConfigOverride {
                 cluster: None,
                 wallet: None,
+                commitment: None,
             },
             "await".to_string(),
             true,
@@ -4424,6 +4505,7 @@ mod tests {
             &ConfigOverride {
                 cluster: None,
                 wallet: None,
+                commitment: None,
             },
             "fn".to_string(),
             true,
@@ -4444,6 +4526,7 @@ mod tests {
             &ConfigOverride {
                 cluster: None,
                 wallet: None,
+                commitment: None,
             },
             "1project".to_string(),
             true,
