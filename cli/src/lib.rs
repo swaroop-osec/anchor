@@ -358,6 +358,11 @@ pub enum Command {
         #[clap(long)]
         lamports: bool,
     },
+    /// Get current epoch
+    Epoch,
+    /// Get information about the current epoch
+    #[clap(name = "epoch-info")]
+    EpochInfo,
 }
 
 #[derive(Debug, Parser)]
@@ -916,6 +921,8 @@ fn process_command(opts: Opts) -> Result<()> {
         }
         Command::Address => address(&opts.cfg_override),
         Command::Balance { pubkey, lamports } => balance(&opts.cfg_override, pubkey, lamports),
+        Command::Epoch => epoch(&opts.cfg_override),
+        Command::EpochInfo => epoch_info(&opts.cfg_override),
     }
 }
 
@@ -4228,6 +4235,168 @@ fn balance(cfg_override: &ConfigOverride, pubkey: Option<Pubkey>, lamports: bool
     }
 
     Ok(())
+}
+
+fn epoch(cfg_override: &ConfigOverride) -> Result<()> {
+    // Get cluster URL
+    let cluster_url = match Config::discover(cfg_override) {
+        Ok(Some(cfg)) => cfg.provider.cluster.url().to_string(),
+        _ => {
+            // Not in workspace - use cluster override or default
+            let cluster = cfg_override
+                .cluster
+                .as_ref()
+                .unwrap_or(&Cluster::Mainnet);
+            cluster.url().to_string()
+        }
+    };
+
+    // Create RPC client
+    let client = RpcClient::new(cluster_url);
+
+    // Get epoch info
+    let epoch_info = client.get_epoch_info()?;
+
+    // Print just the epoch number
+    println!("{}", epoch_info.epoch);
+
+    Ok(())
+}
+
+fn epoch_info(cfg_override: &ConfigOverride) -> Result<()> {
+    // Get cluster URL
+    let cluster_url = match Config::discover(cfg_override) {
+        Ok(Some(cfg)) => cfg.provider.cluster.url().to_string(),
+        _ => {
+            // Not in workspace - use cluster override or default
+            let cluster = cfg_override
+                .cluster
+                .as_ref()
+                .unwrap_or(&Cluster::Mainnet);
+            cluster.url().to_string()
+        }
+    };
+
+    // Create RPC client
+    let client = RpcClient::new(cluster_url);
+
+    // Get epoch info
+    let epoch_info = client.get_epoch_info()?;
+
+    // Calculate epoch slot range
+    let first_slot_in_epoch = epoch_info.absolute_slot - epoch_info.slot_index;
+    let last_slot_in_epoch = first_slot_in_epoch + epoch_info.slots_in_epoch;
+
+    // Calculate completion stats
+    let epoch_completed_percent =
+        epoch_info.slot_index as f64 / epoch_info.slots_in_epoch as f64 * 100.0;
+    let remaining_slots = epoch_info.slots_in_epoch - epoch_info.slot_index;
+
+    // Display epoch information (matching Solana CLI format)
+    println!("Block height: {}", epoch_info.block_height);
+    println!("Slot: {}", epoch_info.absolute_slot);
+    println!("Epoch: {}", epoch_info.epoch);
+
+    if let Some(tx_count) = epoch_info.transaction_count {
+        println!("Transaction Count: {}", tx_count);
+    }
+
+    println!(
+        "Epoch Slot Range: [{}..{})",
+        first_slot_in_epoch, last_slot_in_epoch
+    );
+    println!("Epoch Completed Percent: {:>3.3}%", epoch_completed_percent);
+    println!(
+        "Epoch Completed Slots: {}/{} ({} remaining)",
+        epoch_info.slot_index, epoch_info.slots_in_epoch, remaining_slots
+    );
+
+    // Try to calculate epoch completed time
+    // Get average slot time from performance samples (aggregate up to 60 samples)
+    if let Ok(samples) = client.get_recent_performance_samples(Some(60)) {
+        // Aggregate all samples to calculate average slot time
+        let (total_slots, total_secs) =
+            samples.iter().fold((0u64, 0u64), |(slots, secs), sample| {
+                (
+                    slots.saturating_add(sample.num_slots),
+                    secs.saturating_add(sample.sample_period_secs as u64),
+                )
+            });
+
+        if total_slots > 0 {
+            let avg_slot_time_ms = (total_secs * 1000) / total_slots;
+
+            // Calculate time_remaining using average slot time (always estimated)
+            let remaining_secs = (remaining_slots * avg_slot_time_ms) / 1000;
+
+            // Calculate time_elapsed - try actual block times first, then estimate
+            // Get the first actual block in the epoch and adjust for slot differences
+            let start_block_time = client
+                .get_blocks_with_limit(first_slot_in_epoch, 1)
+                .ok()
+                .and_then(|slots| slots.first().cloned())
+                .and_then(|first_actual_block| {
+                    client.get_block_time(first_actual_block).ok().map(|time| {
+                        // Adjust backwards if first actual block is after expected start
+                        let slot_diff = first_actual_block.saturating_sub(first_slot_in_epoch);
+                        let time_adjustment = (slot_diff * avg_slot_time_ms / 1000) as i64;
+                        time.saturating_sub(time_adjustment)
+                    })
+                });
+
+            let current_block_time = client.get_block_time(epoch_info.absolute_slot).ok();
+
+            let (elapsed_secs, is_estimated) = if let (Some(start_time), Some(current_time)) =
+                (start_block_time, current_block_time)
+            {
+                // Use actual block times for elapsed
+                ((current_time - start_time) as u64, false)
+            } else {
+                // Estimate elapsed using average slot time
+                ((epoch_info.slot_index * avg_slot_time_ms) / 1000, true)
+            };
+
+            // Total time = elapsed + remaining
+            let total_secs = elapsed_secs + remaining_secs;
+
+            let estimated_marker = if is_estimated { "*" } else { "" };
+            println!(
+                "Epoch Completed Time: {}{}/{} ({} remaining)",
+                format_duration_secs(elapsed_secs),
+                estimated_marker,
+                format_duration_secs(total_secs),
+                format_duration_secs(remaining_secs)
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Format seconds into human-readable duration (e.g., "1day 5h 49m 8s")
+fn format_duration_secs(total_seconds: u64) -> String {
+    let seconds = total_seconds % 60;
+    let total_minutes = total_seconds / 60;
+    let minutes = total_minutes % 60;
+    let total_hours = total_minutes / 60;
+    let hours = total_hours % 24;
+    let days = total_hours / 24;
+
+    let mut parts = Vec::new();
+    if days > 0 {
+        parts.push(format!("{}day", days));
+    }
+    if hours > 0 {
+        parts.push(format!("{}h", hours));
+    }
+    if minutes > 0 {
+        parts.push(format!("{}m", minutes));
+    }
+    if seconds > 0 || parts.is_empty() {
+        parts.push(format!("{}s", seconds));
+    }
+
+    parts.join(" ")
 }
 
 #[cfg(test)]
