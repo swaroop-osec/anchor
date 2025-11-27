@@ -39,6 +39,7 @@ use std::sync::LazyLock;
 mod account;
 mod checks;
 pub mod config;
+mod keygen;
 pub mod rust_template;
 
 // Version of the docker image.
@@ -379,6 +380,60 @@ pub enum Command {
     ShowAccount {
         #[clap(flatten)]
         cmd: account::ShowAccountCommand,
+    },
+    /// Keypair generation and management
+    Keygen {
+        #[clap(subcommand)]
+        subcmd: KeygenCommand,
+    },
+}
+
+#[derive(Debug, Parser)]
+pub enum KeygenCommand {
+    /// Generate a new keypair
+    New {
+        /// Path to generated keypair file
+        #[clap(short = 'o', long)]
+        outfile: Option<String>,
+        /// Overwrite the output file if it exists
+        #[clap(short, long)]
+        force: bool,
+        /// Do not prompt for a passphrase
+        #[clap(long)]
+        no_passphrase: bool,
+        /// Do not display the generated pubkey
+        #[clap(long)]
+        silent: bool,
+        /// Number of words in the mnemonic phrase [possible values: 12, 15, 18, 21, 24]
+        #[clap(short = 'w', long, default_value = "12")]
+        word_count: usize,
+    },
+    /// Display the pubkey for a given keypair
+    Pubkey {
+        /// Keypair filepath
+        keypair: Option<String>,
+    },
+    /// Recover a keypair from a seed phrase
+    Recover {
+        /// Path to recovered keypair file
+        #[clap(short = 'o', long)]
+        outfile: Option<String>,
+        /// Overwrite the output file if it exists
+        #[clap(short, long)]
+        force: bool,
+        /// Skip seed phrase validation
+        #[clap(long)]
+        skip_seed_phrase_validation: bool,
+        /// Do not prompt for a passphrase
+        #[clap(long)]
+        no_passphrase: bool,
+    },
+    /// Verify a keypair can sign and verify a message
+    Verify {
+        /// Public key to verify
+        pubkey: Pubkey,
+        /// Keypair filepath (defaults to configured wallet)
+        keypair: Option<String>,
     },
 }
 
@@ -945,6 +1000,7 @@ fn process_command(opts: Opts) -> Result<()> {
             address,
         } => logs_subscribe(&opts.cfg_override, include_votes, address),
         Command::ShowAccount { cmd } => account::show_account(&opts.cfg_override, cmd),
+        Command::Keygen { subcmd } => keygen::keygen(&opts.cfg_override, subcmd),
     }
 }
 

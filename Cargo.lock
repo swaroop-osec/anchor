@@ -206,7 +206,9 @@ dependencies = [
  "chrono",
  "clap 4.5.17",
  "clap_complete",
+ "console 0.15.11",
  "dirs",
+ "ed25519-dalek",
  "flate2",
  "heck 0.4.1",
  "pathdiff",
@@ -234,6 +236,8 @@ dependencies = [
  "solana-transaction",
  "syn 1.0.109",
  "tar",
+ "tempfile",
+ "tiny-bip39",
  "toml 0.7.8",
  "walkdir",
 ]
