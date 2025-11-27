@@ -18,6 +18,7 @@ use regex::{Regex, RegexBuilder};
 use rust_template::{ProgramTemplate, TestTemplate};
 use semver::{Version, VersionReq};
 use serde_json::{json, Map, Value as JsonValue};
+use solana_cli_config::Config as SolanaCliConfig;
 use solana_commitment_config::CommitmentConfig;
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
@@ -582,6 +583,72 @@ pub enum ClusterCommand {
 fn get_keypair(path: &str) -> Result<Keypair> {
     solana_keypair::read_keypair_file(path)
         .map_err(|_| anyhow!("Unable to read keypair file ({path})"))
+}
+
+/// Format lamports as SOL with trailing zeros removed
+fn format_sol(lamports: u64) -> String {
+    let sol = lamports as f64 / 1_000_000_000.0;
+    let formatted = format!("{:.8}", sol);
+
+    // Remove trailing zeros and decimal point if not needed
+    let trimmed = formatted.trim_end_matches('0').trim_end_matches('.');
+    format!("{} SOL", trimmed)
+}
+
+/// Get cluster URL and wallet path from Anchor config, CLI overrides, or Solana CLI config
+fn get_cluster_and_wallet(cfg_override: &ConfigOverride) -> Result<(String, String)> {
+    // Try to get from Anchor workspace config first
+    if let Ok(Some(cfg)) = Config::discover(cfg_override) {
+        return Ok((
+            cfg.provider.cluster.url().to_string(),
+            cfg.provider.wallet.to_string(),
+        ));
+    }
+
+    // Try to load Solana CLI config
+    let (cluster_url, wallet_path) =
+        if let Some(config_file) = solana_cli_config::CONFIG_FILE.as_ref() {
+            match SolanaCliConfig::load(config_file) {
+                Ok(cli_config) => (
+                    cli_config.json_rpc_url.clone(),
+                    cli_config.keypair_path.clone(),
+                ),
+                Err(_) => {
+                    // Fallback to defaults if Solana CLI config doesn't exist
+                    (
+                        "https://api.mainnet-beta.solana.com".to_string(),
+                        dirs::home_dir()
+                            .map(|home| {
+                                home.join(".config/solana/id.json")
+                                    .to_string_lossy()
+                                    .to_string()
+                            })
+                            .unwrap_or_else(|| "~/.config/solana/id.json".to_string()),
+                    )
+                }
+            }
+        } else {
+            // If CONFIG_FILE is None, use defaults
+            (
+                "https://api.mainnet-beta.solana.com".to_string(),
+                dirs::home_dir()
+                    .map(|home| {
+                        home.join(".config/solana/id.json")
+                            .to_string_lossy()
+                            .to_string()
+                    })
+                    .unwrap_or_else(|| "~/.config/solana/id.json".to_string()),
+            )
+        };
+
+    // Apply cluster override if provided
+    let final_cluster = if let Some(cluster) = &cfg_override.cluster {
+        cluster.url().to_string()
+    } else {
+        cluster_url
+    };
+
+    Ok((final_cluster, wallet_path))
 }
 
 pub fn entry(opts: Opts) -> Result<()> {
@@ -3732,30 +3799,13 @@ fn set_workspace_dir_or_exit() {
 }
 
 fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -> Result<()> {
-    // Get cluster URL and wallet path, handling both workspace and standalone scenarios
-    let (cluster_url, wallet_path) = match Config::discover(cfg_override) {
-        Ok(Some(cfg)) => (
-            cfg.provider.cluster.url().to_string(),
-            cfg.provider.wallet.to_string(),
-        ),
-        _ => {
-            // Not in workspace - use cluster override or default, and standard Solana CLI path
-            let cluster = cfg_override.cluster.as_ref().unwrap_or(&Cluster::Devnet);
-            let default_wallet = dirs::home_dir()
-                .map(|home| {
-                    home.join(".config/solana/id.json")
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .unwrap_or_else(|| "~/.config/solana/id.json".to_string());
-            (cluster.url().to_string(), default_wallet)
-        }
-    };
+    // Get cluster URL and wallet path
+    let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
     // Create RPC client
     let client = RpcClient::new(cluster_url);
 
-    // Determine which account to airdrop to
+    // Determine recipient
     let recipient_pubkey = if let Some(pubkey) = pubkey {
         pubkey
     } else {
@@ -3782,7 +3832,9 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
         .confirm_transaction(&signature)
         .map_err(|e| anyhow!("Transaction confirmation failed: {}", e))?;
 
-    println!("Airdrop successful!");
+    // Get and display the new balance
+    let balance = client.get_balance(&recipient_pubkey)?;
+    println!("{}", format_sol(balance));
 
     Ok(())
 }
@@ -4243,20 +4295,7 @@ fn create_client<U: ToString>(url: U) -> RpcClient {
 }
 
 fn address(cfg_override: &ConfigOverride) -> Result<()> {
-    // Get wallet path from config or use default
-    let wallet_path = match Config::discover(cfg_override) {
-        Ok(Some(cfg)) => cfg.provider.wallet.to_string(),
-        _ => {
-            // Not in workspace - use default Solana CLI path
-            dirs::home_dir()
-                .map(|home| {
-                    home.join(".config/solana/id.json")
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .unwrap_or_else(|| "~/.config/solana/id.json".to_string())
-        }
-    };
+    let (_cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
     // Load keypair and get pubkey
     let keypair = Keypair::read_from_file(&wallet_path)
@@ -4269,25 +4308,7 @@ fn address(cfg_override: &ConfigOverride) -> Result<()> {
 }
 
 fn balance(cfg_override: &ConfigOverride, pubkey: Option<Pubkey>, lamports: bool) -> Result<()> {
-    // Get cluster URL and wallet path, handling both workspace and standalone scenarios
-    let (cluster_url, wallet_path) = match Config::discover(cfg_override) {
-        Ok(Some(cfg)) => (
-            cfg.provider.cluster.url().to_string(),
-            cfg.provider.wallet.to_string(),
-        ),
-        _ => {
-            // Not in workspace - use cluster override or default, and standard Solana CLI path
-            let cluster = cfg_override.cluster.as_ref().unwrap_or(&Cluster::Mainnet);
-            let default_wallet = dirs::home_dir()
-                .map(|home| {
-                    home.join(".config/solana/id.json")
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .unwrap_or_else(|| "~/.config/solana/id.json".to_string());
-            (cluster.url().to_string(), default_wallet)
-        }
-    };
+    let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
     // Create RPC client
     let client = RpcClient::new(cluster_url);
@@ -4309,22 +4330,14 @@ fn balance(cfg_override: &ConfigOverride, pubkey: Option<Pubkey>, lamports: bool
     if lamports {
         println!("{}", balance);
     } else {
-        println!("{:.8} SOL", balance as f64 / 1_000_000_000.0);
+        println!("{}", format_sol(balance));
     }
 
     Ok(())
 }
 
 fn epoch(cfg_override: &ConfigOverride) -> Result<()> {
-    // Get cluster URL
-    let cluster_url = match Config::discover(cfg_override) {
-        Ok(Some(cfg)) => cfg.provider.cluster.url().to_string(),
-        _ => {
-            // Not in workspace - use cluster override or default
-            let cluster = cfg_override.cluster.as_ref().unwrap_or(&Cluster::Mainnet);
-            cluster.url().to_string()
-        }
-    };
+    let (cluster_url, _wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
     // Create RPC client
     let client = RpcClient::new(cluster_url);
@@ -4339,15 +4352,7 @@ fn epoch(cfg_override: &ConfigOverride) -> Result<()> {
 }
 
 fn epoch_info(cfg_override: &ConfigOverride) -> Result<()> {
-    // Get cluster URL
-    let cluster_url = match Config::discover(cfg_override) {
-        Ok(Some(cfg)) => cfg.provider.cluster.url().to_string(),
-        _ => {
-            // Not in workspace - use cluster override or default
-            let cluster = cfg_override.cluster.as_ref().unwrap_or(&Cluster::Mainnet);
-            cluster.url().to_string()
-        }
-    };
+    let (cluster_url, _wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
     // Create RPC client
     let client = RpcClient::new(cluster_url);
@@ -4476,15 +4481,7 @@ fn logs_subscribe(
     include_votes: bool,
     address: Option<Vec<Pubkey>>,
 ) -> Result<()> {
-    // Get cluster URL
-    let cluster_url = match Config::discover(cfg_override) {
-        Ok(Some(cfg)) => cfg.provider.cluster.url().to_string(),
-        _ => {
-            // Not in workspace - use cluster override or default
-            let cluster = cfg_override.cluster.as_ref().unwrap_or(&Cluster::Mainnet);
-            cluster.url().to_string()
-        }
-    };
+    let (cluster_url, _wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
     // Convert HTTP(S) URL to WebSocket URL
     let ws_url = if cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1") {
