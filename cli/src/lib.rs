@@ -3950,112 +3950,31 @@ fn deploy(
         println!("Deploying cluster: {url}");
         println!("Upgrade authority: {keypair}");
 
-        for mut program in cfg.get_programs(program_name)? {
+        for program in cfg.get_programs(program_name)? {
             let binary_path = program.binary_path(verifiable).display().to_string();
 
             println!("Deploying program {:?}...", program.lib_name);
             println!("Program path: {binary_path}...");
 
-            let (program_keypair_filepath, program_id) = match &program_keypair {
-                Some(path) => (path.clone(), get_keypair(path)?.pubkey()),
-                None => (
-                    program.keypair_file()?.path().display().to_string(),
-                    program.pubkey()?,
-                ),
+            let program_keypair_filepath = match &program_keypair {
+                Some(path) => path.clone(),
+                None => program.keypair_file()?.path().display().to_string(),
             };
 
-            // Send deploy transactions using the Solana CLI
-            let exit = std::process::Command::new("solana")
-                .arg("program")
-                .arg("deploy")
-                .arg("--url")
-                .arg(&url)
-                .arg("--keypair")
-                .arg(&keypair)
-                .arg("--program-id")
-                .arg(strip_workspace_prefix(program_keypair_filepath))
-                .arg(strip_workspace_prefix(binary_path))
-                .args(&solana_args)
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .output()
-                .expect("Must deploy");
-
-            // Check if deployment was successful
-            if !exit.status.success() {
-                println!("There was a problem deploying: {exit:?}.");
-                std::process::exit(exit.status.code().unwrap_or(1));
-            }
-
-            // Get the IDL filepath
-            let idl_filepath = Path::new("target")
-                .join("idl")
-                .join(&program.lib_name)
-                .with_extension("json");
-
-            if let Some(idl) = program.idl.as_mut() {
-                // Add program address to the IDL.
-                idl.address = program_id.to_string();
-
-                // Persist it.
-                write_idl(idl, OutFile::File(idl_filepath.clone()))?;
-
-                // Upload the IDL to the cluster by default (unless no_idl is set)
-                if !no_idl {
-                    // Wait for the program to be confirmed before initializing IDL to prevent
-                    // race condition where the program isn't yet available in validator cache
-                    let client = create_client(&url);
-                    let max_retries = 5;
-                    let retry_delay = std::time::Duration::from_millis(500);
-                    let cache_delay = std::time::Duration::from_secs(2);
-
-                    println!("Waiting for program {program_id} to be confirmed...");
-
-                    for attempt in 0..max_retries {
-                        if let Ok(account) = client.get_account(&program_id) {
-                            if account.executable {
-                                println!("Program confirmed on-chain");
-                                std::thread::sleep(cache_delay);
-                                break;
-                            }
-                        }
-
-                        if attempt == max_retries - 1 {
-                            return Err(anyhow!(
-                                "Timeout waiting for program {} to be confirmed",
-                                program_id
-                            ));
-                        }
-
-                        std::thread::sleep(retry_delay);
-                    }
-
-                    // Check if IDL account already exists
-                    let (base, _) = Pubkey::find_program_address(&[], &program_id);
-                    let idl_address = Pubkey::create_with_seed(&base, "anchor:idl", &program_id)
-                        .expect("Seed is always valid");
-                    let idl_account_exists = client.get_account(&idl_address).is_ok();
-
-                    if idl_account_exists {
-                        // IDL account exists, upgrade it
-                        idl_upgrade(
-                            cfg_override,
-                            program_id,
-                            idl_filepath.display().to_string(),
-                            None,
-                        )?;
-                    } else {
-                        // IDL account doesn't exist, create it
-                        idl_init(
-                            cfg_override,
-                            program_id,
-                            idl_filepath.display().to_string(),
-                            None,
-                            false,
-                        )?;
-                    }
-                }
-            }
+            // Deploy using our native implementation
+            program::program_deploy(
+                cfg_override,
+                Some(strip_workspace_prefix(binary_path)),
+                None, // program_name - not needed since we have filepath
+                Some(strip_workspace_prefix(program_keypair_filepath)),
+                None, // upgrade_authority - uses wallet from config
+                None, // program_id - derived from program_keypair
+                None, // buffer
+                None, // max_len
+                no_idl,
+                false, // make_final
+                solana_args.clone(),
+            )?;
         }
 
         println!("Deploy success");
@@ -4072,43 +3991,17 @@ fn upgrade(
     max_retries: u32,
     solana_args: Vec<String>,
 ) -> Result<()> {
-    let path: PathBuf = program_filepath.parse().unwrap();
-    let program_filepath = path.canonicalize()?.display().to_string();
-
-    with_workspace(cfg_override, |cfg| {
-        let url = cluster_url(cfg, &cfg.test_validator);
-        let client = create_client(&url);
-        let solana_args = add_recommended_deployment_solana_args(&client, solana_args)?;
-
-        for retry in 0..(1 + max_retries) {
-            let exit = std::process::Command::new("solana")
-                .arg("program")
-                .arg("deploy")
-                .arg("--url")
-                .arg(url.clone())
-                .arg("--keypair")
-                .arg(cfg.provider.wallet.to_string())
-                .arg("--program-id")
-                .arg(program_id.to_string())
-                .arg(strip_workspace_prefix(program_filepath.clone()))
-                .args(&solana_args)
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .output()
-                .expect("Must deploy");
-            if exit.status.success() {
-                break;
-            }
-
-            println!("There was a problem deploying: {exit:?}.");
-            if retry < max_retries {
-                println!("Retrying {} more time(s)...", max_retries - retry);
-            } else {
-                std::process::exit(exit.status.code().unwrap_or(1));
-            }
-        }
-        Ok(())
-    })
+    // Use our native upgrade implementation
+    program::program_upgrade(
+        cfg_override,
+        program_id,
+        Some(program_filepath),
+        None, // program_name - not needed since we have filepath
+        None, // buffer
+        None, // upgrade_authority - uses wallet from config
+        max_retries,
+        solana_args,
+    )
 }
 
 fn migrate(cfg_override: &ConfigOverride) -> Result<()> {

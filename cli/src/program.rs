@@ -471,7 +471,7 @@ fn get_payer_keypair(
 
 /// Deploy a single program (either from explicit filepath or workspace) - private implementation
 #[allow(clippy::too_many_arguments)]
-fn program_deploy(
+pub fn program_deploy(
     cfg_override: &ConfigOverride,
     program_filepath: Option<String>,
     program_name: Option<String>,
@@ -1303,7 +1303,7 @@ fn program_show(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn program_upgrade(
+pub fn program_upgrade(
     cfg_override: &ConfigOverride,
     program_id: Pubkey,
     program_filepath: Option<String>,
