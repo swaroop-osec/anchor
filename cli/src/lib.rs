@@ -24,9 +24,10 @@ use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
-use solana_pubsub_client::pubsub_client::PubsubClient;
+use solana_pubsub_client::pubsub_client::{PubsubClient, PubsubClientSubscription};
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_rpc_client_api::config::{RpcTransactionLogsConfig, RpcTransactionLogsFilter};
+use solana_rpc_client_api::response::{Response as RpcResponse, RpcLogsResponse};
 use solana_signer::{EncodableKey, Signer};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -52,6 +53,9 @@ pub const DOCKER_BUILDER_VERSION: &str = VERSION;
 
 /// Default RPC port
 pub const DEFAULT_RPC_PORT: u16 = 8899;
+
+/// WebSocket port offset for solana-test-validator (RPC port + 1)
+pub const WEBSOCKET_PORT_OFFSET: u16 = 1;
 
 pub static AVM_HOME: LazyLock<PathBuf> = LazyLock::new(|| {
     if let Ok(avm_home) = std::env::var("AVM_HOME") {
@@ -3323,8 +3327,15 @@ fn run_test_suite(
         get_node_dns_option()?,
     );
 
-    // Setup log reader.
-    let log_streams = stream_logs(cfg, &url);
+    // Setup log reader - kept alive until end of scope
+    let log_streams = match stream_logs(cfg, &url) {
+        Ok(streams) => Some(streams),
+        Err(e) => {
+            eprintln!("Warning: Failed to setup program log streaming: {:#}", e);
+            eprintln!("Program logs will still be visible in the test output.");
+            None
+        }
+    };
 
     // Run the tests.
     let test_result = {
@@ -3358,9 +3369,11 @@ fn run_test_suite(
             println!("Failed to kill subprocess {}: {}", child.id(), err);
         }
     }
-    for mut child in log_streams? {
-        if let Err(err) = child.kill() {
-            println!("Failed to kill subprocess {}: {}", child.id(), err);
+
+    // Explicitly shutdown log streams - closes WebSocket subscriptions
+    if let Some(log_streams) = log_streams {
+        for handle in log_streams {
+            handle.shutdown();
         }
     }
 
@@ -3552,58 +3565,163 @@ fn validator_flags(
     Ok(flags)
 }
 
-fn stream_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<std::process::Child>> {
+/// Handle for a log streaming thread.
+///
+/// Manages a WebSocket subscription and its associated receiver thread.
+/// Call `shutdown()` to cleanly stop the thread.
+struct LogStreamHandle {
+    subscription: PubsubClientSubscription<RpcResponse<RpcLogsResponse>>,
+}
+
+impl LogStreamHandle {
+    /// Explicitly shutdown the log stream
+    fn shutdown(self) {
+        // Send unsubscribe in a background thread to avoid blocking
+        // PubsubClientSubscription::send_unsubscribe() can block indefinitely if WebSocket is stuck
+        // The receiver threads will exit when the subscription closes
+        std::thread::spawn(move || {
+            let _ = self.subscription.send_unsubscribe();
+        });
+    }
+}
+
+/// Spawns a thread to receive logs from a subscription and write them to a file
+fn spawn_log_receiver_thread<R>(receiver: R, log_file_path: PathBuf)
+where
+    R: IntoIterator<Item = RpcResponse<RpcLogsResponse>> + Send + 'static,
+{
+    std::thread::spawn(move || {
+        if let Ok(mut file) = File::create(&log_file_path) {
+            for response in receiver {
+                let _ = writeln!(
+                    file,
+                    "Transaction executed in slot {}:",
+                    response.context.slot
+                );
+                let _ = writeln!(file, "  Signature: {}", response.value.signature);
+                let _ = writeln!(
+                    file,
+                    "  Status: {}",
+                    response
+                        .value
+                        .err
+                        .map(|err| err.to_string())
+                        .unwrap_or_else(|| "Ok".to_string())
+                );
+                let _ = writeln!(file, "  Log Messages:");
+                for log in response.value.logs {
+                    let _ = writeln!(file, "    {}", log);
+                }
+                let _ = writeln!(file); // Empty line between transactions
+                let _ = file.flush();
+            }
+        } else {
+            eprintln!("Failed to create log file: {:?}", log_file_path);
+        }
+    });
+}
+
+fn stream_logs(config: &WithPath<Config>, rpc_url: &str) -> Result<Vec<LogStreamHandle>> {
     let program_logs_dir = Path::new(".anchor").join("program-logs");
     if program_logs_dir.exists() {
-        fs::remove_dir_all(&program_logs_dir)
-            .with_context(|| format!("Failed to remove dir {}", program_logs_dir.display()))?;
+        fs::remove_dir_all(&program_logs_dir)?;
     }
-    fs::create_dir_all(&program_logs_dir)
-        .with_context(|| format!("Failed to create dir {}", program_logs_dir.display()))?;
+    fs::create_dir_all(&program_logs_dir)?;
+
+    // For solana-test-validator, the WebSocket port is RPC port + WEBSOCKET_PORT_OFFSET
+    // Extract port from rpc_url and construct WebSocket URL
+    let ws_url = if rpc_url.contains("127.0.0.1") || rpc_url.contains("localhost") {
+        // Local validator: increment port by 1 for WebSocket
+        let rpc_port = rpc_url
+            .rsplit_once(':')
+            .and_then(|(_, port)| port.parse::<u16>().ok())
+            .unwrap_or(DEFAULT_RPC_PORT);
+
+        let ws_port = rpc_port + WEBSOCKET_PORT_OFFSET;
+        let url = format!("ws://127.0.0.1:{}", ws_port);
+        url
+    } else {
+        // Remote cluster: use same URL but replace http(s) with ws(s)
+        rpc_url
+            .replace("https://", "wss://")
+            .replace("http://", "ws://")
+    };
+
+    // Give the WebSocket endpoint a moment to be ready (especially for local validators)
+    std::thread::sleep(std::time::Duration::from_millis(1500));
 
     let mut handles = vec![];
+
+    // Subscribe to logs for all workspace programs
     for program in config.read_all_programs()? {
         let idl_path = Path::new("target")
             .join("idl")
             .join(&program.lib_name)
             .with_extension("json");
-        let idl = fs::read(&idl_path)
-            .with_context(|| format!("Failed to read IDL file {}", idl_path.display()))?;
+        let idl = fs::read(&idl_path)?;
         let idl = convert_idl(&idl)?;
 
-        let log_path = program_logs_dir.join(format!("{}.{}.log", &idl.address, program.lib_name));
-        let log_file = File::create(&log_path)
-            .with_context(|| format!("Failed to create log file {}", log_path.display()))?;
-        let stdio = std::process::Stdio::from(log_file);
-        let child = std::process::Command::new("solana")
-            .arg("logs")
-            .arg(&idl.address)
-            .arg("--url")
-            .arg(rpc_url)
-            .stdout(stdio)
-            .spawn()
-            .with_context(|| format!("Failed to spawn 'solana logs' for {}", &idl.address))?;
-        handles.push(child);
+        let log_file_path =
+            program_logs_dir.join(format!("{}.{}.log", idl.address, program.lib_name));
+        let program_address = idl.address.clone();
+
+        // Subscribe to logs using PubsubClient
+        let (client, receiver) = match PubsubClient::logs_subscribe(
+            &ws_url,
+            RpcTransactionLogsFilter::Mentions(vec![program_address.clone()]),
+            RpcTransactionLogsConfig {
+                commitment: Some(CommitmentConfig::confirmed()),
+            },
+        ) {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!(
+                    "Warning: Failed to subscribe to logs for program {}: {}",
+                    program.lib_name, e
+                );
+                continue;
+            }
+        };
+
+        // Spawn thread to write logs to file
+        spawn_log_receiver_thread(receiver, log_file_path);
+
+        handles.push(LogStreamHandle {
+            subscription: client,
+        });
     }
+
+    // Also subscribe to logs for genesis programs
     if let Some(test) = config.test_validator.as_ref() {
         if let Some(genesis) = &test.genesis {
             for entry in genesis {
-                let genesis_log_path = program_logs_dir.join(&entry.address).with_extension("log");
-                let log_file = File::create(&genesis_log_path).with_context(|| {
-                    format!("Failed to create log file {}", genesis_log_path.display())
-                })?;
-                let stdio = std::process::Stdio::from(log_file);
-                let child = std::process::Command::new("solana")
-                    .arg("logs")
-                    .arg(entry.address.clone())
-                    .arg("--url")
-                    .arg(rpc_url)
-                    .stdout(stdio)
-                    .spawn()
-                    .with_context(|| {
-                        "Failed to spawn 'solana logs' for genesis entry".to_string()
-                    })?;
-                handles.push(child);
+                let log_file_path = program_logs_dir.join(&entry.address).with_extension("log");
+                let address = entry.address.clone();
+
+                // Subscribe to logs using PubsubClient
+                let (client, receiver) = match PubsubClient::logs_subscribe(
+                    &ws_url,
+                    RpcTransactionLogsFilter::Mentions(vec![address.clone()]),
+                    RpcTransactionLogsConfig {
+                        commitment: Some(CommitmentConfig::confirmed()),
+                    },
+                ) {
+                    Ok(result) => result,
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Failed to subscribe to logs for genesis program {}: {}",
+                            &entry.address, e
+                        );
+                        continue;
+                    }
+                };
+
+                // Spawn thread to write logs to file
+                spawn_log_receiver_thread(receiver, log_file_path);
+
+                handles.push(LogStreamHandle {
+                    subscription: client,
+                });
             }
         }
     }
@@ -4499,9 +4617,22 @@ fn localnet(
 
         let validator_handle = &mut start_test_validator(cfg, &cfg.test_validator, flags, false)?;
 
-        // Setup log reader.
+        // Setup log reader - kept alive until end of scope
         let url = test_validator_rpc_url(&cfg.test_validator);
-        let log_streams = stream_logs(cfg, &url);
+        let log_streams = match stream_logs(cfg, &url) {
+            Ok(streams) => {
+                println!(
+                    "Log streams set up successfully ({} streams)",
+                    streams.len()
+                );
+                Some(streams)
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to setup program log streaming: {:#}", e);
+                eprintln!("  Program logs will still be visible in the validator output.");
+                None
+            }
+        };
 
         std::io::stdin().lock().lines().next().unwrap().unwrap();
 
@@ -4514,9 +4645,10 @@ fn localnet(
             );
         }
 
-        for mut child in log_streams? {
-            if let Err(err) = child.kill() {
-                println!("Failed to kill subprocess {}: {}", child.id(), err);
+        // Explicitly shutdown log streams - closes WebSocket subscriptions
+        if let Some(log_streams) = log_streams {
+            for handle in log_streams {
+                handle.shutdown();
             }
         }
 
