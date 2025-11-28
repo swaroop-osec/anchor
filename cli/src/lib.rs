@@ -20,6 +20,8 @@ use semver::{Version, VersionReq};
 use serde_json::{json, Map, Value as JsonValue};
 use solana_cli_config::Config as SolanaCliConfig;
 use solana_commitment_config::CommitmentConfig;
+use solana_compute_budget_interface::ComputeBudgetInstruction;
+use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
 use solana_pubsub_client::pubsub_client::PubsubClient;
@@ -41,6 +43,7 @@ mod account;
 mod checks;
 pub mod config;
 mod keygen;
+mod program;
 pub mod rust_template;
 
 // Version of the docker image.
@@ -243,6 +246,8 @@ pub enum Command {
     /// Remove all artifacts from the generated directories except program keypairs.
     Clean,
     /// Deploys each program in the workspace.
+    #[clap(hide = true)]
+    #[deprecated(since = "0.32.0", note = "use `anchor program deploy` instead")]
     Deploy {
         /// Only deploy this program
         #[clap(short, long)]
@@ -265,6 +270,8 @@ pub enum Command {
     /// Deploys, initializes an IDL, and migrates all in one command.
     /// Upgrades a single program. The configured wallet must be the upgrade
     /// authority.
+    #[clap(hide = true)]
+    #[deprecated(since = "0.32.0", note = "use `anchor program upgrade` instead")]
     Upgrade {
         /// The program to upgrade.
         #[clap(short, long)]
@@ -387,6 +394,11 @@ pub enum Command {
         #[clap(subcommand)]
         subcmd: KeygenCommand,
     },
+    /// Program deployment and management commands
+    Program {
+        #[clap(subcommand)]
+        subcmd: ProgramCommand,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -447,6 +459,163 @@ pub enum KeysCommand {
         /// Only sync the given program instead of all programs
         #[clap(short, long)]
         program_name: Option<String>,
+    },
+}
+
+#[derive(Debug, Parser)]
+pub enum ProgramCommand {
+    /// Deploy an upgradeable program
+    Deploy {
+        /// Program filepath (e.g., target/deploy/my_program.so).
+        /// If not provided, discovers programs from workspace
+        program_filepath: Option<String>,
+        /// Program name to deploy (from workspace). Used when program_filepath is not provided
+        #[clap(short, long)]
+        program_name: Option<String>,
+        /// Program keypair filepath (defaults to target/deploy/{program_name}-keypair.json)
+        #[clap(long)]
+        program_keypair: Option<String>,
+        /// Upgrade authority keypair (defaults to configured wallet)
+        #[clap(long)]
+        upgrade_authority: Option<String>,
+        /// Program id to deploy to (derived from program-keypair if not specified)
+        #[clap(long)]
+        program_id: Option<Pubkey>,
+        /// Buffer account to use for deployment
+        #[clap(long)]
+        buffer: Option<Pubkey>,
+        /// Maximum transaction length (BPF loader upgradeable limit)
+        #[clap(long)]
+        max_len: Option<usize>,
+        /// Don't upload IDL during deployment (IDL is uploaded by default)
+        #[clap(long)]
+        no_idl: bool,
+        /// Make the program immutable after deployment (cannot be upgraded)
+        #[clap(long = "final")]
+        make_final: bool,
+        /// Additional arguments to configure deployment (e.g., --with-compute-unit-price 1000)
+        #[clap(required = false, last = true)]
+        solana_args: Vec<String>,
+    },
+    /// Write a program into a buffer account
+    WriteBuffer {
+        /// Program filepath (e.g., target/deploy/my_program.so).
+        /// If not provided, discovers program from workspace using program_name
+        program_filepath: Option<String>,
+        /// Program name to write (from workspace). Used when program_filepath is not provided
+        #[clap(short, long)]
+        program_name: Option<String>,
+        /// Buffer account keypair (defaults to new keypair)
+        #[clap(long)]
+        buffer: Option<String>,
+        /// Buffer authority (defaults to configured wallet)
+        #[clap(long)]
+        buffer_authority: Option<String>,
+        /// Maximum transaction length
+        #[clap(long)]
+        max_len: Option<usize>,
+    },
+    /// Set a new buffer authority
+    SetBufferAuthority {
+        /// Buffer account address
+        buffer: Pubkey,
+        /// New buffer authority
+        new_buffer_authority: Pubkey,
+    },
+    /// Set a new program authority
+    SetUpgradeAuthority {
+        /// Program id
+        program_id: Pubkey,
+        /// New upgrade authority pubkey
+        #[clap(long)]
+        new_upgrade_authority: Option<Pubkey>,
+        /// New upgrade authority signer (keypair file). Required unless --skip-new-upgrade-authority-signer-check is used.
+        /// When provided, both current and new authority will sign (checked mode, recommended)
+        #[clap(long)]
+        new_upgrade_authority_signer: Option<String>,
+        /// Skip new upgrade authority signer check. Allows setting authority with only current authority signature.
+        /// WARNING: Less safe - use only if you're confident the pubkey is correct
+        #[clap(long)]
+        skip_new_upgrade_authority_signer_check: bool,
+        /// Make the program immutable (cannot be upgraded)
+        #[clap(long = "final")]
+        make_final: bool,
+        /// Current upgrade authority keypair (defaults to configured wallet)
+        #[clap(long)]
+        upgrade_authority: Option<String>,
+    },
+    /// Display information about a buffer or program
+    Show {
+        /// Account address (buffer or program)
+        account: Pubkey,
+        /// Get account information from the Solana config file
+        #[clap(long)]
+        get_programs: bool,
+        /// Get account information from the Solana config file
+        #[clap(long)]
+        get_buffers: bool,
+        /// Show all accounts
+        #[clap(long)]
+        all: bool,
+    },
+    /// Upgrade an upgradeable program
+    Upgrade {
+        /// Program id to upgrade
+        program_id: Pubkey,
+        /// Program filepath (e.g., target/deploy/my_program.so). If not provided, discovers from workspace
+        #[clap(long)]
+        program_filepath: Option<String>,
+        /// Program name to upgrade (from workspace). Used when program_filepath is not provided
+        #[clap(short, long)]
+        program_name: Option<String>,
+        /// Existing buffer account to upgrade from. If not provided, auto-discovers program from workspace
+        #[clap(long)]
+        buffer: Option<Pubkey>,
+        /// Upgrade authority (defaults to configured wallet)
+        #[clap(long)]
+        upgrade_authority: Option<String>,
+        /// Max times to retry on failure
+        #[clap(long, default_value = "0")]
+        max_retries: u32,
+        /// Additional arguments to configure deployment (e.g., --with-compute-unit-price 1000)
+        #[clap(required = false, last = true)]
+        solana_args: Vec<String>,
+    },
+    /// Write the program data to a file
+    Dump {
+        /// Program account address
+        account: Pubkey,
+        /// Output file path
+        output_file: String,
+    },
+    /// Close a program or buffer account and withdraw all lamports
+    Close {
+        /// Account address to close (buffer or program).
+        /// If not provided, discovers program from workspace using program_name
+        account: Option<Pubkey>,
+        /// Program name to close (from workspace). Used when account is not provided
+        #[clap(short, long)]
+        program_name: Option<String>,
+        /// Authority keypair (defaults to configured wallet)
+        #[clap(long)]
+        authority: Option<String>,
+        /// Recipient address for reclaimed lamports (defaults to authority)
+        #[clap(long)]
+        recipient: Option<Pubkey>,
+        /// Bypass warning prompts
+        #[clap(long)]
+        bypass_warning: bool,
+    },
+    /// Extend the length of an upgradeable program
+    Extend {
+        /// Program id to extend.
+        /// If not provided, discovers program from workspace using program_name
+        program_id: Option<Pubkey>,
+        /// Program name to extend (from workspace). Used when program_id is not provided
+        #[clap(short, long)]
+        program_name: Option<String>,
+        /// Additional bytes to allocate
+        additional_bytes: usize,
     },
 }
 
@@ -649,6 +818,50 @@ fn get_cluster_and_wallet(cfg_override: &ConfigOverride) -> Result<(String, Stri
     };
 
     Ok((final_cluster, wallet_path))
+}
+
+/// Get the recommended priority fee from the RPC client
+pub fn get_recommended_micro_lamport_fee(client: &RpcClient) -> Result<u64> {
+    let mut fees = client.get_recent_prioritization_fees(&[])?;
+    if fees.is_empty() {
+        // Fees may be empty, e.g. on localnet
+        return Ok(0);
+    }
+
+    // Get the median fee from the most recent 150 slots' prioritization fee
+    fees.sort_unstable_by_key(|fee| fee.prioritization_fee);
+    let median_index = fees.len() / 2;
+
+    let median_priority_fee = if fees.len() % 2 == 0 {
+        (fees[median_index - 1].prioritization_fee + fees[median_index].prioritization_fee) / 2
+    } else {
+        fees[median_index].prioritization_fee
+    };
+
+    Ok(median_priority_fee)
+}
+
+/// Prepend a compute unit ix, if the priority fee is greater than 0.
+pub fn prepend_compute_unit_ix(
+    instructions: Vec<Instruction>,
+    client: &RpcClient,
+    priority_fee: Option<u64>,
+) -> Result<Vec<Instruction>> {
+    let priority_fee = match priority_fee {
+        Some(fee) => fee,
+        None => get_recommended_micro_lamport_fee(client)?,
+    };
+
+    if priority_fee > 0 {
+        let mut instructions_appended = instructions.clone();
+        instructions_appended.insert(
+            0,
+            ComputeBudgetInstruction::set_compute_unit_price(priority_fee),
+        );
+        Ok(instructions_appended)
+    } else {
+        Ok(instructions)
+    }
 }
 
 pub fn entry(opts: Opts) -> Result<()> {
@@ -957,36 +1170,48 @@ fn process_command(opts: Opts) -> Result<()> {
             args,
         ),
         Command::Clean => clean(&opts.cfg_override),
+        #[allow(deprecated)]
         Command::Deploy {
             program_name,
             program_keypair,
             verifiable,
             no_idl,
             solana_args,
-        } => deploy(
-            &opts.cfg_override,
-            program_name,
-            program_keypair,
-            verifiable,
-            no_idl,
-            solana_args,
-        ),
+        } => {
+            eprintln!(
+                "Warning: 'anchor deploy' is deprecated. Use 'anchor program deploy' instead."
+            );
+            deploy(
+                &opts.cfg_override,
+                program_name,
+                program_keypair,
+                verifiable,
+                no_idl,
+                solana_args,
+            )
+        }
         Command::Expand {
             program_name,
             cargo_args,
         } => expand(&opts.cfg_override, program_name, &cargo_args),
+        #[allow(deprecated)]
         Command::Upgrade {
             program_id,
             program_filepath,
             max_retries,
             solana_args,
-        } => upgrade(
-            &opts.cfg_override,
-            program_id,
-            program_filepath,
-            max_retries,
-            solana_args,
-        ),
+        } => {
+            eprintln!(
+                "Warning: 'anchor upgrade' is deprecated. Use 'anchor program upgrade' instead."
+            );
+            upgrade(
+                &opts.cfg_override,
+                program_id,
+                program_filepath,
+                max_retries,
+                solana_args,
+            )
+        }
         Command::Idl { subcmd } => idl(&opts.cfg_override, subcmd),
         Command::Migrate => migrate(&opts.cfg_override),
         Command::Test {
@@ -1068,6 +1293,7 @@ fn process_command(opts: Opts) -> Result<()> {
         } => logs_subscribe(&opts.cfg_override, include_votes, address),
         Command::ShowAccount { cmd } => account::show_account(&opts.cfg_override, cmd),
         Command::Keygen { subcmd } => keygen::keygen(&opts.cfg_override, subcmd),
+        Command::Program { subcmd } => program::program(&opts.cfg_override, subcmd),
     }
 }
 
@@ -2216,15 +2442,22 @@ fn idl_init(
     priority_fee: Option<u64>,
     non_canonical: bool,
 ) -> Result<()> {
-    let url = rpc_url(cfg_override)?;
+    // Get cluster URL and wallet path from Anchor config
+    let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
-    let program_id_str = program_id.to_string();
-    let mut args = vec!["write", "idl", &program_id_str, &idl_filepath];
-
-    if non_canonical {
-        args.push("--non-canonical");
+    // Skip IDL initialization on localnet
+    let is_localnet = cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1");
+    if is_localnet {
+        println!("Skipping IDL initialization on localnet");
+        return Ok(());
     }
 
+    let program_id_str = program_id.to_string();
+
+    // Build args with global options first, then command and command args
+    let mut args = vec!["--keypair", &wallet_path, "--rpc", &cluster_url];
+
+    // Global option: priority fees
     let priority_fee_str;
     if let Some(priority_fee) = priority_fee {
         priority_fee_str = priority_fee.to_string();
@@ -2232,8 +2465,16 @@ fn idl_init(
         args.push(&priority_fee_str);
     }
 
-    args.push("--rpc");
-    args.push(&url);
+    // Command: write
+    args.push("write");
+    args.push("idl");
+    args.push(&program_id_str);
+    args.push(&idl_filepath);
+
+    // Command option: non-canonical
+    if non_canonical {
+        args.push("--non-canonical");
+    }
 
     let status = ProcessCommand::new("npx")
         .arg("@solana-program/program-metadata")
@@ -2256,11 +2497,22 @@ fn idl_upgrade(
     idl_filepath: String,
     priority_fee: Option<u64>,
 ) -> Result<()> {
-    let url = rpc_url(cfg_override)?;
+    // Get cluster URL and wallet path from Anchor config
+    let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
+
+    // Skip IDL upgrade on localnet
+    let is_localnet = cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1");
+    if is_localnet {
+        println!("Skipping IDL upgrade on localnet");
+        return Ok(());
+    }
 
     let program_id_str = program_id.to_string();
-    let mut args = vec!["write", "idl", &program_id_str, &idl_filepath];
 
+    // Build args with global options first, then command and command args
+    let mut args = vec!["--keypair", &wallet_path, "--rpc", &cluster_url];
+
+    // Global option: priority fees
     let priority_fee_str;
     if let Some(priority_fee) = priority_fee {
         priority_fee_str = priority_fee.to_string();
@@ -2268,8 +2520,11 @@ fn idl_upgrade(
         args.push(&priority_fee_str);
     }
 
-    args.push("--rpc");
-    args.push(&url);
+    // Command: write
+    args.push("write");
+    args.push("idl");
+    args.push(&program_id_str);
+    args.push(&idl_filepath);
 
     let status = ProcessCommand::new("npx")
         .arg("@solana-program/program-metadata")
@@ -4242,26 +4497,6 @@ fn add_recommended_deployment_solana_args(
     }
 
     Ok(augmented_args)
-}
-
-fn get_recommended_micro_lamport_fee(client: &RpcClient) -> Result<u64> {
-    let mut fees = client.get_recent_prioritization_fees(&[])?;
-    if fees.is_empty() {
-        // Fees may be empty, e.g. on localnet
-        return Ok(0);
-    }
-
-    // Get the median fee from the most recent 150 slots' prioritization fee
-    fees.sort_unstable_by_key(|fee| fee.prioritization_fee);
-    let median_index = fees.len() / 2;
-
-    let median_priority_fee = if fees.len() % 2 == 0 {
-        (fees[median_index - 1].prioritization_fee + fees[median_index].prioritization_fee) / 2
-    } else {
-        fees[median_index].prioritization_fee
-    };
-
-    Ok(median_priority_fee)
 }
 
 fn get_node_dns_option() -> Result<&'static str> {
