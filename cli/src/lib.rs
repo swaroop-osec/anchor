@@ -1491,7 +1491,7 @@ fn new(
     template: ProgramTemplate,
     force: bool,
 ) -> Result<()> {
-    with_workspace(cfg_override, |cfg| {
+    with_workspace(cfg_override, |cfg| -> Result<()> {
         match cfg.path().parent() {
             None => {
                 println!("Unable to make new program");
@@ -1528,7 +1528,7 @@ fn new(
             }
         };
         Ok(())
-    })
+    })?
 }
 
 /// Array of (path, content) tuple.
@@ -3179,7 +3179,7 @@ fn test(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    with_workspace(cfg_override, |cfg| {
+    with_workspace(cfg_override, |cfg| -> Result<()> {
         // Build if needed.
         if !skip_build {
             build(
@@ -3289,7 +3289,7 @@ fn test(
         }
         cfg.run_hooks(HookType::PostTest)?;
         Ok(())
-    })
+    })?
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3937,7 +3937,7 @@ fn deploy(
     solana_args: Vec<String>,
 ) -> Result<()> {
     // Execute the code within the workspace
-    with_workspace(cfg_override, |cfg| {
+    with_workspace(cfg_override, |cfg| -> Result<()> {
         let url = cluster_url(cfg, &cfg.test_validator);
         let keypair = cfg.provider.wallet.to_string();
 
@@ -3981,7 +3981,7 @@ fn deploy(
         cfg.run_hooks(HookType::PostDeploy)?;
 
         Ok(())
-    })
+    })?
 }
 
 fn upgrade(
@@ -4005,7 +4005,7 @@ fn upgrade(
 }
 
 fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
-    with_workspace(cfg_override, |cfg| {
+    with_workspace(cfg_override, |cfg| -> Result<()> {
         println!("Running migration deploy script");
 
         let url = cluster_url(cfg, &cfg.test_validator);
@@ -4063,7 +4063,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
 
         println!("Deploy complete.");
         Ok(())
-    })
+    })?
 }
 
 fn set_workspace_dir_or_exit() {
@@ -4179,13 +4179,13 @@ fn config_cmd(cfg_override: &ConfigOverride, cmd: ConfigCommand) -> Result<()> {
 }
 
 fn config_get(cfg_override: &ConfigOverride) -> Result<()> {
-    with_workspace(cfg_override, |cfg| {
+    with_workspace(cfg_override, |cfg| -> Result<()> {
         println!("Anchor Configuration:");
         println!();
         println!("Cluster: {}", cfg.provider.cluster.url());
         println!("Wallet:  {}", cfg.provider.wallet);
         Ok(())
-    })
+    })?
 }
 
 fn config_set(
@@ -4260,7 +4260,7 @@ fn config_set(
 }
 
 fn shell(cfg_override: &ConfigOverride) -> Result<()> {
-    with_workspace(cfg_override, |cfg| {
+    with_workspace(cfg_override, |cfg| -> Result<()> {
         let programs = {
             // Create idl map from all workspace programs.
             let mut idls: HashMap<String, Idl> = cfg
@@ -4321,11 +4321,11 @@ fn shell(cfg_override: &ConfigOverride) -> Result<()> {
             return Ok(());
         }
         Ok(())
-    })
+    })?
 }
 
 fn run(cfg_override: &ConfigOverride, script: String, script_args: Vec<String>) -> Result<()> {
-    with_workspace(cfg_override, |cfg| {
+    with_workspace(cfg_override, |cfg| -> Result<()> {
         let url = cluster_url(cfg, &cfg.test_validator);
         let script = cfg
             .scripts
@@ -4345,7 +4345,7 @@ fn run(cfg_override: &ConfigOverride, script: String, script_args: Vec<String>) 
             std::process::exit(exit.status.code().unwrap_or(1));
         }
         Ok(())
-    })
+    })?
 }
 
 fn login(_cfg_override: &ConfigOverride, token: String) -> Result<()> {
@@ -4372,18 +4372,18 @@ fn keys(cfg_override: &ConfigOverride, cmd: KeysCommand) -> Result<()> {
 }
 
 fn keys_list(cfg_override: &ConfigOverride) -> Result<()> {
-    with_workspace(cfg_override, |cfg| {
+    with_workspace(cfg_override, |cfg| -> Result<()> {
         for program in cfg.read_all_programs()? {
             let pubkey = program.pubkey()?;
             println!("{}: {}", program.lib_name, pubkey);
         }
         Ok(())
-    })
+    })?
 }
 
 /// Sync program `declare_id!` pubkeys with the pubkey from `target/deploy/<KEYPAIR>.json`.
 fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Result<()> {
-    with_workspace(cfg_override, |cfg| {
+    with_workspace(cfg_override, |cfg| -> Result<()> {
         let declare_id_regex = RegexBuilder::new(r#"^(([\w]+::)*)declare_id!\("(\w*)"\)"#)
             .multi_line(true)
             .build()
@@ -4457,7 +4457,7 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
         }
 
         Ok(())
-    })
+    })?
 }
 
 /// Check if there's a mismatch between the program keypair and the `declare_id!` in the source code.
@@ -4516,7 +4516,7 @@ fn localnet(
     cargo_args: Vec<String>,
     arch: ProgramArch,
 ) -> Result<()> {
-    with_workspace(cfg_override, |cfg| {
+    with_workspace(cfg_override, |cfg| -> Result<()> {
         // Build if needed.
         if !skip_build {
             build(
@@ -4583,7 +4583,7 @@ fn localnet(
         }
 
         Ok(())
-    })
+    })?
 }
 
 // with_workspace ensures the current working directory is always the top level
@@ -4595,18 +4595,18 @@ fn localnet(
 fn with_workspace<R>(
     cfg_override: &ConfigOverride,
     f: impl FnOnce(&mut WithPath<Config>) -> R,
-) -> R {
+) -> Result<R> {
     set_workspace_dir_or_exit();
 
     let mut cfg = Config::discover(cfg_override)
-        .expect("Previously set the workspace dir")
-        .expect("This command requires an Anchor workspace.");
+        .map_err(|e| anyhow!("Workspace configuration error: {}", e))?
+        .ok_or_else(|| anyhow!("This command requires an Anchor workspace."))?;
 
     let r = f(&mut cfg);
 
     set_workspace_dir_or_exit();
 
-    r
+    Ok(r)
 }
 
 fn is_hidden(entry: &walkdir::DirEntry) -> bool {
