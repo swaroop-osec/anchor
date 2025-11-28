@@ -297,6 +297,11 @@ pub enum Command {
         #[clap(subcommand)]
         subcmd: ClusterCommand,
     },
+    /// Configuration management commands.
+    Config {
+        #[clap(subcommand)]
+        subcmd: ConfigCommand,
+    },
     /// Starts a node shell with an Anchor client setup according to the local
     /// config.
     Shell,
@@ -747,6 +752,21 @@ pub enum IdlCommand {
 pub enum ClusterCommand {
     /// Prints common cluster urls.
     List,
+}
+
+#[derive(Debug, Parser)]
+pub enum ConfigCommand {
+    /// Get configuration settings from the local Anchor.toml
+    Get,
+    /// Set configuration settings in the local Anchor.toml
+    Set {
+        /// Cluster to connect to (custom URL). Use -um, -ud, -ut, -ul for standard clusters
+        #[clap(short = 'u', long = "url")]
+        url: Option<String>,
+        /// Path to wallet keypair file to update the Anchor.toml file with
+        #[clap(short = 'k', long = "keypair")]
+        keypair: Option<String>,
+    },
 }
 
 fn get_keypair(path: &str) -> Result<Keypair> {
@@ -1244,6 +1264,7 @@ fn process_command(opts: Opts) -> Result<()> {
         ),
         Command::Airdrop { amount, pubkey } => airdrop(&opts.cfg_override, amount, pubkey),
         Command::Cluster { subcmd } => cluster(subcmd),
+        Command::Config { subcmd } => config_cmd(&opts.cfg_override, subcmd),
         Command::Shell => shell(&opts.cfg_override),
         Command::Run {
             script,
@@ -4099,6 +4120,94 @@ fn cluster(_cmd: ClusterCommand) -> Result<()> {
     println!("* Mainnet - https://api.mainnet-beta.solana.com");
     println!("* Devnet  - https://api.devnet.solana.com");
     println!("* Testnet - https://api.testnet.solana.com");
+    Ok(())
+}
+
+fn config_cmd(cfg_override: &ConfigOverride, cmd: ConfigCommand) -> Result<()> {
+    match cmd {
+        ConfigCommand::Get => config_get(cfg_override),
+        ConfigCommand::Set { url, keypair } => config_set(cfg_override, url, keypair),
+    }
+}
+
+fn config_get(cfg_override: &ConfigOverride) -> Result<()> {
+    with_workspace(cfg_override, |cfg| {
+        println!("Anchor Configuration:");
+        println!();
+        println!("Cluster: {}", cfg.provider.cluster.url());
+        println!("Wallet:  {}", cfg.provider.wallet);
+        Ok(())
+    })
+}
+
+fn config_set(
+    cfg_override: &ConfigOverride,
+    url: Option<String>,
+    keypair: Option<String>,
+) -> Result<()> {
+    // Find the Anchor.toml file
+    let anchor_toml_path = match Config::discover(cfg_override)? {
+        Some(cfg) => cfg.path().parent().unwrap().join("Anchor.toml"),
+        None => bail!("Not in an Anchor workspace"),
+    };
+
+    // Read the current Anchor.toml
+    let mut toml_content =
+        fs::read_to_string(&anchor_toml_path).context("Failed to read Anchor.toml")?;
+    let mut toml_doc: toml::Value =
+        toml::from_str(&toml_content).context("Failed to parse Anchor.toml")?;
+
+    let mut updated = false;
+
+    // Update cluster URL if provided
+    if let Some(cluster_url) = url {
+        let expanded_url = match cluster_url.as_str() {
+            "m" => "https://api.mainnet-beta.solana.com".to_string(),
+            "d" => "https://api.devnet.solana.com".to_string(),
+            "t" => "https://api.testnet.solana.com".to_string(),
+            "l" => "http://127.0.0.1:8899".to_string(),
+            _ => cluster_url,
+        };
+
+        if let Some(provider) = toml_doc.get_mut("provider").and_then(|v| v.as_table_mut()) {
+            provider.insert(
+                "cluster".to_string(),
+                toml::Value::String(expanded_url.clone()),
+            );
+            println!("Updated cluster to: {}", expanded_url);
+            updated = true;
+        }
+    }
+
+    // Update wallet path if provided
+    if let Some(keypair_path) = keypair {
+        let expanded_path = shellexpand::tilde(&keypair_path).to_string();
+
+        // Check if the wallet file exists
+        if !Path::new(&expanded_path).exists() {
+            eprintln!("Warning: Wallet file does not exist: {}", expanded_path);
+        }
+
+        if let Some(provider) = toml_doc.get_mut("provider").and_then(|v| v.as_table_mut()) {
+            provider.insert(
+                "wallet".to_string(),
+                toml::Value::String(expanded_path.clone()),
+            );
+            println!("Updated wallet to: {}", expanded_path);
+            updated = true;
+        }
+    }
+
+    if updated {
+        // Write the updated config back to Anchor.toml
+        toml_content =
+            toml::to_string_pretty(&toml_doc).context("Failed to serialize Anchor.toml")?;
+        fs::write(&anchor_toml_path, toml_content).context("Failed to write Anchor.toml")?;
+        println!("\nConfiguration updated successfully!");
+    } else {
+        println!("No changes made. Use --url or --keypair to update settings.");
+    }
+
     Ok(())
 }
 
