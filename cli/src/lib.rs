@@ -1600,7 +1600,8 @@ pub fn expand(
         cd_member(cfg_override, program_name)?;
     }
 
-    let workspace_cfg = Config::discover(cfg_override)?.expect("Not in workspace.");
+    let workspace_cfg = Config::discover(cfg_override)?
+        .ok_or_else(|| anyhow!("The 'anchor expand' command requires an Anchor workspace."))?;
     let cfg_parent = workspace_cfg.path().parent().expect("Invalid Anchor.toml");
     let cargo = Manifest::discover()?;
 
@@ -1709,7 +1710,8 @@ pub fn build(
     if let Some(program_name) = program_name.as_ref() {
         cd_member(cfg_override, program_name)?;
     }
-    let cfg = Config::discover(cfg_override)?.expect("Not in workspace.");
+    let cfg = Config::discover(cfg_override)?
+        .ok_or_else(|| anyhow!("The 'anchor build' command requires an Anchor workspace."))?;
     let cfg_parent = cfg.path().parent().expect("Invalid Anchor.toml");
 
     // Require overflow checks
@@ -2354,10 +2356,10 @@ pub fn verify(
 }
 
 fn cd_member(cfg_override: &ConfigOverride, program_name: &str) -> Result<()> {
-    // Change directories to the given `program_name`, if given.
-    let cfg = Config::discover(cfg_override)?.expect("Not in workspace.");
+    // Change directories to the given `program_name`, using either Anchor or Cargo workspace
+    let programs = program::get_programs_from_workspace(cfg_override, None)?;
 
-    for program in cfg.read_all_programs()? {
+    for program in programs {
         let cargo_toml = program.path.join("Cargo.toml");
         if !cargo_toml.exists() {
             return Err(anyhow!(
@@ -2368,8 +2370,7 @@ fn cd_member(cfg_override: &ConfigOverride, program_name: &str) -> Result<()> {
 
         let manifest = Manifest::from_path(&cargo_toml)?;
         let pkg_name = manifest.package().name();
-        let lib_name = manifest.lib_name()?;
-        if program_name == pkg_name || program_name == lib_name {
+        if program_name == pkg_name || program_name == program.lib_name {
             std::env::set_current_dir(&program.path)?;
             return Ok(());
         }
@@ -2575,7 +2576,8 @@ fn idl_build(
     skip_lint: bool,
     cargo_args: Vec<String>,
 ) -> Result<()> {
-    let cfg = Config::discover(cfg_override)?.expect("Not in workspace");
+    let cfg = Config::discover(cfg_override)?
+        .ok_or_else(|| anyhow!("The 'anchor idl build' command requires an Anchor workspace."))?;
     let current_dir = std::env::current_dir()?;
     let program_path = match program_name {
         Some(name) => cfg.get_program(&name)?.path,
@@ -2910,9 +2912,8 @@ fn account(
 
     let idl = idl_filepath.map_or_else(
         || {
-            Config::discover(cfg_override)
-                .expect("Error when detecting workspace.")
-                .expect("Not in workspace.")
+            Config::discover(cfg_override)?
+                .ok_or_else(|| anyhow!("The 'anchor account' command requires an Anchor workspace with Anchor.toml for IDL type generation."))?
                 .read_all_programs()
                 .expect("Workspace must contain atleast one program.")
                 .into_iter()
@@ -3877,10 +3878,19 @@ fn cluster_url(cfg: &Config, test_validator: &Option<TestValidator>) -> String {
 }
 
 fn clean(cfg_override: &ConfigOverride) -> Result<()> {
-    let cfg = Config::discover(cfg_override)?.expect("Not in workspace.");
-    let cfg_parent = cfg.path().parent().expect("Invalid Anchor.toml");
-    let dot_anchor_dir = cfg_parent.join(".anchor");
-    let target_dir = cfg_parent.join("target");
+    // Get workspace root - either from Anchor.toml or use current directory
+    let workspace_root = if let Ok(Some(cfg)) = Config::discover(cfg_override) {
+        cfg.path()
+            .parent()
+            .expect("Invalid Anchor.toml")
+            .to_path_buf()
+    } else {
+        // No Anchor.toml - use current directory for Cargo workspace
+        std::env::current_dir()?
+    };
+
+    let dot_anchor_dir = workspace_root.join(".anchor");
+    let target_dir = workspace_root.join("target");
     let deploy_dir = target_dir.join("deploy");
 
     if dot_anchor_dir.exists() {
@@ -4164,6 +4174,7 @@ fn migrate(cfg_override: &ConfigOverride) -> Result<()> {
 }
 
 fn set_workspace_dir_or_exit() {
+    // First try to find Anchor workspace
     let d = match Config::discover(&ConfigOverride::default()) {
         Err(err) => {
             println!("Workspace configuration error: {err}");
@@ -4171,19 +4182,45 @@ fn set_workspace_dir_or_exit() {
         }
         Ok(d) => d,
     };
+
     match d {
         None => {
-            println!("Not in anchor workspace.");
-            std::process::exit(1);
+            // No Anchor.toml found - check for Cargo workspace with Solana programs
+            let current_dir = match std::env::current_dir() {
+                Ok(dir) => dir,
+                Err(_) => {
+                    println!("Unable to determine current directory");
+                    std::process::exit(1);
+                }
+            };
+
+            let cargo_toml_path = current_dir.join("Cargo.toml");
+            if !cargo_toml_path.exists() {
+                println!("Not in a Solana workspace. This command requires either Anchor.toml or a Cargo workspace with Solana programs.");
+                std::process::exit(1);
+            }
+
+            // Check if this is a workspace and has Solana programs
+            match program::discover_solana_programs(None) {
+                Ok(programs) if !programs.is_empty() => {
+                    // Found Solana programs in Cargo workspace - stay in current directory
+                    // (already in the right place)
+                }
+                _ => {
+                    println!("Not in a Solana workspace. This command requires either Anchor.toml or a Cargo workspace with Solana programs.");
+                    std::process::exit(1);
+                }
+            }
         }
         Some(cfg) => {
+            // Found Anchor.toml - change to workspace root
             match cfg.path().parent() {
                 None => {
                     println!("Unable to make new program");
                 }
                 Some(parent) => {
                     if std::env::set_current_dir(parent).is_err() {
-                        println!("Not in anchor workspace.");
+                        println!("Not in a Solana workspace. This command requires either Anchor.toml or a Cargo workspace with Solana programs.");
                         std::process::exit(1);
                     }
                 }
@@ -4670,7 +4707,7 @@ fn with_workspace<R>(
 
     let mut cfg = Config::discover(cfg_override)
         .expect("Previously set the workspace dir")
-        .expect("Anchor.toml must always exist");
+        .expect("This command requires an Anchor workspace.");
 
     let r = f(&mut cfg);
 
