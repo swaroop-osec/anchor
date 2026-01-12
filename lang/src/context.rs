@@ -3,6 +3,7 @@
 use crate::solana_program::account_info::AccountInfo;
 use crate::solana_program::instruction::AccountMeta;
 use crate::solana_program::pubkey::Pubkey;
+use crate::constraints::Constraints;
 use crate::{Accounts, Bumps, ToAccountInfos, ToAccountMetas};
 use std::fmt;
 
@@ -66,6 +67,15 @@ where
             remaining_accounts,
             bumps,
         }
+    }
+}
+
+impl<'a, 'b, 'c, 'info, T> Context<'a, 'b, 'c, 'info, T>
+where
+    T: Constraints,
+{
+    pub fn validate(&self) -> crate::Result<()> {
+        self.accounts.validate(self)
     }
 }
 

@@ -37,6 +37,7 @@ pub mod accounts;
 mod bpf_upgradeable_state;
 mod bpf_writer;
 mod common;
+pub mod constraints;
 pub mod context;
 pub mod error;
 #[doc(hidden)]
@@ -489,11 +490,12 @@ pub mod prelude {
         accounts::program::Program, accounts::signer::Signer,
         accounts::system_account::SystemAccount, accounts::sysvar::Sysvar,
         accounts::unchecked_account::UncheckedAccount, constant, context::Context,
-        context::CpiContext, declare_id, declare_program, emit, err, error, event, instruction,
-        program, pubkey, require, require_eq, require_gt, require_gte, require_keys_eq,
-        require_keys_neq, require_neq,
+        context::CpiContext, constraints::Constraints, declare_id,
+        declare_program, emit, err,
+        error, event, instruction, program, pubkey, require,
+        require_eq, require_gt, require_gte, require_keys_eq, require_keys_neq, require_neq,
         solana_program::bpf_loader_upgradeable::UpgradeableLoaderState, source,
-        system_program::System, zero_copy, AccountDeserialize, AccountSerialize, Accounts,
+        system_program::System, zero_copy, AccountDeserialize, AccountSerialize, Accounts, Bumps,
         AccountsClose, AccountsExit, AnchorDeserialize, AnchorSerialize, Discriminator, Id,
         InitSpace, Key, Lamports, Owner, ProgramData, Result, Space, ToAccountInfo, ToAccountInfos,
         ToAccountMetas,
