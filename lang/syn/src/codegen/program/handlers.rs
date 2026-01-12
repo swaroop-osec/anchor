@@ -108,6 +108,10 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                     anchor_lang::prelude::msg!(#ix_name_log);
 
                     #param_validation
+                    {
+                        fn __anchor_require_constraints<T: anchor_lang::constraints::Constraints>() {}
+                        __anchor_require_constraints::<#anchor>();
+                    }
                     // Deserialize data.
                     let ix = instruction::#ix_name::deserialize(&mut &__ix_data[..])
                         .map_err(|_| anchor_lang::error::ErrorCode::InstructionDidNotDeserialize)?;
