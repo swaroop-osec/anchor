@@ -149,6 +149,8 @@ pub struct AccountsStruct {
     pub fields: Vec<AccountField>,
     // Instruction data api expression.
     instruction_api: Option<Punctuated<Expr, Comma>>,
+    // Skip auto-generated Constraints impl.
+    pub manual_constraints: bool,
 }
 
 impl Parse for AccountsStruct {
@@ -175,6 +177,7 @@ impl AccountsStruct {
         strct: ItemStruct,
         fields: Vec<AccountField>,
         instruction_api: Option<Punctuated<Expr, Comma>>,
+        manual_constraints: bool,
     ) -> Self {
         let ident = strct.ident.clone();
         let generics = strct.generics;
@@ -183,6 +186,7 @@ impl AccountsStruct {
             generics,
             fields,
             instruction_api,
+            manual_constraints,
         }
     }
 

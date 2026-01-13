@@ -55,6 +55,49 @@ pub fn generate(f: &Field, accs: &AccountsStruct) -> proc_macro2::TokenStream {
     }
 }
 
+// Generate only validation-safe constraints for Context::validate().
+pub fn generate_for_validate(f: &Field, accs: &AccountsStruct) -> proc_macro2::TokenStream {
+    let constraints: Vec<Constraint> = linearize(&f.constraints)
+        .into_iter()
+        .filter(|c| {
+            !matches!(
+                c,
+                Constraint::Init(_) | Constraint::Zeroed(_) | Constraint::Realloc(_)
+            )
+        })
+        .collect();
+
+    let rent = if constraints
+        .iter()
+        .any(|c| matches!(c, Constraint::RentExempt(ConstraintRentExempt::Enforce)))
+    {
+        quote! { let __anchor_rent = Rent::get()?; }
+    } else {
+        quote! {}
+    };
+
+    let checks: Vec<proc_macro2::TokenStream> = constraints
+        .iter()
+        .map(|c| generate_constraint(f, c, accs))
+        .collect();
+
+    let mut all_checks = quote! {#(#checks)*};
+
+    if f.is_optional && !constraints.is_empty() {
+        let ident = &f.ident;
+        all_checks = quote! {
+            if let Some(#ident) = &#ident {
+                #all_checks
+            }
+        };
+    }
+
+    quote! {
+        #rent
+        #all_checks
+    }
+}
+
 pub fn generate_composite(f: &CompositeField) -> proc_macro2::TokenStream {
     let checks: Vec<proc_macro2::TokenStream> = linearize(&f.constraints)
         .iter()

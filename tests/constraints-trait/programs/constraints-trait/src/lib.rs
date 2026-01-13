@@ -7,20 +7,25 @@ pub mod constraints_trait {
     use super::*;
 
     pub fn noop(ctx: Context<Noop>) -> Result<()> {
-        ctx.validate()?;
         Ok(())
     }
 
     pub fn init_counter(ctx: Context<InitCounter>, start: u64) -> Result<()> {
-        ctx.validate()?;
         let counter = &mut ctx.accounts.counter;
         counter.count = start;
         counter.authority = ctx.accounts.authority.key();
+        // Persist PDA bump for later validation.
+        counter.bump = ctx.bumps.counter;
         Ok(())
     }
 
     pub fn increment(ctx: Context<IncrementCounter>) -> Result<()> {
-        ctx.validate()?;
+        // Ensure bump derivation is consistent across instructions.
+        require_eq!(
+            ctx.bumps.counter,
+            ctx.accounts.counter.bump,
+            ErrorCode::ConstraintSeeds
+        );
         let counter = &mut ctx.accounts.counter;
         counter.count = counter.count.saturating_add(1);
         Ok(())
@@ -28,6 +33,7 @@ pub mod constraints_trait {
 }
 
 #[derive(Accounts)]
+#[accounts(manual_constraints)]
 pub struct Noop<'info> {
     pub authority: Signer<'info>,
     pub system_program: AccountInfo<'info>,
@@ -62,79 +68,38 @@ impl<'info> Constraints for Noop<'info> {
 
 #[derive(Accounts)]
 pub struct InitCounter<'info> {
-    #[account(init, payer = authority, space = 8 + Counter::INIT_SPACE)]
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + Counter::INIT_SPACE,
+        seeds = [b"counter", authority.key().as_ref()],
+        bump
+    )]
     pub counter: Account<'info, Counter>,
     #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
-impl<'info> Constraints for InitCounter<'info> {
-    fn validate<'ctx>(&self, ctx: &Context<'_, '_, '_, 'ctx, Self>) -> Result<()> {
-        require!(self.authority.is_signer, ErrorCode::ConstraintSigner);
-        require!(self.authority.is_writable, ErrorCode::ConstraintMut);
-        require!(
-            self.counter.to_account_info().is_writable,
-            ErrorCode::ConstraintMut
-        );
-        require_keys_eq!(
-            self.system_program.key(),
-            system_program::ID,
-            ErrorCode::ConstraintAddress
-        );
-        require!(
-            self.system_program.executable,
-            ErrorCode::ConstraintExecutable
-        );
-        require!(
-            self.counter.to_account_info().owner == ctx.program_id,
-            ErrorCode::ConstraintOwner
-        );
-        let rent = Rent::get()?;
-        require!(
-            rent.is_exempt(
-                self.counter.to_account_info().lamports(),
-                self.counter.to_account_info().data_len()
-            ),
-            ErrorCode::ConstraintRentExempt
-        );
-        Ok(())
-    }
-}
-
 #[derive(Accounts)]
 pub struct IncrementCounter<'info> {
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"counter", authority.key().as_ref()],
+        bump,
+        has_one = authority
+    )]
     pub counter: Account<'info, Counter>,
     pub authority: Signer<'info>,
-}
-
-impl<'info> Constraints for IncrementCounter<'info> {
-    fn validate<'ctx>(&self, ctx: &Context<'_, '_, '_, 'ctx, Self>) -> Result<()> {
-        require!(
-            self.counter.to_account_info().is_writable,
-            ErrorCode::ConstraintMut
-        );
-        require!(self.authority.is_signer, ErrorCode::ConstraintSigner);
-        require_keys_eq!(
-            self.counter.authority,
-            self.authority.key(),
-            ErrorCode::ConstraintHasOne
-        );
-        require!(
-            self.counter.to_account_info().owner == ctx.program_id,
-            ErrorCode::ConstraintOwner
-        );
-        Ok(())
-    }
 }
 
 #[account]
 pub struct Counter {
     pub count: u64,
+    pub bump: u8,
     pub authority: Pubkey,
 }
 
 impl Counter {
-    pub const INIT_SPACE: usize = 8 + 32;
+    pub const INIT_SPACE: usize = 8 + 1 + 32;
 }

@@ -5,6 +5,7 @@ pub mod event_cpi;
 use crate::parser::docs;
 use crate::*;
 use syn::parse::{Error as ParseError, Result as ParseResult};
+use syn::Attribute;
 use syn::Path;
 
 pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
@@ -35,6 +36,8 @@ pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
     #[cfg(not(feature = "event-cpi"))]
     let accounts_struct = accounts_struct.clone();
 
+    let manual_constraints = parse_manual_constraints(&accounts_struct.attrs)?;
+
     let fields = match &accounts_struct.fields {
         syn::Fields::Named(fields) => fields
             .named
@@ -55,7 +58,26 @@ pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
         accounts_struct,
         fields,
         instruction_api,
+        manual_constraints,
     ))
+}
+
+fn parse_manual_constraints(attrs: &[Attribute]) -> ParseResult<bool> {
+    // Parse #[accounts(manual_constraints)] to skip auto Constraints impls.
+    let mut manual_constraints = false;
+
+    for attr in attrs.iter().filter(|a| a.path.is_ident("accounts")) {
+        let args = attr.parse_args_with(Punctuated::<Ident, Comma>::parse_terminated)?;
+        for arg in args {
+            if arg == "manual_constraints" {
+                manual_constraints = true;
+            } else {
+                return Err(ParseError::new_spanned(arg, "unknown #[accounts] argument"));
+            }
+        }
+    }
+
+    Ok(manual_constraints)
 }
 
 fn constraints_cross_checks(fields: &[AccountField]) -> ParseResult<()> {

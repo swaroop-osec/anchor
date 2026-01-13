@@ -132,16 +132,17 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                         &mut __reallocs,
                     )?;
 
+                    let __ctx = anchor_lang::context::Context::new(
+                        __program_id,
+                        &mut __accounts,
+                        __remaining_accounts,
+                        __bumps,
+                    );
+                    // Run account validation before invoking user handlers.
+                    __ctx.validate()?;
+
                     // Invoke user defined handler.
-                    let result = #program_name::#ix_method_name(
-                        anchor_lang::context::Context::new(
-                            __program_id,
-                            &mut __accounts,
-                            __remaining_accounts,
-                            __bumps,
-                        ),
-                        #(#ix_arg_names),*
-                    )?;
+                    let result = #program_name::#ix_method_name(__ctx, #(#ix_arg_names),*)?;
 
                     // Maybe set Solana return data.
                     #maybe_set_return_data
