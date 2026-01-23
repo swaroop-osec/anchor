@@ -10,6 +10,7 @@
 //! replace it with a `const fn` + `OnceLock` that avoids the leak.
 
 #![allow(dead_code)]
+#![allow(deprecated)]
 
 use anchor_lang::prelude::*;
 

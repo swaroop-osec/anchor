@@ -366,6 +366,40 @@ impl Field {
                     #container_ty<'info, #from, #to>
                 }
             }
+            // Wrapper types - generate full nested type declarations
+            Ty::Mut(ty) => {
+                let inner_decl = inner_ty_decl(&ty.inner);
+                quote! {
+                    anchor_lang::account_set::Mut<#inner_decl>
+                }
+            }
+            Ty::Seeded(ty) => {
+                let inner_decl = inner_ty_decl(&ty.inner);
+                let seeds = &ty.seeds_type_path;
+                quote! {
+                    anchor_lang::account_set::Seeded<#inner_decl, #seeds>
+                }
+            }
+            Ty::Owned(ty) => {
+                let inner_decl = inner_ty_decl(&ty.inner);
+                let program = &ty.program_type_path;
+                quote! {
+                    anchor_lang::account_set::Owned<#inner_decl, #program>
+                }
+            }
+            Ty::Executable(ty) => {
+                let inner_decl = inner_ty_decl(&ty.inner);
+                quote! {
+                    anchor_lang::account_set::Executable<#inner_decl>
+                }
+            }
+            Ty::HasOne(ty) => {
+                let inner_decl = inner_ty_decl(&ty.inner);
+                let target = &ty.target_type_path;
+                quote! {
+                    anchor_lang::account_set::HasOne<#inner_decl, #target>
+                }
+            }
             _ => quote! {
                 #container_ty<#account_ty>
             },
@@ -390,98 +424,7 @@ impl Field {
     ) -> proc_macro2::TokenStream {
         let field = &self.ident;
         let field_str = field.to_string();
-        let container_ty = self.container_ty();
-        let owner_addr = match &kind {
-            None => quote! { __program_id },
-            Some(InitKind::Program { .. }) => quote! {
-                __program_id
-            },
-            _ => quote! {
-                &anchor_spl::token::ID
-            },
-        };
-        match &self.ty {
-            Ty::AccountInfo => quote! { #field.to_account_info() },
-            Ty::UncheckedAccount => {
-                quote! { UncheckedAccount::try_from(&#field) }
-            }
-            Ty::Account(AccountTy { boxed, .. })
-            | Ty::InterfaceAccount(InterfaceAccountTy { boxed, .. }) => {
-                let stream = if checked {
-                    quote! {
-                        match #container_ty::try_from(&#field) {
-                            Ok(val) => val,
-                            Err(e) => return Err(e.with_account_name(#field_str))
-                        }
-                    }
-                } else {
-                    quote! {
-                        match #container_ty::try_from_unchecked(&#field) {
-                            Ok(val) => val,
-                            Err(e) => return Err(e.with_account_name(#field_str))
-                        }
-                    }
-                };
-                if *boxed {
-                    quote! {
-                        Box::new(#stream)
-                    }
-                } else {
-                    stream
-                }
-            }
-            Ty::LazyAccount(_) => {
-                if checked {
-                    quote! {
-                        match #container_ty::try_from(&#field) {
-                            Ok(val) => val,
-                            Err(e) => return Err(e.with_account_name(#field_str))
-                        }
-                    }
-                } else {
-                    quote! {
-                        match #container_ty::try_from_unchecked(&#field) {
-                            Ok(val) => val,
-                            Err(e) => return Err(e.with_account_name(#field_str))
-                        }
-                    }
-                }
-            }
-            Ty::AccountLoader(_) => {
-                if checked {
-                    quote! {
-                        match #container_ty::try_from(&#field) {
-                            Ok(val) => val,
-                            Err(e) => return Err(e.with_account_name(#field_str))
-                        }
-                    }
-                } else {
-                    quote! {
-                        match #container_ty::try_from_unchecked(#owner_addr, &#field) {
-                            Ok(val) => val,
-                            Err(e) => return Err(e.with_account_name(#field_str))
-                        }
-                    }
-                }
-            }
-            _ => {
-                if checked {
-                    quote! {
-                        match #container_ty::try_from(#owner_addr, &#field) {
-                            Ok(val) => val,
-                            Err(e) => return Err(e.with_account_name(#field_str))
-                        }
-                    }
-                } else {
-                    quote! {
-                        match #container_ty::try_from_unchecked(#owner_addr, &#field) {
-                            Ok(val) => val,
-                            Err(e) => return Err(e.with_account_name(#field_str))
-                        }
-                    }
-                }
-            }
-        }
+        from_account_info_for_ty(&self.ty, field, &field_str, kind, checked)
     }
 
     pub fn container_ty(&self) -> proc_macro2::TokenStream {
@@ -509,6 +452,12 @@ impl Field {
             Ty::Signer => quote! {},
             Ty::SystemAccount => quote! {},
             Ty::ProgramData => quote! {},
+            // Wrapper types from account_set module
+            Ty::Mut(_) => quote! { anchor_lang::account_set::Mut },
+            Ty::Seeded(_) => quote! { anchor_lang::account_set::Seeded },
+            Ty::Owned(_) => quote! { anchor_lang::account_set::Owned },
+            Ty::Executable(_) => quote! { anchor_lang::account_set::Executable },
+            Ty::HasOne(_) => quote! { anchor_lang::account_set::HasOne },
         }
     }
 
@@ -591,7 +540,356 @@ impl Field {
                     #program
                 }
             }
+            // Wrapper types - delegate to inner type's account_ty
+            Ty::Mut(ty) => inner_account_ty(&ty.inner),
+            Ty::Seeded(ty) => inner_account_ty(&ty.inner),
+            Ty::Owned(ty) => inner_account_ty(&ty.inner),
+            Ty::Executable(ty) => inner_account_ty(&ty.inner),
+            Ty::HasOne(ty) => inner_account_ty(&ty.inner),
         }
+    }
+}
+
+/// Helper to get the account type from a boxed Ty (for wrapper types)
+fn inner_account_ty(ty: &Ty) -> proc_macro2::TokenStream {
+    match ty {
+        Ty::AccountInfo => quote! { AccountInfo },
+        Ty::UncheckedAccount => quote! { UncheckedAccount },
+        Ty::Signer => quote! { Signer },
+        Ty::SystemAccount => quote! { SystemAccount },
+        Ty::ProgramData => quote! { ProgramData },
+        Ty::Account(ty) => {
+            let ident = &ty.account_type_path;
+            quote! { #ident }
+        }
+        Ty::LazyAccount(ty) => {
+            let ident = &ty.account_type_path;
+            quote! { #ident }
+        }
+        Ty::InterfaceAccount(ty) => {
+            let ident = &ty.account_type_path;
+            quote! { #ident }
+        }
+        Ty::AccountLoader(ty) => {
+            let ident = &ty.account_type_path;
+            quote! { #ident }
+        }
+        Ty::Migration(ty) => {
+            let from = &ty.from_type_path;
+            quote! { #from }
+        }
+        Ty::Sysvar(ty) => match ty {
+            SysvarTy::Clock => quote! { Clock },
+            SysvarTy::Rent => quote! { Rent },
+            SysvarTy::EpochSchedule => quote! { EpochSchedule },
+            SysvarTy::Fees => quote! { Fees },
+            SysvarTy::RecentBlockhashes => quote! { RecentBlockhashes },
+            SysvarTy::SlotHashes => quote! { SlotHashes },
+            SysvarTy::SlotHistory => quote! { SlotHistory },
+            SysvarTy::StakeHistory => quote! { StakeHistory },
+            SysvarTy::Instructions => quote! { Instructions },
+            SysvarTy::Rewards => quote! { Rewards },
+        },
+        Ty::Program(ty) => {
+            let program = &ty.account_type_path;
+            let program_str = quote!(#program).to_string();
+            if program_str == "__SolanaProgramUnitType" {
+                quote! {}
+            } else {
+                quote! { #program }
+            }
+        }
+        Ty::Interface(ty) => {
+            let program = &ty.account_type_path;
+            quote! { #program }
+        }
+        // Nested wrappers - recurse
+        Ty::Mut(inner_ty) => inner_account_ty(&inner_ty.inner),
+        Ty::Seeded(inner_ty) => inner_account_ty(&inner_ty.inner),
+        Ty::Owned(inner_ty) => inner_account_ty(&inner_ty.inner),
+        Ty::Executable(inner_ty) => inner_account_ty(&inner_ty.inner),
+        Ty::HasOne(inner_ty) => inner_account_ty(&inner_ty.inner),
+    }
+}
+
+/// Helper to generate the full type declaration from a Ty (for wrapper types)
+fn inner_ty_decl(ty: &Ty) -> proc_macro2::TokenStream {
+    match ty {
+        Ty::AccountInfo => quote! { AccountInfo<'info> },
+        Ty::UncheckedAccount => quote! { UncheckedAccount<'info> },
+        Ty::Signer => quote! { Signer<'info> },
+        Ty::SystemAccount => quote! { SystemAccount<'info> },
+        Ty::ProgramData => quote! { ProgramData<'info> },
+        Ty::Account(ty) => {
+            let ident = &ty.account_type_path;
+            if ty.boxed {
+                quote! { Box<anchor_lang::accounts::account::Account<'info, #ident>> }
+            } else {
+                quote! { anchor_lang::accounts::account::Account<'info, #ident> }
+            }
+        }
+        Ty::LazyAccount(ty) => {
+            let ident = &ty.account_type_path;
+            quote! { anchor_lang::accounts::lazy_account::LazyAccount<'info, #ident> }
+        }
+        Ty::InterfaceAccount(ty) => {
+            let ident = &ty.account_type_path;
+            if ty.boxed {
+                quote! { Box<anchor_lang::accounts::interface_account::InterfaceAccount<'info, #ident>> }
+            } else {
+                quote! { anchor_lang::accounts::interface_account::InterfaceAccount<'info, #ident> }
+            }
+        }
+        Ty::AccountLoader(ty) => {
+            let ident = &ty.account_type_path;
+            quote! { anchor_lang::accounts::account_loader::AccountLoader<'info, #ident> }
+        }
+        Ty::Migration(ty) => {
+            let from = &ty.from_type_path;
+            let to = &ty.to_type_path;
+            quote! { anchor_lang::accounts::migration::Migration<'info, #from, #to> }
+        }
+        Ty::Sysvar(sysvar_ty) => {
+            let account = match sysvar_ty {
+                SysvarTy::Clock => quote! { Clock },
+                SysvarTy::Rent => quote! { Rent },
+                SysvarTy::EpochSchedule => quote! { EpochSchedule },
+                SysvarTy::Fees => quote! { Fees },
+                SysvarTy::RecentBlockhashes => quote! { RecentBlockhashes },
+                SysvarTy::SlotHashes => quote! { SlotHashes },
+                SysvarTy::SlotHistory => quote! { SlotHistory },
+                SysvarTy::StakeHistory => quote! { StakeHistory },
+                SysvarTy::Instructions => quote! { Instructions },
+                SysvarTy::Rewards => quote! { Rewards },
+            };
+            quote! { anchor_lang::accounts::sysvar::Sysvar<'info, #account> }
+        }
+        Ty::Program(ty) => {
+            let program = &ty.account_type_path;
+            let program_str = quote!(#program).to_string();
+            if program_str == "__SolanaProgramUnitType" {
+                quote! { anchor_lang::accounts::program::Program<'info> }
+            } else {
+                quote! { anchor_lang::accounts::program::Program<'info, #program> }
+            }
+        }
+        Ty::Interface(ty) => {
+            let program = &ty.account_type_path;
+            quote! { anchor_lang::accounts::interface::Interface<'info, #program> }
+        }
+        // Nested wrappers - recurse
+        Ty::Mut(inner_ty) => {
+            let inner = inner_ty_decl(&inner_ty.inner);
+            quote! { anchor_lang::account_set::Mut<#inner> }
+        }
+        Ty::Seeded(inner_ty) => {
+            let inner = inner_ty_decl(&inner_ty.inner);
+            let seeds = &inner_ty.seeds_type_path;
+            quote! { anchor_lang::account_set::Seeded<#inner, #seeds> }
+        }
+        Ty::Owned(inner_ty) => {
+            let inner = inner_ty_decl(&inner_ty.inner);
+            let program = &inner_ty.program_type_path;
+            quote! { anchor_lang::account_set::Owned<#inner, #program> }
+        }
+        Ty::Executable(inner_ty) => {
+            let inner = inner_ty_decl(&inner_ty.inner);
+            quote! { anchor_lang::account_set::Executable<#inner> }
+        }
+        Ty::HasOne(inner_ty) => {
+            let inner = inner_ty_decl(&inner_ty.inner);
+            let target = &inner_ty.target_type_path;
+            quote! { anchor_lang::account_set::HasOne<#inner, #target> }
+        }
+    }
+}
+
+fn from_account_info_for_ty(
+    ty: &Ty,
+    field: &Ident,
+    field_str: &String,
+    kind: Option<&InitKind>,
+    checked: bool,
+) -> proc_macro2::TokenStream {
+    let owner_addr = match &kind {
+        None => quote! { __program_id },
+        Some(InitKind::Program { .. }) => quote! {
+            __program_id
+        },
+        _ => quote! {
+            &anchor_spl::token::ID
+        },
+    };
+
+    match ty {
+        Ty::Mut(inner) => {
+            let inner_decl = inner_ty_decl(&inner.inner);
+            let inner_tokens =
+                from_account_info_for_ty(&inner.inner, field, field_str, kind, checked);
+            quote! {{
+                let __inner: #inner_decl = #inner_tokens;
+                anchor_lang::account_set::Mut::try_from_validated(__inner)
+                    .map_err(|e| e.with_account_name(#field_str))?
+            }}
+        }
+        Ty::Seeded(inner) => {
+            let inner_decl = inner_ty_decl(&inner.inner);
+            let inner_tokens =
+                from_account_info_for_ty(&inner.inner, field, field_str, kind, checked);
+            quote! {{
+                let __inner: #inner_decl = #inner_tokens;
+                anchor_lang::account_set::Seeded::try_from_validated(__inner, __program_id)
+                    .map_err(|e| e.with_account_name(#field_str))?
+            }}
+        }
+        Ty::Owned(inner) => {
+            let inner_decl = inner_ty_decl(&inner.inner);
+            let inner_tokens =
+                from_account_info_for_ty(&inner.inner, field, field_str, kind, checked);
+            quote! {{
+                let __inner: #inner_decl = #inner_tokens;
+                anchor_lang::account_set::Owned::try_from_validated(__inner)
+                    .map_err(|e| e.with_account_name(#field_str))?
+            }}
+        }
+        Ty::Executable(inner) => {
+            let inner_decl = inner_ty_decl(&inner.inner);
+            let inner_tokens =
+                from_account_info_for_ty(&inner.inner, field, field_str, kind, checked);
+            quote! {{
+                let __inner: #inner_decl = #inner_tokens;
+                anchor_lang::account_set::Executable::try_from_validated(__inner)
+                    .map_err(|e| e.with_account_name(#field_str))?
+            }}
+        }
+        Ty::HasOne(inner) => {
+            let inner_decl = inner_ty_decl(&inner.inner);
+            let inner_tokens =
+                from_account_info_for_ty(&inner.inner, field, field_str, kind, checked);
+            quote! {{
+                let __inner: #inner_decl = #inner_tokens;
+                anchor_lang::account_set::HasOne::new(__inner)
+            }}
+        }
+        _ => {
+            let container_ty = container_ty_for(ty);
+            match ty {
+                Ty::AccountInfo => quote! { #field.to_account_info() },
+                Ty::UncheckedAccount => {
+                    quote! { UncheckedAccount::try_from(&#field) }
+                }
+                Ty::Account(AccountTy { boxed, .. })
+                | Ty::InterfaceAccount(InterfaceAccountTy { boxed, .. }) => {
+                    let stream = if checked {
+                        quote! {
+                            match #container_ty::try_from(&#field) {
+                                Ok(val) => val,
+                                Err(e) => return Err(e.with_account_name(#field_str))
+                            }
+                        }
+                    } else {
+                        quote! {
+                            match #container_ty::try_from_unchecked(&#field) {
+                                Ok(val) => val,
+                                Err(e) => return Err(e.with_account_name(#field_str))
+                            }
+                        }
+                    };
+                    if *boxed {
+                        quote! {
+                            Box::new(#stream)
+                        }
+                    } else {
+                        stream
+                    }
+                }
+                Ty::LazyAccount(_) => {
+                    if checked {
+                        quote! {
+                            match #container_ty::try_from(&#field) {
+                                Ok(val) => val,
+                                Err(e) => return Err(e.with_account_name(#field_str))
+                            }
+                        }
+                    } else {
+                        quote! {
+                            match #container_ty::try_from_unchecked(&#field) {
+                                Ok(val) => val,
+                                Err(e) => return Err(e.with_account_name(#field_str))
+                            }
+                        }
+                    }
+                }
+                Ty::AccountLoader(_) => {
+                    if checked {
+                        quote! {
+                            match #container_ty::try_from(&#field) {
+                                Ok(val) => val,
+                                Err(e) => return Err(e.with_account_name(#field_str))
+                            }
+                        }
+                    } else {
+                        quote! {
+                            match #container_ty::try_from_unchecked(#owner_addr, &#field) {
+                                Ok(val) => val,
+                                Err(e) => return Err(e.with_account_name(#field_str))
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    if checked {
+                        quote! {
+                            match #container_ty::try_from(#owner_addr, &#field) {
+                                Ok(val) => val,
+                                Err(e) => return Err(e.with_account_name(#field_str))
+                            }
+                        }
+                    } else {
+                        quote! {
+                            match #container_ty::try_from_unchecked(#owner_addr, &#field) {
+                                Ok(val) => val,
+                                Err(e) => return Err(e.with_account_name(#field_str))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn container_ty_for(ty: &Ty) -> proc_macro2::TokenStream {
+    match ty {
+        Ty::Account(_) => quote! {
+            anchor_lang::accounts::account::Account
+        },
+        Ty::LazyAccount(_) => quote! {
+            anchor_lang::accounts::lazy_account::LazyAccount
+        },
+        Ty::AccountLoader(_) => quote! {
+            anchor_lang::accounts::account_loader::AccountLoader
+        },
+        Ty::Migration(_) => quote! {
+            anchor_lang::accounts::migration::Migration
+        },
+        Ty::Sysvar(_) => quote! { anchor_lang::accounts::sysvar::Sysvar },
+        Ty::Program(_) => quote! { anchor_lang::accounts::program::Program },
+        Ty::Interface(_) => quote! { anchor_lang::accounts::interface::Interface },
+        Ty::InterfaceAccount(_) => {
+            quote! { anchor_lang::accounts::interface_account::InterfaceAccount }
+        }
+        Ty::AccountInfo => quote! {},
+        Ty::UncheckedAccount => quote! {},
+        Ty::Signer => quote! {},
+        Ty::SystemAccount => quote! {},
+        Ty::ProgramData => quote! {},
+        // Wrapper types from account_set module
+        Ty::Mut(_) => quote! { anchor_lang::account_set::Mut },
+        Ty::Seeded(_) => quote! { anchor_lang::account_set::Seeded },
+        Ty::Owned(_) => quote! { anchor_lang::account_set::Owned },
+        Ty::Executable(_) => quote! { anchor_lang::account_set::Executable },
+        Ty::HasOne(_) => quote! { anchor_lang::account_set::HasOne },
     }
 }
 
@@ -621,6 +919,12 @@ pub enum Ty {
     Signer,
     SystemAccount,
     ProgramData,
+    // Wrapper types from account_set module
+    Mut(MutTy),
+    Seeded(SeededTy),
+    Owned(OwnedTy),
+    Executable(ExecutableTy),
+    HasOne(HasOneTy),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -682,6 +986,50 @@ pub struct ProgramTy {
 pub struct InterfaceTy {
     // The struct type of the account.
     pub account_type_path: TypePath,
+}
+
+// Wrapper type: Mut<T> - enforces writable constraint
+#[derive(Debug, PartialEq, Eq)]
+pub struct MutTy {
+    // The inner account type being wrapped
+    pub inner: Box<Ty>,
+}
+
+// Wrapper type: Seeded<T, S> - validates PDA derivation
+#[derive(Debug, PartialEq, Eq)]
+pub struct SeededTy {
+    // The inner account type being wrapped
+    pub inner: Box<Ty>,
+    // The seeds type path (e.g., MySeeds)
+    pub seeds_type_path: TypePath,
+}
+
+// Wrapper type: Owned<T, P> - validates account owner
+#[derive(Debug, PartialEq, Eq)]
+pub struct OwnedTy {
+    // The inner account type being wrapped
+    pub inner: Box<Ty>,
+    // The program type path that should own the account
+    pub program_type_path: TypePath,
+}
+
+// Wrapper type: Executable<T> - validates account is executable
+#[derive(Debug, PartialEq, Eq)]
+pub struct ExecutableTy {
+    // The inner account type being wrapped
+    pub inner: Box<Ty>,
+}
+
+// Wrapper type: HasOne<T, Target> - validates account relationships
+#[derive(Debug, PartialEq, Eq)]
+pub struct HasOneTy {
+    // The inner account type being wrapped
+    pub inner: Box<Ty>,
+    // The target type path for relationship validation
+    pub target_type_path: TypePath,
+    // The inferred target field name (e.g., "authority" from "AuthorityTarget").
+    // Currently unused; retained for diagnostics or future heuristics.
+    pub target_field_name: String,
 }
 
 #[derive(Debug)]
@@ -858,6 +1206,10 @@ pub struct ConstraintZeroed {}
 #[derive(Debug, Clone)]
 pub struct ConstraintMut {
     pub error: Option<Expr>,
+    /// True if this mut constraint was implicitly added (e.g., for init accounts)
+    /// rather than explicitly specified by the user. Implicit mut constraints should not
+    /// trigger deprecation warnings.
+    pub implicit: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -888,6 +1240,10 @@ pub struct ConstraintReallocZero {
 #[derive(Debug, Clone)]
 pub struct ConstraintSigner {
     pub error: Option<Expr>,
+    /// True if this signer constraint was implicitly added (e.g., for non-PDA init accounts)
+    /// rather than explicitly specified by the user. Implicit signer constraints should not
+    /// trigger deprecation warnings.
+    pub implicit: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1261,5 +1617,30 @@ impl<T> Deref for Context<T> {
 impl<T> Spanned for Context<T> {
     fn span(&self) -> Span {
         self.span
+    }
+}
+
+/// Recursively check if a type is mutable (handles nested wrapper types).
+pub(crate) fn is_type_mutable(ty: &Ty) -> bool {
+    match ty {
+        Ty::Mut(_) => true,
+        Ty::Seeded(inner) => is_type_mutable(&inner.inner),
+        Ty::Owned(inner) => is_type_mutable(&inner.inner),
+        Ty::Executable(inner) => is_type_mutable(&inner.inner),
+        Ty::HasOne(inner) => is_type_mutable(&inner.inner),
+        _ => false,
+    }
+}
+
+/// Recursively check if a type is a signer (handles nested wrapper types).
+pub(crate) fn is_type_signer(ty: &Ty) -> bool {
+    match ty {
+        Ty::Signer => true,
+        Ty::Mut(inner) => is_type_signer(&inner.inner),
+        Ty::Seeded(inner) => is_type_signer(&inner.inner),
+        Ty::Owned(inner) => is_type_signer(&inner.inner),
+        Ty::Executable(inner) => is_type_signer(&inner.inner),
+        Ty::HasOne(inner) => is_type_signer(&inner.inner),
+        _ => false,
     }
 }

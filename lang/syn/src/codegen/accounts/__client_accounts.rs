@@ -1,4 +1,4 @@
-use crate::{AccountField, AccountsStruct, Ty};
+use crate::{is_type_mutable, is_type_signer, AccountField, AccountsStruct};
 use heck::SnakeCase;
 use quote::quote;
 use std::str::FromStr;
@@ -88,15 +88,13 @@ pub fn generate(
                 }
             }
             AccountField::Field(f) => {
-                let is_signer = match f.ty {
-                    Ty::Signer => true,
-                    _ => f.constraints.is_signer(),
-                };
+                let is_signer = is_type_signer(&f.ty) || f.constraints.is_signer();
                 let is_signer = match is_signer {
                     false => quote! {false},
                     true => quote! {true},
                 };
-                let meta = match f.constraints.is_mutable() {
+                let is_mutable = is_type_mutable(&f.ty) || f.constraints.is_mutable();
+                let meta = match is_mutable {
                     false => quote! { anchor_lang::solana_program::instruction::AccountMeta::new_readonly },
                     true => quote! { anchor_lang::solana_program::instruction::AccountMeta::new },
                 };

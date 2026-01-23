@@ -1,6 +1,6 @@
 use crate::accounts_codegen::constraints::OptionalCheckScope;
 use crate::codegen::accounts::{generics, ParsedGenerics};
-use crate::{AccountField, AccountsStruct, Ty};
+use crate::{is_type_mutable, AccountField, AccountsStruct, Ty};
 use quote::quote;
 
 // Generates the `Exit` trait implementation.
@@ -44,7 +44,9 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                         }
                     }
                 } else {
-                    match f.constraints.is_mutable() {
+                    // Check if the field type indicates mutability (including nested wrappers)
+                    let is_mutable = f.constraints.is_mutable() || is_type_mutable(&f.ty);
+                    match is_mutable {
                         false => quote! {},
                         true => match &f.ty {
                             // `LazyAccount` is special because it has a custom `exit` method.

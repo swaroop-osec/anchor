@@ -89,9 +89,174 @@ fn generate_validate_constraints(accs: &AccountsStruct) -> proc_macro2::TokenStr
         })
         .collect();
 
+    // Generate validation for wrapper types (HasOne, Owned, Executable, etc.)
+    let wrapper_validations: Vec<proc_macro2::TokenStream> = non_init_fields
+        .iter()
+        .filter_map(|af| match af {
+            AccountField::Field(f) => generate_wrapper_validation(f, accs),
+            AccountField::CompositeField(_) => None,
+        })
+        .collect();
+
     quote! {
         #duplicate_checks
         #(#access_checks)*
+        #(#wrapper_validations)*
+    }
+}
+
+/// Generate validation code for wrapper types like HasOne<T, Target>.
+fn generate_wrapper_validation(
+    f: &Field,
+    accs: &AccountsStruct,
+) -> Option<proc_macro2::TokenStream> {
+    // Check if this field uses a HasOne wrapper (possibly nested)
+    if let Some(has_one_ty) = extract_has_one_ty(&f.ty) {
+        return Some(generate_has_one_wrapper_validation(f, has_one_ty, accs));
+    }
+    // Future: Add validation for other wrapper types as needed
+    None
+}
+
+/// Recursively extract HasOneTy from a type (handles nested wrappers like Mut<HasOne<...>>)
+fn extract_has_one_ty(ty: &Ty) -> Option<&crate::HasOneTy> {
+    match ty {
+        Ty::HasOne(has_one_ty) => Some(has_one_ty),
+        Ty::Mut(mut_ty) => extract_has_one_ty(&mut_ty.inner),
+        Ty::Seeded(seeded_ty) => extract_has_one_ty(&seeded_ty.inner),
+        Ty::Owned(owned_ty) => extract_has_one_ty(&owned_ty.inner),
+        Ty::Executable(exec_ty) => extract_has_one_ty(&exec_ty.inner),
+        _ => None,
+    }
+}
+
+/// Generate HasOne validation code.
+/// Uses `HasOneTarget::FIELD` to locate the target account and validate.
+fn generate_has_one_wrapper_validation(
+    f: &Field,
+    has_one_ty: &crate::HasOneTy,
+    accs: &AccountsStruct,
+) -> proc_macro2::TokenStream {
+    let field_ident = &f.ident;
+    let target_type = &has_one_ty.target_type_path;
+    let target_account_ty = f.account_ty();
+
+    let target_field_names: Vec<String> = accs
+        .fields
+        .iter()
+        .filter_map(|af| match af {
+            AccountField::Field(field) => Some(field.ident.to_string()),
+            AccountField::CompositeField(_) => None,
+        })
+        .collect();
+    let target_field_checks: Vec<proc_macro2::TokenStream> = target_field_names
+        .iter()
+        .map(|name| {
+            let lit = proc_macro2::Literal::string(name);
+            quote! { __anchor_str_eq(__target_field, #lit) }
+        })
+        .collect();
+    let target_fields_list = if target_field_names.is_empty() {
+        "<none>".to_string()
+    } else {
+        target_field_names.join(", ")
+    };
+    let target_type_str = quote::quote!(#target_type).to_string().replace(' ', "");
+    let field_name = field_ident.to_string();
+    let error_msg = format!(
+        "HasOne<_, {}> on field '{}' expects HasOneTarget::FIELD to match one of the top-level accounts fields: {}",
+        target_type_str,
+        field_name,
+        target_fields_list
+    );
+    let error_literal = proc_macro2::Literal::string(&error_msg);
+
+    let target_key_arms: Vec<proc_macro2::TokenStream> = accs
+        .fields
+        .iter()
+        .filter_map(|af| match af {
+            AccountField::Field(field) => {
+                let target_ident = &field.ident;
+                let target_name = target_ident.to_string();
+                let target_key = if field.is_optional {
+                    quote! {
+                        let target_account = if let Some(account) = #target_ident {
+                            account
+                        } else {
+                            return Err(anchor_lang::error::Error::from(
+                                anchor_lang::error::ErrorCode::ConstraintAccountIsNone
+                            ).with_account_name(#target_name));
+                        };
+                        anchor_lang::Key::key(target_account)
+                    }
+                } else {
+                    quote! { anchor_lang::Key::key(#target_ident) }
+                };
+                Some(quote! { #target_name => { #target_key } })
+            }
+            AccountField::CompositeField(_) => None,
+        })
+        .collect();
+
+    let const_check = if target_field_checks.is_empty() {
+        quote! {
+            const _: () = {
+                panic!(#error_literal);
+            };
+        }
+    } else {
+        quote! {
+            const _: () = {
+                const fn __anchor_str_eq(a: &str, b: &str) -> bool {
+                    let a_bytes = a.as_bytes();
+                    let b_bytes = b.as_bytes();
+                    if a_bytes.len() != b_bytes.len() {
+                        return false;
+                    }
+                    let mut i = 0;
+                    while i < a_bytes.len() {
+                        if a_bytes[i] != b_bytes[i] {
+                            return false;
+                        }
+                        i += 1;
+                    }
+                    true
+                }
+
+                let __target_field = <#target_type as anchor_lang::account_set::HasOneTarget<#target_account_ty>>::FIELD;
+                if !(#(#target_field_checks)||*) {
+                    panic!(#error_literal);
+                }
+            };
+        }
+    };
+
+    let validate_block = quote! {
+        #const_check
+        let __target_key = match <#target_type as anchor_lang::account_set::HasOneTarget<#target_account_ty>>::FIELD {
+            #(#target_key_arms,)*
+            _ => {
+                unreachable!(#error_literal);
+            }
+        };
+
+        if let Err(err) = #field_ident.validate_has_one(&__target_key) {
+            return Err(err.with_account_name(stringify!(#field_ident)));
+        }
+    };
+
+    if f.is_optional {
+        quote! {
+            // HasOne wrapper validation for field '#field_ident'
+            if let Some(#field_ident) = #field_ident {
+                #validate_block
+            }
+        }
+    } else {
+        quote! {
+            // HasOne wrapper validation for field '#field_ident'
+            #validate_block
+        }
     }
 }
 

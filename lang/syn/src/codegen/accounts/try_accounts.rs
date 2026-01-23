@@ -328,7 +328,7 @@ pub(crate) fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_m
         .iter()
         .filter_map(|af| match af {
             AccountField::Field(f)
-                if f.constraints.is_mutable()
+                if (f.constraints.is_mutable() || crate::is_type_mutable(&f.ty))
                     && !f.constraints.is_dup()
                     && f.constraints.init.is_none() =>
             {
