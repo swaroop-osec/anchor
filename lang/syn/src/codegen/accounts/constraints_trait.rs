@@ -1,9 +1,9 @@
-use crate::codegen::accounts::{bumps, constraints, generics, ParsedGenerics};
+use crate::codegen::accounts::{bumps, generics, ParsedGenerics};
 use crate::{AccountField, AccountTy, AccountsStruct, Field, InterfaceAccountTy, Ty};
 use quote::quote;
 
 pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
-    // Emit a Constraints impl that reuses account attribute validation.
+    // Emit a Constraints impl that performs wrapper-specific validations.
     let name = &accs.ident;
     let ParsedGenerics {
         combined_generics,
@@ -74,20 +74,12 @@ fn field_accessor(f: &Field) -> proc_macro2::TokenStream {
     }
 }
 
-// Reuse constraint validation without init/zeroed/realloc side effects.
+// Generate validation for wrappers that need post-deserialization context.
 fn generate_validate_constraints(accs: &AccountsStruct) -> proc_macro2::TokenStream {
     let non_init_fields: Vec<&AccountField> =
         accs.fields.iter().filter(|af| !is_init(af)).collect();
 
     let duplicate_checks = super::try_accounts::generate_duplicate_mutable_checks(accs);
-
-    let access_checks: Vec<proc_macro2::TokenStream> = non_init_fields
-        .iter()
-        .map(|af: &&AccountField| match af {
-            AccountField::Field(f) => constraints::generate_for_validate(f, accs),
-            AccountField::CompositeField(s) => constraints::generate_composite(s),
-        })
-        .collect();
 
     // Generate validation for wrapper types (HasOne, Owned, Executable, etc.)
     let wrapper_validations: Vec<proc_macro2::TokenStream> = non_init_fields
@@ -100,7 +92,6 @@ fn generate_validate_constraints(accs: &AccountsStruct) -> proc_macro2::TokenStr
 
     quote! {
         #duplicate_checks
-        #(#access_checks)*
         #(#wrapper_validations)*
     }
 }

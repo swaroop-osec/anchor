@@ -1027,9 +1027,6 @@ pub struct HasOneTy {
     pub inner: Box<Ty>,
     // The target type path for relationship validation
     pub target_type_path: TypePath,
-    // The inferred target field name (e.g., "authority" from "AuthorityTarget").
-    // Currently unused; retained for diagnostics or future heuristics.
-    pub target_field_name: String,
 }
 
 #[derive(Debug)]

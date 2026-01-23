@@ -886,14 +886,9 @@ fn parse_has_one_ty(path: &syn::Path) -> ParseResult<HasOneTy> {
                 }
             };
 
-            // Infer target field name from target type name
-            // e.g., "AuthorityTarget" -> "authority", "OwnerField" -> "owner_field"
-            let target_field_name = infer_target_field_name(&target_type_path);
-
             Ok(HasOneTy {
                 inner: Box::new(inner),
                 target_type_path,
-                target_field_name,
             })
         }
         _ => Err(ParseError::new(
@@ -901,43 +896,6 @@ fn parse_has_one_ty(path: &syn::Path) -> ParseResult<HasOneTy> {
             "HasOne must have angle bracketed arguments",
         )),
     }
-}
-
-/// Infer the target field name from a HasOneTarget type name.
-/// Converts PascalCase to snake_case and removes common suffixes like "Target" or "Field".
-/// e.g., "AuthorityTarget" -> "authority", "OwnerField" -> "owner"
-fn infer_target_field_name(type_path: &syn::TypePath) -> String {
-    let type_name = type_path
-        .path
-        .segments
-        .last()
-        .map(|s| s.ident.to_string())
-        .unwrap_or_default();
-
-    // Remove common suffixes
-    let name = type_name
-        .strip_suffix("Target")
-        .or_else(|| type_name.strip_suffix("Field"))
-        .unwrap_or(&type_name);
-
-    // Convert PascalCase to snake_case
-    pascal_to_snake_case(name)
-}
-
-/// Convert PascalCase to snake_case
-fn pascal_to_snake_case(s: &str) -> String {
-    let mut result = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 {
-                result.push('_');
-            }
-            result.push(c.to_ascii_lowercase());
-        } else {
-            result.push(c);
-        }
-    }
-    result
 }
 
 /// Parse the inner type from a wrapper like Mut<T> or Seeded<T, S>
