@@ -41,43 +41,41 @@ pub trait Seeds {
     fn seeds(&self) -> Vec<&[u8]>;
 }
 
-/// Seeds with an associated bump.
+/// Signer seeds with bump for CPI.
 ///
-/// This is useful when you already know the bump and want to construct
-/// signer seeds for CPI.
-pub struct SeedsWithBump<'a> {
-    seeds: Vec<&'a [u8]>,
+/// This struct owns the seed data and provides convenient methods
+/// for accessing seeds and bump separately or together with `invoke_signed` method.
+#[derive(Debug, Clone)]
+pub struct SeedsWithBump {
+    seeds: Vec<Vec<u8>>,
     bump: u8,
 }
 
-impl<'a> SeedsWithBump<'a> {
-    /// Creates a new `SeedsWithBump` from seeds and a bump.
-    pub fn new(seeds: Vec<&'a [u8]>, bump: u8) -> Self {
-        Self { seeds, bump }
-    }
-
+impl SeedsWithBump {
     /// Returns the bump seed.
     pub fn bump(&self) -> u8 {
         self.bump
     }
 
     /// Returns the seeds without the bump.
-    pub fn seeds(&self) -> &[&'a [u8]] {
+    pub fn seeds(&self) -> &[Vec<u8>] {
         &self.seeds
     }
 
-    /// Returns the signer seeds without the bump.
+    /// Converts to signer seeds format for `invoke_signed`.
     ///
-    /// Callers should append the bump (e.g., `&[self.bump()]`) when constructing
-    /// the final signer seeds for `invoke_signed`.
-    pub fn signer_seeds(&self) -> Vec<&[u8]> {
-        self.seeds.clone()
-    }
-}
-
-impl<'a> Seeds for SeedsWithBump<'a> {
-    fn seeds(&self) -> Vec<&[u8]> {
-        self.seeds.clone()
+    /// Returns a vector of slices including the bump as the final element.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let swb = pda_account.seeds_with_bump();
+    /// invoke_signed(&ix, &accounts, &[&swb.to_signer_seeds()])?;
+    /// ```
+    pub fn to_signer_seeds(&self) -> Vec<&[u8]> {
+        let mut result: Vec<&[u8]> = self.seeds.iter().map(|s| s.as_slice()).collect();
+        result.push(std::slice::from_ref(&self.bump));
+        result
     }
 }
 
@@ -92,7 +90,7 @@ impl<'a> Seeds for SeedsWithBump<'a> {
 ///
 /// - Derives the PDA using `Pubkey::find_program_address`
 /// - Checks that the account key matches the derived PDA
-/// - Stores the bump for later use
+/// - Stores the bump and seeds for later use
 ///
 /// # Example
 ///
@@ -114,37 +112,60 @@ impl<'a> Seeds for SeedsWithBump<'a> {
 /// }
 /// ```
 ///
-/// # Bump Access
+/// # Bump and Seeds Access
 ///
-/// The bump is stored and can be accessed for CPI:
+/// The bump and seeds are stored and can be accessed for CPI:
 ///
 /// ```ignore
-/// let bump = ctx.accounts.config.bump();
-/// let seeds = &[b"config", &[bump]];
+/// let swb = ctx.accounts.config.seeds_with_bump();
+/// invoke_signed(&ix, &accounts, &[&swb.to_signer_seeds()])?;
 /// ```
 #[derive(Clone)]
 pub struct Seeded<T, S> {
     inner: T,
     bump: u8,
-    _seeds: std::marker::PhantomData<S>,
+    seeds: Vec<Vec<u8>>,
+    _marker: std::marker::PhantomData<S>,
 }
 
 impl<T, S> Seeded<T, S> {
-    /// Creates a new `Seeded` wrapper with the given account and bump.
+    /// Creates a new `Seeded` wrapper with the given account, bump, and seeds.
     ///
     /// Note: This does not perform validation. Use the `Accounts` implementation
     /// for validated construction.
-    pub fn new(inner: T, bump: u8) -> Self {
+    pub fn new(inner: T, bump: u8, seeds: Vec<Vec<u8>>) -> Self {
         Self {
             inner,
             bump,
-            _seeds: std::marker::PhantomData,
+            seeds,
+            _marker: std::marker::PhantomData,
         }
     }
 
     /// Returns the PDA bump seed.
     pub fn bump(&self) -> u8 {
         self.bump
+    }
+
+    /// Returns the stored seeds (without bump).
+    pub fn seeds(&self) -> &[Vec<u8>] {
+        &self.seeds
+    }
+
+    /// Returns a `SeedsWithBump` for constructing signer seeds for CPI.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // In a CPI call where the PDA needs to sign:
+    /// let swb = ctx.accounts.pda_account.signer_seeds();
+    /// invoke_signed(&ix, &accounts, &[&swb.to_signer_seeds()])?;
+    /// ```
+    pub fn signer_seeds(&self) -> SeedsWithBump {
+        SeedsWithBump {
+            seeds: self.seeds.clone(),
+            bump: self.bump,
+        }
     }
 
     /// Returns a reference to the inner account.
@@ -166,6 +187,10 @@ impl<T, S> Seeded<T, S> {
 impl<'info, T: SingleAccountSet<'info>, S: Seeds + Default> Seeded<T, S> {
     /// Validates that the account is a PDA derived from the given seeds.
     ///
+    /// This method uses `S::default()` to create the seeds provider,
+    /// which works for static seeds. For dynamic seeds, use
+    /// `try_from_validated_with_seeds` instead.
+    ///
     /// # Errors
     ///
     /// Returns `ErrorCode::ConstraintSeeds` if the account key doesn't match
@@ -179,24 +204,39 @@ impl<'info, T: SingleAccountSet<'info>, S: Seeds + Default> Seeded<T, S> {
 impl<'info, T: SingleAccountSet<'info>, S: Seeds> Seeded<T, S> {
     /// Validates that the account is a PDA derived from the provided seeds.
     ///
-    /// This helper allows runtime seed providers and avoids the `Default` bound.
+    /// This is the primary validation method that supports both static and
+    /// dynamic seeds. The seeds are stored for later use in CPI signing.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let seeds = MyDynamicSeeds {
+    ///     authority: ctx.accounts.authority.key,
+    ///     counter: 42,
+    /// };
+    /// let seeded = Seeded::try_from_validated_with_seeds(account, program_id, &seeds)?;
+    /// ```
     pub fn try_from_validated_with_seeds(
         inner: T,
         program_id: &Pubkey,
         seeds_provider: &S,
     ) -> Result<Self> {
-        let seeds = seeds_provider.seeds();
-        let (expected_key, bump) = Pubkey::find_program_address(&seeds, program_id);
+        let seed_slices = seeds_provider.seeds();
+        let (expected_key, bump) = Pubkey::find_program_address(&seed_slices, program_id);
 
         if inner.account_info().key != &expected_key {
             return Err(crate::error::Error::from(ErrorCode::ConstraintSeeds)
                 .with_pubkeys((*inner.account_info().key, expected_key)));
         }
 
+        // Store seeds as owned data for later use in CPI
+        let seeds: Vec<Vec<u8>> = seed_slices.into_iter().map(|s| s.to_vec()).collect();
+
         Ok(Self {
             inner,
             bump,
-            _seeds: std::marker::PhantomData,
+            seeds,
+            _marker: std::marker::PhantomData,
         })
     }
 }
@@ -286,6 +326,7 @@ impl<T: std::fmt::Debug, S> std::fmt::Debug for Seeded<T, S> {
         f.debug_struct("Seeded")
             .field("inner", &self.inner)
             .field("bump", &self.bump)
+            .field("seeds", &self.seeds)
             .finish()
     }
 }

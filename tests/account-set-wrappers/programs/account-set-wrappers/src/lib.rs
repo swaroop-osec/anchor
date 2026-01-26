@@ -160,6 +160,100 @@ pub mod account_set_wrappers {
         Ok(())
     }
 
+    // ========================================================================
+    // CPI Tests - Verify wrapper types work correctly with CPI
+    // ========================================================================
+
+    /// Test CPI with wrapper types - verifies ToAccountMetas and ToAccountInfos
+    /// This test does a SOL transfer FROM a PDA (Seeded wrapper) TO a recipient
+    pub fn test_cpi_with_seeded(ctx: Context<TestCpiWithSeeded>, amount: u64) -> Result<()> {
+        msg!("Testing CPI with Seeded<T, S> wrapper");
+        msg!("  PDA key: {}", ctx.accounts.pda_account.key());
+        msg!("  Bump: {}", ctx.accounts.pda_account.bump());
+        msg!("  Transfer amount: {}", amount);
+
+        // UNIFIED API: Use signer_seeds() - works on both Seeded<T,S> and PdaAccount!
+        let swb = ctx.accounts.pda_account.signer_seeds();
+
+        // Perform CPI transfer using the PDA as signer
+        let transfer_ix = anchor_lang::solana_program::system_instruction::transfer(
+            &ctx.accounts.pda_account.key(),
+            &ctx.accounts.recipient.key(),
+            amount,
+        );
+
+        anchor_lang::solana_program::program::invoke_signed(
+            &transfer_ix,
+            &[
+                ctx.accounts.pda_account.to_account_info(),
+                ctx.accounts.recipient.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[&swb.to_signer_seeds()],
+        )?;
+
+        msg!("CPI transfer successful!");
+        Ok(())
+    }
+
+    /// Test Mut<Seeded<T, S>> composition - verifies signer_seeds() works through Deref
+    pub fn test_mut_seeded_signer_seeds(
+        ctx: Context<TestMutSeededSignerSeeds>,
+        new_value: u64,
+    ) -> Result<()> {
+        msg!("Testing Mut<Seeded<T, S>> signer_seeds() access");
+        msg!("  PDA key: {}", ctx.accounts.pda_account.key());
+
+        // UNIFIED API: signer_seeds() works through Mut wrapper via Deref
+        let swb = ctx.accounts.pda_account.signer_seeds();
+        msg!("  Seeds count: {}", swb.seeds().len());
+        msg!("  Bump: {}", swb.bump());
+        msg!("  Bump from accessor: {}", ctx.accounts.pda_account.bump());
+
+        // Verify bump matches
+        require_eq!(
+            swb.bump(),
+            ctx.accounts.pda_account.bump(),
+            ErrorCode::ConstraintSeeds
+        );
+
+        // Modify the account data (Mut allows this)
+        ctx.accounts.pda_account.value = new_value;
+        msg!("Updated value to: {}", new_value);
+
+        Ok(())
+    }
+
+    /// Test to_account_metas and to_account_infos on wrapper types
+    pub fn test_wrapper_account_traits(ctx: Context<TestWrapperAccountTraits>) -> Result<()> {
+        use anchor_lang::{ToAccountInfos, ToAccountMetas};
+
+        msg!("Testing ToAccountMetas and ToAccountInfos on wrapper types");
+
+        // Test Mut<Account> - to_account_metas should return writable
+        let mut_metas = ctx.accounts.mut_data.to_account_metas(None);
+        require!(mut_metas.len() == 1, ErrorCode::InvalidProgramId);
+        require!(mut_metas[0].is_writable, ErrorCode::AccountNotMutable);
+        msg!("  Mut<T>.to_account_metas() - is_writable: {}", mut_metas[0].is_writable);
+
+        // Test Seeded<Account> - to_account_metas delegates to inner
+        let seeded_metas = ctx.accounts.seeded_data.to_account_metas(None);
+        require!(seeded_metas.len() == 1, ErrorCode::InvalidProgramId);
+        msg!("  Seeded<T>.to_account_metas() - key: {}", seeded_metas[0].pubkey);
+
+        // Test to_account_infos
+        let mut_infos = ctx.accounts.mut_data.to_account_infos();
+        require!(mut_infos.len() == 1, ErrorCode::InvalidProgramId);
+        msg!("  Mut<T>.to_account_infos() - key: {}", mut_infos[0].key);
+
+        let seeded_infos = ctx.accounts.seeded_data.to_account_infos();
+        require!(seeded_infos.len() == 1, ErrorCode::InvalidProgramId);
+        msg!("  Seeded<T>.to_account_infos() - key: {}", seeded_infos[0].key);
+
+        msg!("All wrapper account traits verified!");
+        Ok(())
+    }
+
 }
 
 // ============================================================================
@@ -303,4 +397,50 @@ impl HasOneTarget<TestData> for AuthorityTarget {
     fn target(account: &TestData) -> Pubkey {
         account.authority
     }
+}
+
+// ============================================================================
+// CPI Test Accounts - Testing wrapper types with Cross-Program Invocation
+// ============================================================================
+
+/// Seeds for the CPI test PDA (a simple SOL holder)
+#[derive(Default)]
+pub struct CpiPdaSeeds;
+
+impl Seeds for CpiPdaSeeds {
+    fn seeds(&self) -> Vec<&[u8]> {
+        vec![b"cpi_pda"]
+    }
+}
+
+/// Accounts for testing CPI with Seeded wrapper
+/// The PDA will sign the transfer instruction
+#[derive(Accounts)]
+pub struct TestCpiWithSeeded<'info> {
+    /// PDA that holds SOL and will sign the transfer
+    /// Seeded validates the PDA and stores the bump
+    #[account(mut)]
+    pub pda_account: Seeded<SystemAccount<'info>, CpiPdaSeeds>,
+    /// Recipient of the transfer
+    /// CHECK: Just receiving SOL
+    pub recipient: Mut<UncheckedAccount<'info>>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Accounts for testing Mut<Seeded> composition with signer_seeds()
+#[derive(Accounts)]
+pub struct TestMutSeededSignerSeeds<'info> {
+    /// PDA with both writable and seeded constraints via wrapper types
+    pub pda_account: Mut<Seeded<Account<'info, TestData>, TestDataSeeds>>,
+    pub authority: Signer<'info>,
+}
+
+/// Accounts for testing ToAccountMetas and ToAccountInfos traits
+#[derive(Accounts)]
+pub struct TestWrapperAccountTraits<'info> {
+    /// Mut wrapper for testing to_account_metas
+    pub mut_data: Mut<Account<'info, TestData>>,
+    /// Seeded wrapper for testing to_account_metas
+    pub seeded_data: Seeded<Account<'info, TestData>, TestDataSeeds>,
+    pub authority: Signer<'info>,
 }

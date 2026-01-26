@@ -9,7 +9,8 @@ describe("account-set-wrappers", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.AccountSetWrappers as Program<AccountSetWrappers>;
+  const program = anchor.workspace
+    .AccountSetWrappers as Program<AccountSetWrappers>;
 
   let dataKeypair: Keypair;
   let pdaAddress: PublicKey;
@@ -22,7 +23,7 @@ describe("account-set-wrappers", () => {
     // Find the PDA for seeded tests
     [pdaAddress, pdaBump] = await PublicKey.findProgramAddress(
       [Buffer.from("test_data")],
-      program.programId
+      program.programId,
     );
   });
 
@@ -38,7 +39,9 @@ describe("account-set-wrappers", () => {
         .signers([dataKeypair])
         .rpc();
 
-      const account = await program.account.testData.fetch(dataKeypair.publicKey);
+      const account = await program.account.testData.fetch(
+        dataKeypair.publicKey,
+      );
       assert.equal(account.value.toNumber(), 100);
       assert.ok(account.authority.equals(provider.wallet.publicKey));
     });
@@ -58,7 +61,6 @@ describe("account-set-wrappers", () => {
       assert.equal(account.bump, pdaBump);
       assert.ok(account.authority.equals(provider.wallet.publicKey));
     });
-
   });
 
   // =========================================================================
@@ -75,7 +77,9 @@ describe("account-set-wrappers", () => {
         })
         .rpc();
 
-      const account = await program.account.testData.fetch(dataKeypair.publicKey);
+      const account = await program.account.testData.fetch(
+        dataKeypair.publicKey,
+      );
       assert.equal(account.value.toNumber(), 150);
     });
   });
@@ -179,4 +183,87 @@ describe("account-set-wrappers", () => {
     });
   });
 
+  // =========================================================================
+  // CPI Tests - Verify wrapper types work correctly with Cross-Program Invocation
+  // =========================================================================
+
+  describe("CPI with wrapper types", () => {
+    let cpiPdaAddress: PublicKey;
+
+    before(async () => {
+      // Find the CPI PDA
+      [cpiPdaAddress] = await PublicKey.findProgramAddress(
+        [Buffer.from("cpi_pda")],
+        program.programId,
+      );
+
+      // Fund the CPI PDA with some SOL for transfer tests
+      const fundTx = new anchor.web3.Transaction().add(
+        anchor.web3.SystemProgram.transfer({
+          fromPubkey: provider.wallet.publicKey,
+          toPubkey: cpiPdaAddress,
+          lamports: anchor.web3.LAMPORTS_PER_SOL / 10, // 0.1 SOL
+        }),
+      );
+      await provider.sendAndConfirm(fundTx);
+    });
+
+    it("Seeded<T, S> provides signer_seeds for CPI transfer", async () => {
+      const recipient = Keypair.generate();
+      const transferAmount = new BN(1000000); // 0.001 SOL
+
+      const recipientBalanceBefore = await provider.connection.getBalance(
+        recipient.publicKey,
+      );
+
+      await program.methods
+        .testCpiWithSeeded(transferAmount)
+        .accounts({
+          pdaAccount: cpiPdaAddress,
+          recipient: recipient.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      const recipientBalanceAfter = await provider.connection.getBalance(
+        recipient.publicKey,
+      );
+      assert.equal(
+        recipientBalanceAfter - recipientBalanceBefore,
+        transferAmount.toNumber(),
+        "Recipient should receive the transfer amount",
+      );
+    });
+
+    it("Mut<Seeded<T, S>> provides signer_seeds through Deref", async () => {
+      const newValue = new BN(999);
+
+      await program.methods
+        .testMutSeededSignerSeeds(newValue)
+        .accounts({
+          pdaAccount: pdaAddress,
+          authority: provider.wallet.publicKey,
+        })
+        .rpc();
+
+      // Verify data was modified
+      const account = await program.account.testData.fetch(pdaAddress);
+      assert.equal(
+        account.value.toNumber(),
+        newValue.toNumber(),
+        "Value should be updated",
+      );
+    });
+
+    it("ToAccountMetas and ToAccountInfos work on wrapper types", async () => {
+      await program.methods
+        .testWrapperAccountTraits()
+        .accounts({
+          mutData: dataKeypair.publicKey,
+          seededData: pdaAddress,
+          authority: provider.wallet.publicKey,
+        })
+        .rpc();
+    });
+  });
 });
