@@ -1,5 +1,6 @@
 //! Data structures that are used to provide non-argument inputs to program endpoints
 
+use crate::constraints::Constraints;
 use crate::solana_program::account_info::AccountInfo;
 use crate::solana_program::instruction::AccountMeta;
 use crate::solana_program::pubkey::Pubkey;
@@ -66,6 +67,15 @@ where
             remaining_accounts,
             bumps,
         }
+    }
+}
+
+impl<'a, 'b, 'c, 'info, T> Context<'a, 'b, 'c, 'info, T>
+where
+    T: Constraints,
+{
+    pub fn validate(&self) -> crate::Result<()> {
+        self.accounts.validate(self)
     }
 }
 

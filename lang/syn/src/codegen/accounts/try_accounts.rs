@@ -321,14 +321,14 @@ fn is_init(af: &AccountField) -> bool {
 }
 
 // Generates duplicate mutable account validation logic
-fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::TokenStream {
+pub(crate) fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::TokenStream {
     // Collect all mutable account fields without `dup` constraint, excluding UncheckedAccount, Signer, and init accounts.
     let candidates: Vec<_> = accs
         .fields
         .iter()
         .filter_map(|af| match af {
             AccountField::Field(f)
-                if f.constraints.is_mutable()
+                if (f.constraints.is_mutable() || crate::is_type_mutable(&f.ty))
                     && !f.constraints.is_dup()
                     && f.constraints.init.is_none() =>
             {

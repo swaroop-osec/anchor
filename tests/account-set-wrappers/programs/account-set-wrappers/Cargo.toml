@@ -1,0 +1,21 @@
+[package]
+name = "account-set-wrappers"
+version = "0.1.0"
+description = "Tests for account_set wrapper types (Mut, Seeded)"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "account_set_wrappers"
+
+[features]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { path = "../../../../lang" }
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = ['cfg(target_os, values("solana"))']

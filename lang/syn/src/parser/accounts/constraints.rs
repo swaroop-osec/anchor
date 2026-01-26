@@ -39,12 +39,14 @@ pub fn parse_token(stream: ParseStream) -> ParseResult<ConstraintToken> {
             ident.span(),
             ConstraintMut {
                 error: parse_optional_custom_error(&stream)?,
+                implicit: false,
             },
         )),
         "signer" => ConstraintToken::Signer(Context::new(
             ident.span(),
             ConstraintSigner {
                 error: parse_optional_custom_error(&stream)?,
+                implicit: false,
             },
         )),
         "executable" => {
@@ -610,9 +612,13 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                         "mut cannot be provided with init",
                     ))
                 }
-                None => self
-                    .mutable
-                    .replace(Context::new(i.span(), ConstraintMut { error: None })),
+                None => self.mutable.replace(Context::new(
+                    i.span(),
+                    ConstraintMut {
+                        error: None,
+                        implicit: true,
+                    },
+                )),
             };
             // Rent exempt if not explicitly skipped.
             if self.rent_exempt.is_none() {
@@ -630,8 +636,13 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             // account instruction.
             if self.signer.is_none() && self.seeds.is_none() && self.associated_token_mint.is_none()
             {
-                self.signer
-                    .replace(Context::new(i.span(), ConstraintSigner { error: None }));
+                self.signer.replace(Context::new(
+                    i.span(),
+                    ConstraintSigner {
+                        error: None,
+                        implicit: true,
+                    },
+                ));
             }
 
             // Assert a bump target is not given on init.
@@ -706,9 +717,13 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                         "mut cannot be provided with zeroed",
                     ))
                 }
-                None => self
-                    .mutable
-                    .replace(Context::new(z.span(), ConstraintMut { error: None })),
+                None => self.mutable.replace(Context::new(
+                    z.span(),
+                    ConstraintMut {
+                        error: None,
+                        implicit: true,
+                    },
+                )),
             };
             // Rent exempt if not explicitly skipped.
             if self.rent_exempt.is_none() {

@@ -33,10 +33,12 @@ use bytemuck::{Pod, Zeroable};
 use std::{collections::BTreeSet, fmt::Debug, io::Write};
 
 mod account_meta;
+pub mod account_set;
 pub mod accounts;
 mod bpf_upgradeable_state;
 mod bpf_writer;
 mod common;
+pub mod constraints;
 pub mod context;
 pub mod error;
 #[doc(hidden)]
@@ -156,6 +158,29 @@ pub type Result<T> = std::result::Result<T, error::Error>;
     note = "Use `UncheckedAccount` instead of `AccountInfo` for safer unchecked accounts."
 )]
 pub fn deprecated_account_info_usage() {}
+
+// Deprecated message for #[account(mut)] usage
+#[deprecated(
+    since = "0.33.0",
+    note = "Use `Mut<T>` wrapper type instead of `#[account(mut)]`. Example: `pub data: Mut<Account<'info, MyData>>`"
+)]
+pub fn deprecated_account_mut_constraint() {}
+
+// Deprecated message for #[account(seeds=[...], bump)] usage
+#[deprecated(
+    since = "0.33.0",
+    note = "Use `Seeded<T, S>` wrapper type instead of `#[account(seeds=[...], bump)]`. Example: `pub pda: Seeded<Account<'info, Config>, ConfigSeeds>`"
+)]
+pub fn deprecated_account_seeds_constraint() {}
+
+// Deprecated message for explicit #[account(signer)] usage
+// Note: For signer validation, continue using `Signer<'info>` type directly.
+// This deprecation is for the constraint attribute on non-Signer types.
+#[deprecated(
+    since = "0.33.0",
+    note = "For signer validation, use the `Signer<'info>` type directly instead of `#[account(signer)]`"
+)]
+pub fn deprecated_account_signer_constraint() {}
 
 /// A data structure of validated accounts that can be deserialized from the
 /// input to a Solana program. Implementations of this trait should perform any
@@ -479,22 +504,29 @@ impl Key for Pubkey {
     }
 }
 
+impl<T: Key> Key for &T {
+    fn key(&self) -> Pubkey {
+        (*self).key()
+    }
+}
+
 /// The prelude contains all commonly used components of the crate.
 /// All programs should include it via `anchor_lang::prelude::*;`.
 pub mod prelude {
     pub use super::{
-        access_control, account, accounts::account::Account,
+        access_control, account, account_set::Mut as MutAccount, account_set::Seeded,
+        account_set::Seeds, account_set::SingleAccountSet, accounts::account::Account,
         accounts::account_loader::AccountLoader, accounts::interface::Interface,
         accounts::interface_account::InterfaceAccount, accounts::migration::Migration,
         accounts::program::Program, accounts::signer::Signer,
         accounts::system_account::SystemAccount, accounts::sysvar::Sysvar,
-        accounts::unchecked_account::UncheckedAccount, constant, context::Context,
-        context::CpiContext, declare_id, declare_program, emit, err, error, event, instruction,
-        program, pubkey, require, require_eq, require_gt, require_gte, require_keys_eq,
-        require_keys_neq, require_neq,
+        accounts::unchecked_account::UncheckedAccount, constant, constraints::Constraints,
+        context::Context, context::CpiContext, declare_id, declare_program, emit, err, error,
+        event, instruction, program, pubkey, require, require_eq, require_gt, require_gte,
+        require_keys_eq, require_keys_neq, require_neq,
         solana_program::bpf_loader_upgradeable::UpgradeableLoaderState, source,
         system_program::System, zero_copy, AccountDeserialize, AccountSerialize, Accounts,
-        AccountsClose, AccountsExit, AnchorDeserialize, AnchorSerialize, Discriminator, Id,
+        AccountsClose, AccountsExit, AnchorDeserialize, AnchorSerialize, Bumps, Discriminator, Id,
         InitSpace, Key, Lamports, Owner, ProgramData, Result, Space, ToAccountInfo, ToAccountInfos,
         ToAccountMetas,
     };

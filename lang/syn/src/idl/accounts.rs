@@ -3,7 +3,10 @@ use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 
 use super::common::{get_idl_module_path, get_no_docs};
-use crate::{AccountField, AccountsStruct, ConstraintSeedsGroup, Field, InitKind, Ty};
+use crate::{
+    is_type_mutable, is_type_signer, AccountField, AccountsStruct, ConstraintSeedsGroup, Field,
+    InitKind, Ty,
+};
 
 /// Generate the IDL build impl for the Accounts struct.
 pub fn gen_idl_build_impl_accounts_struct(accounts: &AccountsStruct) -> TokenStream {
@@ -22,11 +25,8 @@ pub fn gen_idl_build_impl_accounts_struct(accounts: &AccountsStruct) -> TokenStr
         .map(|acc| match acc {
             AccountField::Field(acc) => {
                 let name = acc.ident.to_string();
-                let writable = acc.constraints.is_mutable();
-                let signer = match acc.ty {
-                    Ty::Signer => true,
-                    _ => acc.constraints.is_signer(),
-                };
+                let writable = is_type_mutable(&acc.ty) || acc.constraints.is_mutable();
+                let signer = is_type_signer(&acc.ty) || acc.constraints.is_signer();
                 let optional = acc.is_optional;
                 let docs = match &acc.docs {
                     Some(docs) if !no_docs => quote! { vec![#(#docs.into()),*] },

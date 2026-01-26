@@ -5,6 +5,7 @@ pub mod event_cpi;
 use crate::parser::docs;
 use crate::*;
 use syn::parse::{Error as ParseError, Result as ParseResult};
+use syn::Attribute;
 use syn::Path;
 
 pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
@@ -35,6 +36,8 @@ pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
     #[cfg(not(feature = "event-cpi"))]
     let accounts_struct = accounts_struct.clone();
 
+    let manual_constraints = parse_manual_constraints(&accounts_struct.attrs)?;
+
     let fields = match &accounts_struct.fields {
         syn::Fields::Named(fields) => fields
             .named
@@ -55,7 +58,26 @@ pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
         accounts_struct,
         fields,
         instruction_api,
+        manual_constraints,
     ))
+}
+
+fn parse_manual_constraints(attrs: &[Attribute]) -> ParseResult<bool> {
+    // Parse #[accounts(manual_constraints)] to skip auto Constraints impls.
+    let mut manual_constraints = false;
+
+    for attr in attrs.iter().filter(|a| a.path.is_ident("accounts")) {
+        let args = attr.parse_args_with(Punctuated::<Ident, Comma>::parse_terminated)?;
+        for arg in args {
+            if arg == "manual_constraints" {
+                manual_constraints = true;
+            } else {
+                return Err(ParseError::new_spanned(arg, "unknown #[accounts] argument"));
+            }
+        }
+    }
+
+    Ok(manual_constraints)
 }
 
 fn constraints_cross_checks(fields: &[AccountField]) -> ParseResult<()> {
@@ -310,6 +332,10 @@ pub fn parse_account_field(f: &syn::Field) -> ParseResult<AccountField> {
         true => {
             let (ty, is_optional) = parse_ty(f)?;
             let account_constraints = constraints::parse(f, Some(&ty))?;
+
+            // Validate that wrapper types are not combined with init/zero/realloc
+            validate_wrapper_constraint_compatibility(&ty, &account_constraints, f.ty.span())?;
+
             AccountField::Field(Field {
                 ident,
                 ty,
@@ -356,6 +382,12 @@ fn is_field_primitive(f: &syn::Field) -> ParseResult<bool> {
             | "Signer"
             | "SystemAccount"
             | "ProgramData"
+            // Wrapper types from account_set module
+            | "Mut"
+            | "Seeded"
+            | "Owned"
+            | "Executable"
+            | "HasOne"
     );
     Ok(r)
 }
@@ -376,6 +408,12 @@ fn parse_ty(f: &syn::Field) -> ParseResult<(Ty, bool)> {
         "Signer" => Ty::Signer,
         "SystemAccount" => Ty::SystemAccount,
         "ProgramData" => Ty::ProgramData,
+        // Wrapper types from account_set module
+        "Mut" => Ty::Mut(parse_mut_ty(&path)?),
+        "Seeded" => Ty::Seeded(parse_seeded_ty(&path)?),
+        "Owned" => Ty::Owned(parse_owned_ty(&path)?),
+        "Executable" => Ty::Executable(parse_executable_ty(&path)?),
+        "HasOne" => Ty::HasOne(parse_has_one_ty(&path)?),
         _ => return Err(ParseError::new(f.ty.span(), "invalid account type given")),
     };
 
@@ -694,4 +732,321 @@ fn parse_sysvar(path: &syn::Path) -> ParseResult<SysvarTy> {
         }
     };
     Ok(ty)
+}
+
+// ============================================================================
+// Wrapper type parsing functions
+// ============================================================================
+
+/// Parse Mut<T> wrapper type
+fn parse_mut_ty(path: &syn::Path) -> ParseResult<MutTy> {
+    let inner = parse_wrapper_inner_ty(path, "Mut")?;
+    Ok(MutTy {
+        inner: Box::new(inner),
+    })
+}
+
+/// Parse Seeded<T, S> wrapper type
+fn parse_seeded_ty(path: &syn::Path) -> ParseResult<SeededTy> {
+    let segments = &path.segments[0];
+    match &segments.arguments {
+        syn::PathArguments::AngleBracketed(args) => {
+            // Seeded<T, S> - needs inner type T and seeds type S
+            if args.args.len() != 2 {
+                return Err(ParseError::new(
+                    args.args.span(),
+                    "Seeded requires two type arguments: inner account type and seeds type",
+                ));
+            }
+
+            // First arg is inner type T
+            let inner_path = match &args.args[0] {
+                syn::GenericArgument::Type(syn::Type::Path(ty_path)) => ty_path.path.clone(),
+                _ => {
+                    return Err(ParseError::new(
+                        args.args[0].span(),
+                        "first argument must be an account type",
+                    ));
+                }
+            };
+            let inner = parse_ty_from_path(&inner_path)?;
+
+            // Second arg is seeds type S
+            let seeds_type_path = match &args.args[1] {
+                syn::GenericArgument::Type(syn::Type::Path(ty_path)) => ty_path.clone(),
+                _ => {
+                    return Err(ParseError::new(
+                        args.args[1].span(),
+                        "second argument must be a seeds type",
+                    ));
+                }
+            };
+
+            Ok(SeededTy {
+                inner: Box::new(inner),
+                seeds_type_path,
+            })
+        }
+        _ => Err(ParseError::new(
+            segments.arguments.span(),
+            "Seeded must have angle bracketed arguments",
+        )),
+    }
+}
+
+/// Parse Owned<T, P> wrapper type
+fn parse_owned_ty(path: &syn::Path) -> ParseResult<OwnedTy> {
+    let segments = &path.segments[0];
+    match &segments.arguments {
+        syn::PathArguments::AngleBracketed(args) => {
+            // Owned<T, P> - needs inner type T and program type P
+            if args.args.len() != 2 {
+                return Err(ParseError::new(
+                    args.args.span(),
+                    "Owned requires two type arguments: inner account type and program type",
+                ));
+            }
+
+            // First arg is inner type T
+            let inner_path = match &args.args[0] {
+                syn::GenericArgument::Type(syn::Type::Path(ty_path)) => ty_path.path.clone(),
+                _ => {
+                    return Err(ParseError::new(
+                        args.args[0].span(),
+                        "first argument must be an account type",
+                    ));
+                }
+            };
+            let inner = parse_ty_from_path(&inner_path)?;
+
+            // Second arg is program type P
+            let program_type_path = match &args.args[1] {
+                syn::GenericArgument::Type(syn::Type::Path(ty_path)) => ty_path.clone(),
+                _ => {
+                    return Err(ParseError::new(
+                        args.args[1].span(),
+                        "second argument must be a program type",
+                    ));
+                }
+            };
+
+            Ok(OwnedTy {
+                inner: Box::new(inner),
+                program_type_path,
+            })
+        }
+        _ => Err(ParseError::new(
+            segments.arguments.span(),
+            "Owned must have angle bracketed arguments",
+        )),
+    }
+}
+
+/// Parse Executable<T> wrapper type
+fn parse_executable_ty(path: &syn::Path) -> ParseResult<ExecutableTy> {
+    let inner = parse_wrapper_inner_ty(path, "Executable")?;
+    Ok(ExecutableTy {
+        inner: Box::new(inner),
+    })
+}
+
+/// Parse HasOne<T, Target> wrapper type
+fn parse_has_one_ty(path: &syn::Path) -> ParseResult<HasOneTy> {
+    let segments = &path.segments[0];
+    match &segments.arguments {
+        syn::PathArguments::AngleBracketed(args) => {
+            // HasOne<T, Target> - needs inner type T and target type
+            if args.args.len() != 2 {
+                return Err(ParseError::new(
+                    args.args.span(),
+                    "HasOne requires two type arguments: inner account type and target type",
+                ));
+            }
+
+            // First arg is inner type T
+            let inner_path = match &args.args[0] {
+                syn::GenericArgument::Type(syn::Type::Path(ty_path)) => ty_path.path.clone(),
+                _ => {
+                    return Err(ParseError::new(
+                        args.args[0].span(),
+                        "first argument must be an account type",
+                    ));
+                }
+            };
+            let inner = parse_ty_from_path(&inner_path)?;
+
+            // Second arg is target type
+            let target_type_path = match &args.args[1] {
+                syn::GenericArgument::Type(syn::Type::Path(ty_path)) => ty_path.clone(),
+                _ => {
+                    return Err(ParseError::new(
+                        args.args[1].span(),
+                        "second argument must be a target type",
+                    ));
+                }
+            };
+
+            Ok(HasOneTy {
+                inner: Box::new(inner),
+                target_type_path,
+            })
+        }
+        _ => Err(ParseError::new(
+            segments.arguments.span(),
+            "HasOne must have angle bracketed arguments",
+        )),
+    }
+}
+
+/// Parse the inner type from a wrapper like Mut<T> or Seeded<T, S>
+fn parse_wrapper_inner_ty(path: &syn::Path, wrapper_name: &str) -> ParseResult<Ty> {
+    let segments = &path.segments[0];
+    match &segments.arguments {
+        syn::PathArguments::AngleBracketed(args) => {
+            if args.args.is_empty() {
+                return Err(ParseError::new(
+                    args.args.span(),
+                    format!("{} requires an inner account type", wrapper_name),
+                ));
+            }
+
+            // Get the inner type path
+            let inner_path = match &args.args[0] {
+                syn::GenericArgument::Type(syn::Type::Path(ty_path)) => ty_path.path.clone(),
+                _ => {
+                    return Err(ParseError::new(
+                        args.args[0].span(),
+                        "argument must be an account type",
+                    ));
+                }
+            };
+
+            parse_ty_from_path(&inner_path)
+        }
+        _ => Err(ParseError::new(
+            segments.arguments.span(),
+            format!("{} must have angle bracketed arguments", wrapper_name),
+        )),
+    }
+}
+
+/// Parse a Ty from a path (recursive helper for wrapper types)
+fn parse_ty_from_path(path: &syn::Path) -> ParseResult<Ty> {
+    // Get the type identifier
+    if path.segments.is_empty() {
+        return Err(ParseError::new(path.span(), "empty path"));
+    }
+
+    let ident = path.segments[0].ident.to_string();
+
+    let ty = match ident.as_str() {
+        "Sysvar" => Ty::Sysvar(parse_sysvar(path)?),
+        "AccountInfo" => Ty::AccountInfo,
+        "UncheckedAccount" => Ty::UncheckedAccount,
+        "AccountLoader" => Ty::AccountLoader(parse_program_account_loader(path)?),
+        "Account" => Ty::Account(parse_account_ty(path)?),
+        "LazyAccount" => Ty::LazyAccount(parse_lazy_account_ty(path)?),
+        "Migration" => Ty::Migration(parse_migration_ty(path)?),
+        "Program" => Ty::Program(parse_program_ty(path)?),
+        "Interface" => Ty::Interface(parse_interface_ty(path)?),
+        "InterfaceAccount" => Ty::InterfaceAccount(parse_interface_account_ty(path)?),
+        "Signer" => Ty::Signer,
+        "SystemAccount" => Ty::SystemAccount,
+        "ProgramData" => Ty::ProgramData,
+        // Wrapper types can be nested
+        "Mut" => Ty::Mut(parse_mut_ty(path)?),
+        "Seeded" => Ty::Seeded(parse_seeded_ty(path)?),
+        "Owned" => Ty::Owned(parse_owned_ty(path)?),
+        "Executable" => Ty::Executable(parse_executable_ty(path)?),
+        "HasOne" => Ty::HasOne(parse_has_one_ty(path)?),
+        _ => {
+            return Err(ParseError::new(
+                path.span(),
+                format!("invalid account type: {}", ident),
+            ));
+        }
+    };
+
+    Ok(ty)
+}
+
+// ============================================================================
+// Wrapper type validation
+// ============================================================================
+
+/// Check if a type is a wrapper type (Mut, Seeded, Owned, Executable, HasOne)
+fn is_wrapper_type(ty: &Ty) -> bool {
+    matches!(
+        ty,
+        Ty::Mut(_) | Ty::Seeded(_) | Ty::Owned(_) | Ty::Executable(_) | Ty::HasOne(_)
+    )
+}
+
+/// Get the wrapper type name for error messages
+fn wrapper_type_name(ty: &Ty) -> &'static str {
+    match ty {
+        Ty::Mut(_) => "Mut<T>",
+        Ty::Seeded(_) => "Seeded<T, S>",
+        Ty::Owned(_) => "Owned<T, P>",
+        Ty::Executable(_) => "Executable<T>",
+        Ty::HasOne(_) => "HasOne<T, Target>",
+        _ => "wrapper type",
+    }
+}
+
+/// Validate that wrapper types are not combined with init/zero/realloc constraints.
+/// These constraints are implemented by attribute-specific codegen that expects
+/// base account types and init/zero/realloc metadata (space/payer/seeds).
+/// Wrappers are not wired into those flows, so combining them is unsupported.
+fn validate_wrapper_constraint_compatibility(
+    ty: &Ty,
+    constraints: &ConstraintGroup,
+    span: proc_macro2::Span,
+) -> ParseResult<()> {
+    // Only validate if this is a wrapper type at the outermost level
+    if !is_wrapper_type(ty) {
+        return Ok(());
+    }
+
+    let wrapper_name = wrapper_type_name(ty);
+
+    // Check for init constraint
+    if constraints.init.is_some() {
+        return Err(ParseError::new(
+            span,
+            format!(
+                "cannot combine {} wrapper type with #[account(init, ...)]. \
+                 Wrapper types do not support account initialization. \
+                 Use the base type (e.g., Account<'info, T>) with #[account(init, ...)] instead.",
+                wrapper_name
+            ),
+        ));
+    }
+
+    // Check for zeroed constraint
+    if constraints.zeroed.is_some() {
+        return Err(ParseError::new(
+            span,
+            format!(
+                "cannot combine {} wrapper type with #[account(zero)]. \
+                 Wrapper types do not support zero initialization. \
+                 Use the base type (e.g., AccountLoader<'info, T>) with #[account(zero)] instead.",
+                wrapper_name
+            ),
+        ));
+    }
+
+    // Check for realloc constraint (attribute-based)
+    if constraints.realloc.is_some() {
+        return Err(ParseError::new(
+            span,
+            format!(
+                "cannot combine {} wrapper type with #[account(realloc = ...)]. \
+                 Use the base type with #[account(realloc = ...)] instead.",
+                wrapper_name
+            ),
+        ));
+    }
+
+    Ok(())
 }
