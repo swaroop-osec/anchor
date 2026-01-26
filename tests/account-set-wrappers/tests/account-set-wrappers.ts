@@ -23,7 +23,7 @@ describe("account-set-wrappers", () => {
     // Find the PDA for seeded tests
     [pdaAddress, pdaBump] = await PublicKey.findProgramAddress(
       [Buffer.from("test_data")],
-      program.programId,
+      program.programId
     );
   });
 
@@ -40,7 +40,7 @@ describe("account-set-wrappers", () => {
         .rpc();
 
       const account = await program.account.testData.fetch(
-        dataKeypair.publicKey,
+        dataKeypair.publicKey
       );
       assert.equal(account.value.toNumber(), 100);
       assert.ok(account.authority.equals(provider.wallet.publicKey));
@@ -78,7 +78,7 @@ describe("account-set-wrappers", () => {
         .rpc();
 
       const account = await program.account.testData.fetch(
-        dataKeypair.publicKey,
+        dataKeypair.publicKey
       );
       assert.equal(account.value.toNumber(), 150);
     });
@@ -194,7 +194,7 @@ describe("account-set-wrappers", () => {
       // Find the CPI PDA
       [cpiPdaAddress] = await PublicKey.findProgramAddress(
         [Buffer.from("cpi_pda")],
-        program.programId,
+        program.programId
       );
 
       // Fund the CPI PDA with some SOL for transfer tests
@@ -203,7 +203,7 @@ describe("account-set-wrappers", () => {
           fromPubkey: provider.wallet.publicKey,
           toPubkey: cpiPdaAddress,
           lamports: anchor.web3.LAMPORTS_PER_SOL / 10, // 0.1 SOL
-        }),
+        })
       );
       await provider.sendAndConfirm(fundTx);
     });
@@ -213,7 +213,7 @@ describe("account-set-wrappers", () => {
       const transferAmount = new BN(1000000); // 0.001 SOL
 
       const recipientBalanceBefore = await provider.connection.getBalance(
-        recipient.publicKey,
+        recipient.publicKey
       );
 
       await program.methods
@@ -226,12 +226,12 @@ describe("account-set-wrappers", () => {
         .rpc();
 
       const recipientBalanceAfter = await provider.connection.getBalance(
-        recipient.publicKey,
+        recipient.publicKey
       );
       assert.equal(
         recipientBalanceAfter - recipientBalanceBefore,
         transferAmount.toNumber(),
-        "Recipient should receive the transfer amount",
+        "Recipient should receive the transfer amount"
       );
     });
 
@@ -251,7 +251,7 @@ describe("account-set-wrappers", () => {
       assert.equal(
         account.value.toNumber(),
         newValue.toNumber(),
-        "Value should be updated",
+        "Value should be updated"
       );
     });
 
