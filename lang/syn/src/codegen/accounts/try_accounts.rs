@@ -322,7 +322,10 @@ fn is_init(af: &AccountField) -> bool {
 
 // Generates duplicate mutable account validation logic
 fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::TokenStream {
-    // Collect all mutable account fields without `dup` constraint, excluding UncheckedAccount, Signer, and init accounts.
+    // Collect all mutable account fields without `dup` constraint that serialize on exit.
+    // Only types that serialize on exit are included, as duplicate mutable accounts
+    // are problematic due to double serialization (the second write overwrites the first).
+    // Types like UncheckedAccount, Signer, SystemAccount, AccountLoader, etc. don't serialize on exit 
     let candidates: Vec<_> = accs
         .fields
         .iter()
@@ -333,9 +336,11 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
                     && f.constraints.init.is_none() =>
             {
                 match &f.ty {
-                    crate::Ty::UncheckedAccount => None, // unchecked by design
-                    crate::Ty::Signer => None, // signers are excluded as they're typically payers
-                    _ => Some(f),
+                    // Only include types that serialize on exit
+                    crate::Ty::Account(_)
+                    | crate::Ty::LazyAccount(_)
+                    | crate::Ty::InterfaceAccount(_) => Some(f),
+                    _ => None,
                 }
             }
             _ => None,
