@@ -325,7 +325,7 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
     // Collect all mutable account fields without `dup` constraint that serialize on exit.
     // Only types that serialize on exit are included, as duplicate mutable accounts
     // are problematic due to double serialization (the second write overwrites the first).
-    // Types like UncheckedAccount, Signer, SystemAccount, AccountLoader, etc. don't serialize on exit 
+    // Types like UncheckedAccount, Signer, SystemAccount, AccountLoader, etc. don't serialize on exit
     let candidates: Vec<_> = accs
         .fields
         .iter()
