@@ -13,8 +13,19 @@ import * as assert from "assert";
 import BN from "bn.js";
 
 describe("system-coder", () => {
+  const confirmOpts: anchor.web3.ConfirmOptions = {
+    commitment: "confirmed",
+    preflightCommitment: "confirmed",
+    skipPreflight: true,
+    maxRetries: 3,
+  };
   // Configure the client to use the local cluster.
-  const provider = anchor.AnchorProvider.env();
+  const baseProvider = anchor.AnchorProvider.env();
+  const provider = new anchor.AnchorProvider(
+    baseProvider.connection,
+    baseProvider.wallet,
+    confirmOpts
+  );
   anchor.setProvider(provider);
 
   // Client.
