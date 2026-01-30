@@ -22,13 +22,15 @@ describe("system-coder", () => {
 
   // Constants.
   const aliceKeypair = Keypair.generate();
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
 
   it("Creates an account", async () => {
     // arrange
     const space = 100;
     const lamports =
       await program.provider.connection.getMinimumBalanceForRentExemption(
-        space
+        space,
       );
     const owner = SystemProgram.programId;
     // act
@@ -42,7 +44,7 @@ describe("system-coder", () => {
       .rpc();
     // assert
     const aliceAccount = await program.provider.connection.getAccountInfo(
-      aliceKeypair.publicKey
+      aliceKeypair.publicKey,
     );
     assert.notEqual(aliceAccount, null);
     assert.ok(owner.equals(aliceAccount.owner));
@@ -62,7 +64,7 @@ describe("system-coder", () => {
       .rpc();
     // assert
     const aliceAccount = await program.provider.connection.getAccountInfo(
-      aliceKeypair.publicKey
+      aliceKeypair.publicKey,
     );
     assert.notEqual(aliceAccount, null);
     assert.ok(owner.equals(aliceAccount.owner));
@@ -74,7 +76,7 @@ describe("system-coder", () => {
     const space = 100;
     const lamports =
       await program.provider.connection.getMinimumBalanceForRentExemption(
-        space
+        space,
       );
     // act
     await program.methods
@@ -95,7 +97,7 @@ describe("system-coder", () => {
       .rpc();
     // assert
     const newAccountAfter = await program.provider.connection.getAccountInfo(
-      newKeypair.publicKey
+      newKeypair.publicKey,
     );
     assert.equal(space, newAccountAfter.data.byteLength);
   });
@@ -104,14 +106,14 @@ describe("system-coder", () => {
     const space = 100;
     const lamports =
       await program.provider.connection.getMinimumBalanceForRentExemption(
-        space
+        space,
       );
     const owner = SystemProgram.programId;
     const seed = "seeds";
     const bobPublicKey = await PublicKey.createWithSeed(
       aliceKeypair.publicKey,
       seed,
-      owner
+      owner,
     );
     // act
     await program.methods
@@ -120,7 +122,7 @@ describe("system-coder", () => {
         seed,
         new BN(lamports),
         new BN(space),
-        owner
+        owner,
       )
       .accounts({
         base: aliceKeypair.publicKey,
@@ -131,7 +133,7 @@ describe("system-coder", () => {
       .rpc();
     // assert
     const bobAccount = await program.provider.connection.getAccountInfo(
-      bobPublicKey
+      bobPublicKey,
     );
     assert.notEqual(bobAccount, null);
   });
@@ -142,12 +144,12 @@ describe("system-coder", () => {
     const space = 100;
     const lamports =
       await program.provider.connection.getMinimumBalanceForRentExemption(
-        space
+        space,
       );
     const bobPublicKey = await PublicKey.createWithSeed(
       aliceKeypair.publicKey,
       seed,
-      owner
+      owner,
     );
     // act
     await program.methods
@@ -176,7 +178,7 @@ describe("system-coder", () => {
       .rpc();
     // assert
     const bobAccount = await program.provider.connection.getAccountInfo(
-      bobPublicKey
+      bobPublicKey,
     );
     assert.notEqual(bobAccount, null);
     assert.ok(owner.equals(bobAccount.owner));
@@ -189,10 +191,10 @@ describe("system-coder", () => {
     const bobPublicKey = await PublicKey.createWithSeed(
       aliceKeypair.publicKey,
       seed,
-      owner
+      owner,
     );
     const aliceAccountBefore = await program.provider.connection.getAccountInfo(
-      aliceKeypair.publicKey
+      aliceKeypair.publicKey,
     );
     // act
     await program.methods
@@ -213,11 +215,11 @@ describe("system-coder", () => {
       .rpc();
     // assert
     const aliceAccountAfter = await program.provider.connection.getAccountInfo(
-      aliceKeypair.publicKey
+      aliceKeypair.publicKey,
     );
     assert.equal(
       aliceAccountBefore.lamports + lamports,
-      aliceAccountAfter.lamports
+      aliceAccountAfter.lamports,
     );
   });
 
@@ -235,7 +237,7 @@ describe("system-coder", () => {
       .rpc();
     // assert
     const receiverAccount = await program.provider.connection.getAccountInfo(
-      receiverKeypair.publicKey
+      receiverKeypair.publicKey,
     );
     assert.notEqual(receiverAccount, null);
     assert.equal(lamports, receiverAccount.lamports);
@@ -268,7 +270,7 @@ describe("system-coder", () => {
       .rpc();
     // assert
     const nonceAccount = await program.account.nonce.fetch(
-      nonceKeypair.publicKey
+      nonceKeypair.publicKey,
     );
     assert.notEqual(nonceAccount, null);
     assert.ok(nonceAccount.authorizedPubkey.equals(provider.wallet.publicKey));
@@ -300,6 +302,7 @@ describe("system-coder", () => {
       .signers([nonceKeypair])
       .rpc();
     // These have to be separate to make sure advance is in another slot.
+    await sleep(500);
     await program.methods
       .advanceNonceAccount(provider.wallet.publicKey)
       .accounts({
@@ -309,7 +312,7 @@ describe("system-coder", () => {
       .rpc();
     // assert
     const nonceAccount = await program.account.nonce.fetch(
-      nonceKeypair.publicKey
+      nonceKeypair.publicKey,
     );
     assert.notEqual(nonceAccount, null);
   });
@@ -348,7 +351,7 @@ describe("system-coder", () => {
       .rpc();
     // assert
     const nonceAccount = await program.account.nonce.fetch(
-      nonceKeypair.publicKey
+      nonceKeypair.publicKey,
     );
     assert.notEqual(nonceAccount, null);
     assert.ok(nonceAccount.authorizedPubkey.equals(aliceKeypair.publicKey));
@@ -383,6 +386,7 @@ describe("system-coder", () => {
       ])
       .signers([nonceKeypair])
       .rpc();
+    await sleep(500);
     await program.methods
       .advanceNonceAccount(provider.wallet.publicKey)
       .accounts({
@@ -406,6 +410,7 @@ describe("system-coder", () => {
         authorized: provider.wallet.publicKey,
       })
       .rpc();
+    await sleep(500);
     await program.methods
       .withdrawNonceAccount(new BN(amount))
       .accounts({
