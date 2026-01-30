@@ -13,8 +13,22 @@ import * as assert from "assert";
 import BN from "bn.js";
 
 describe("system-coder", () => {
+  const confirmOpts: anchor.web3.ConfirmOptions = {
+    commitment: "confirmed",
+    preflightCommitment: "confirmed",
+  };
   // Configure the client to use the local cluster.
-  const provider = anchor.AnchorProvider.env();
+  const baseProvider = anchor.AnchorProvider.env();
+  const rpcEndpoint = baseProvider.connection.rpcEndpoint;
+  const connection = new anchor.web3.Connection(rpcEndpoint, {
+    commitment: confirmOpts.commitment,
+    confirmTransactionInitialTimeout: 120_000,
+  });
+  const provider = new anchor.AnchorProvider(
+    connection,
+    baseProvider.wallet,
+    confirmOpts
+  );
   anchor.setProvider(provider);
 
   // Client.
@@ -22,6 +36,8 @@ describe("system-coder", () => {
 
   // Constants.
   const aliceKeypair = Keypair.generate();
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
 
   it("Creates an account", async () => {
     // arrange
@@ -300,6 +316,7 @@ describe("system-coder", () => {
       .signers([nonceKeypair])
       .rpc();
     // These have to be separate to make sure advance is in another slot.
+    await sleep(500);
     await program.methods
       .advanceNonceAccount(provider.wallet.publicKey)
       .accounts({
@@ -383,6 +400,7 @@ describe("system-coder", () => {
       ])
       .signers([nonceKeypair])
       .rpc();
+    await sleep(500);
     await program.methods
       .advanceNonceAccount(provider.wallet.publicKey)
       .accounts({
@@ -406,6 +424,7 @@ describe("system-coder", () => {
         authorized: provider.wallet.publicKey,
       })
       .rpc();
+    await sleep(500);
     await program.methods
       .withdrawNonceAccount(new BN(amount))
       .accounts({
