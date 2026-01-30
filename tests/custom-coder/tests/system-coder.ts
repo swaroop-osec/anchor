@@ -16,13 +16,16 @@ describe("system-coder", () => {
   const confirmOpts: anchor.web3.ConfirmOptions = {
     commitment: "confirmed",
     preflightCommitment: "confirmed",
-    skipPreflight: true,
-    maxRetries: 3,
   };
   // Configure the client to use the local cluster.
   const baseProvider = anchor.AnchorProvider.env();
+  const rpcEndpoint = baseProvider.connection.rpcEndpoint;
+  const connection = new anchor.web3.Connection(rpcEndpoint, {
+    commitment: confirmOpts.commitment,
+    confirmTransactionInitialTimeout: 120_000,
+  });
   const provider = new anchor.AnchorProvider(
-    baseProvider.connection,
+    connection,
     baseProvider.wallet,
     confirmOpts
   );
