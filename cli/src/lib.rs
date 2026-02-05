@@ -152,6 +152,9 @@ pub enum Command {
         /// Architecture to use when building the program
         #[clap(value_enum, long, default_value = "sbf")]
         arch: ProgramArch,
+        /// Add compute unit logging at key points in the program
+        #[clap(long)]
+        log_compute_units: bool,
     },
     /// Expands macros (wrapper around cargo expand)
     ///
@@ -234,6 +237,9 @@ pub enum Command {
         /// Arguments to pass to the underlying `cargo build-sbf` command.
         #[clap(required = false, last = true)]
         cargo_args: Vec<String>,
+        /// Add compute unit logging at key points in the program
+        #[clap(long)]
+        log_compute_units: bool,
     },
     /// Creates a new program.
     New {
@@ -1159,25 +1165,33 @@ fn process_command(opts: Opts) -> Result<()> {
             ignore_keys,
             no_docs,
             arch,
-        } => build(
-            &opts.cfg_override,
-            no_idl,
-            idl,
-            idl_ts,
-            verifiable,
-            skip_lint,
-            ignore_keys,
-            program_name,
-            solana_version,
-            docker_image,
-            bootstrap,
-            None,
-            None,
-            env,
-            cargo_args,
-            no_docs,
-            arch,
-        ),
+            log_compute_units,
+        } => {
+            let mut cargo_args = cargo_args;
+            if log_compute_units {
+                cargo_args.push("--features".to_string());
+                cargo_args.push("log-compute-units".to_string());
+            }
+            build(
+                &opts.cfg_override,
+                no_idl,
+                idl,
+                idl_ts,
+                verifiable,
+                skip_lint,
+                ignore_keys,
+                program_name,
+                solana_version,
+                docker_image,
+                bootstrap,
+                None,
+                None,
+                env,
+                cargo_args,
+                no_docs,
+                arch,
+            )
+        }
         Command::Verify {
             program_id,
             repo_url,
@@ -1252,22 +1266,30 @@ fn process_command(opts: Opts) -> Result<()> {
             cargo_args,
             skip_lint,
             arch,
-        } => test(
-            &opts.cfg_override,
-            program_name,
-            skip_deploy,
-            skip_local_validator,
-            skip_build,
-            skip_lint,
-            no_idl,
-            detach,
-            run,
-            validator,
-            args,
-            env,
-            cargo_args,
-            arch,
-        ),
+            log_compute_units,
+        } => {
+            let mut cargo_args = cargo_args;
+            if log_compute_units {
+                cargo_args.push("--features".to_string());
+                cargo_args.push("log-compute-units".to_string());
+            }
+            test(
+                &opts.cfg_override,
+                program_name,
+                skip_deploy,
+                skip_local_validator,
+                skip_build,
+                skip_lint,
+                no_idl,
+                detach,
+                run,
+                validator,
+                args,
+                env,
+                cargo_args,
+                arch,
+            )
+        }
         Command::Airdrop { amount, pubkey } => airdrop(&opts.cfg_override, amount, pubkey),
         Command::Cluster { subcmd } => cluster(subcmd),
         Command::Config { subcmd } => config_cmd(&opts.cfg_override, subcmd),
