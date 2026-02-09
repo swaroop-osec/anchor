@@ -339,7 +339,7 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
                     // Only include types that serialize on exit
                     crate::Ty::Account(_)
                     | crate::Ty::LazyAccount(_)
-                    | crate::Ty::InterfaceAccount(_) 
+                    | crate::Ty::InterfaceAccount(_)
                     | crate::Ty::Migration(_) => Some(f),
                     _ => None,
                 }
@@ -348,7 +348,17 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         })
         .collect();
 
-    if candidates.is_empty() {
+    // Collect composite field idents (nested account structs)
+    let composite_fields: Vec<_> = accs
+        .fields
+        .iter()
+        .filter_map(|af| match af {
+            AccountField::CompositeField(s) => Some(&s.ident),
+            _ => None,
+        })
+        .collect();
+
+    if candidates.is_empty() && composite_fields.is_empty() {
         return quote! {};
     }
 
@@ -368,6 +378,22 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         field_name_strs.push(quote! { stringify!(#name) });
     }
 
+    // Generate code to check composite field keys
+    let composite_checks: Vec<proc_macro2::TokenStream> = composite_fields
+        .iter()
+        .map(|composite_name| {
+            quote! {
+                for key in #composite_name.duplicate_mutable_account_keys() {
+                    if !__mutable_accounts.insert(key) {
+                        return Err(anchor_lang::error::Error::from(
+                            anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
+                        ).with_account_name(format!("{}", key)));
+                    }
+                }
+            }
+        })
+        .collect();
+
     quote! {
         // Duplicate mutable account validation - using HashSet
         {
@@ -385,6 +411,8 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
                 }
             )*
 
+            // Check composite (nested) account struct keys for duplicates
+            #(#composite_checks)*
         }
     }
 }
