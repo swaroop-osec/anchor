@@ -349,24 +349,7 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         .collect();
 
     if candidates.is_empty() {
-        // No declared mutable accounts, but still need to check remaining_accounts
-        return quote! {
-            // Duplicate mutable account validation for remaining_accounts only
-            {
-                let mut __mutable_accounts = std::collections::HashSet::new();
-
-                for __remaining_account in __accounts.iter() {
-                    if __remaining_account.is_writable {
-                        if !__mutable_accounts.insert(*__remaining_account.key) {
-                            return Err(anchor_lang::error::Error::from(
-                                anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
-                            )
-                            .with_account_name(format!("{} (remaining_accounts)", __remaining_account.key)));
-                        }
-                    }
-                }
-            }
-        };
+        return quote! {};
     }
 
     let mut field_keys = Vec::with_capacity(candidates.len());
@@ -390,7 +373,7 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
         {
             let mut __mutable_accounts = std::collections::HashSet::new();
 
-            // First, check declared mutable accounts for duplicates among themselves
+            // Check declared mutable accounts for duplicates among themselves
             #(
                 if let Some(key) = #field_keys {
                     // Check for duplicates and insert the key and account name
@@ -402,17 +385,6 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
                 }
             )*
 
-            // This prevents duplicates from being passed via remaining_accounts
-            for __remaining_account in __accounts.iter() {
-                if __remaining_account.is_writable {
-                    if !__mutable_accounts.insert(*__remaining_account.key) {
-                        return Err(anchor_lang::error::Error::from(
-                            anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount
-                        )
-                        .with_account_name(format!("{} (remaining_accounts)", __remaining_account.key)));
-                    }
-                }
-            }
         }
     }
 }

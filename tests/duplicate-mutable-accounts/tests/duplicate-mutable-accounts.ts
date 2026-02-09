@@ -130,33 +130,21 @@ describe("duplicate-mutable-accounts", () => {
     }
   });
 
-  it("Should block duplicate in remainingAccounts", async () => {
-    try {
-      await program.methods
-        .failsDuplicateMutable()
-        .accounts({
-          account1: dataAccount1.publicKey,
-          account2: dataAccount2.publicKey, // Different account
-        })
-        .remainingAccounts([
-          {
-            pubkey: dataAccount1.publicKey, // duplicate via remainingAccounts
-            isWritable: true,
-            isSigner: false,
-          },
-        ])
-        .rpc();
-
-      assert.fail("Should have been blocked - remainingAccounts bypass failed");
-    } catch (e) {
-      // Should be blocked with framework-level security fix
-      assert.ok(
-        e.message.includes("ConstraintDuplicateMutableAccount") ||
-          e.message.includes("duplicate") ||
-          e.message.includes("2040"),
-        "Successfully blocked with framework-level validation"
-      );
-    }
+  it("Should allow duplicate in remainingAccounts", async () => {
+    await program.methods
+      .failsDuplicateMutable()
+      .accounts({
+        account1: dataAccount1.publicKey,
+        account2: dataAccount2.publicKey, // Different account
+      })
+      .remainingAccounts([
+        {
+          pubkey: dataAccount1.publicKey, // duplicate via remainingAccounts is allowed
+          isWritable: true,
+          isSigner: false,
+        },
+      ])
+      .rpc();
   });
 
   it("Should allow using remaining_accounts without duplicates", async () => {
