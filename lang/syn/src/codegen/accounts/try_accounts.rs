@@ -339,7 +339,8 @@ fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::Toke
                     // Only include types that serialize on exit
                     crate::Ty::Account(_)
                     | crate::Ty::LazyAccount(_)
-                    | crate::Ty::InterfaceAccount(_) => Some(f),
+                    | crate::Ty::InterfaceAccount(_) 
+                    | crate::Ty::Migration(_) => Some(f),
                     _ => None,
                 }
             }
