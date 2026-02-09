@@ -20,7 +20,7 @@ describe("duplicate-mutable-accounts", () => {
     // 1) Fund user_wallet so it can pay rent
     const airdropSig = await provider.connection.requestAirdrop(
       user_wallet.publicKey,
-      2 * anchor.web3.LAMPORTS_PER_SOL
+      2 * anchor.web3.LAMPORTS_PER_SOL,
     );
     await provider.connection.confirmTransaction(airdropSig);
 
@@ -50,10 +50,10 @@ describe("duplicate-mutable-accounts", () => {
   it("Should fail with duplicate mutable accounts", async () => {
     // Ensure the accounts are initialized
     const account1 = await program.account.counter.fetch(
-      dataAccount1.publicKey
+      dataAccount1.publicKey,
     );
     const account2 = await program.account.counter.fetch(
-      dataAccount2.publicKey
+      dataAccount2.publicKey,
     );
     assert.strictEqual(account1.count.toNumber(), 100);
     assert.strictEqual(account2.count.toNumber(), 300);
@@ -72,7 +72,7 @@ describe("duplicate-mutable-accounts", () => {
       const err = e as AnchorError;
       assert.strictEqual(
         err.error.errorCode.code,
-        "ConstraintDuplicateMutableAccount"
+        "ConstraintDuplicateMutableAccount",
       );
       assert.strictEqual(err.error.errorCode.number, 2040);
     }
@@ -117,15 +117,16 @@ describe("duplicate-mutable-accounts", () => {
         .rpc();
 
       assert.fail(
-        "Nested structures with duplicate accounts should be blocked"
+        "Nested structures with duplicate accounts should be blocked",
       );
     } catch (e) {
-      // Should be blocked with the fix
-      assert.ok(
-        e.message.includes("ConstraintDuplicateMutableAccount") ||
-          e.message.includes("duplicate") ||
-          e.message.includes("2040"),
-        "Nested duplicate correctly blocked"
+      assert.instanceOf(e, AnchorError);
+      const err = e as AnchorError;
+      assert.strictEqual(
+        err.error.errorCode.code,
+        "ConstraintDuplicateMutableAccount",
+        "Expected ConstraintDuplicateMutableAccount but got: " +
+          err.error.errorCode.code,
       );
     }
   });
@@ -150,7 +151,7 @@ describe("duplicate-mutable-accounts", () => {
   it("Should allow using remaining_accounts without duplicates", async () => {
     // Get initial counts
     const beforeAccount1 = await program.account.counter.fetch(
-      dataAccount1.publicKey
+      dataAccount1.publicKey,
     );
 
     // Call with valid remaining accounts (no duplicates)
@@ -170,13 +171,13 @@ describe("duplicate-mutable-accounts", () => {
 
     // Verify account was incremented
     const afterAccount1 = await program.account.counter.fetch(
-      dataAccount1.publicKey
+      dataAccount1.publicKey,
     );
 
     assert.equal(
       afterAccount1.count.toNumber(),
       beforeAccount1.count.toNumber() + 1,
-      "Account1 should be incremented"
+      "Account1 should be incremented",
     );
   });
 
@@ -202,21 +203,21 @@ describe("duplicate-mutable-accounts", () => {
 
     // Verify both accounts were created with correct values
     const account1Data = await program.account.counter.fetch(
-      newAccount1.publicKey
+      newAccount1.publicKey,
     );
     const account2Data = await program.account.counter.fetch(
-      newAccount2.publicKey
+      newAccount2.publicKey,
     );
 
     assert.equal(
       account1Data.count.toNumber(),
       500,
-      "First account should have count 500"
+      "First account should have count 500",
     );
     assert.equal(
       account2Data.count.toNumber(),
       600,
-      "Second account should have count 600"
+      "Second account should have count 600",
     );
   });
 });
