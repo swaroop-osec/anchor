@@ -74,11 +74,11 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                     keys.extend(self.#field_name.duplicate_mutable_account_keys());
                 })
             }
-            // Direct fields that are mut, not dup, and not init.
+            // Direct fields that are mut, not dup, and not pure init (init_if_needed is included).
             AccountField::Field(f)
                 if f.constraints.is_mutable()
                     && !f.constraints.is_dup()
-                    && f.constraints.init.is_none() =>
+                    && !f.constraints.is_pure_init() =>
             {
                 // Only types that serialize on exit (not Signer, Program, etc.).
                 match &f.ty {
