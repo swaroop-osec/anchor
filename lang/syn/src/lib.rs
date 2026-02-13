@@ -751,11 +751,6 @@ impl ConstraintGroup {
 
     /// Returns `true` when the field has `#[account(init, ...)]` but **not**
     /// `#[account(init_if_needed, ...)]`.
-    ///
-    /// Pure-init accounts are always freshly created so they cannot collide
-    /// with an existing mutable account.  `init_if_needed` accounts, however,
-    /// may already be initialized and therefore must participate in the
-    /// duplicate-mutable-account check.
     pub fn is_pure_init(&self) -> bool {
         matches!(&self.init, Some(c) if !c.if_needed)
     }

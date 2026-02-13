@@ -75,6 +75,10 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                 })
             }
             // Direct fields that are mut, not dup, and not pure init (init_if_needed is included).
+            // Pure-init accounts are always freshly created so they cannot collide
+            // with an existing mutable account. `init_if_needed` accounts, however,
+            // may already be initialized and therefore must participate in the
+            // duplicate-mutable-account check.
             AccountField::Field(f)
                 if f.constraints.is_mutable()
                     && !f.constraints.is_dup()
