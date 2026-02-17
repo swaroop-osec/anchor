@@ -1,13 +1,15 @@
 import { Commitment, PublicKey } from "@solana/web3.js";
 import { inflate } from "pako";
-import { BorshCoder, Coder } from "../coder/index.js";
 import {
-  Idl,
-  IdlInstruction,
-  convertIdlToCamelCase,
-  decodeIdlAccount,
-  idlAddress,
-} from "../idl.js";
+  Compression,
+  DataSource,
+  Encoding,
+  fetchMaybeMetadataFromSeeds,
+} from "@solana-program/program-metadata";
+import { Address as SolanaAddress } from '@solana/addresses';
+import { createSolanaRpc } from "@solana/kit";
+import { BorshCoder, Coder } from "../coder/index.js";
+import { Idl, IdlInstruction, convertIdlToCamelCase } from "../idl.js";
 import Provider, { getProvider } from "../provider.js";
 import { utf8 } from "../utils/bytes/index.js";
 import { CustomAccountResolver } from "./accounts-resolver.js";
@@ -350,15 +352,36 @@ export class Program<IDL extends Idl = Idl> {
   ): Promise<IDL | null> {
     provider = provider ?? getProvider();
     const programId = translateAddress(address);
+    const rpc = createSolanaRpc(provider.connection.rpcEndpoint);
+    const metadataAccount = await fetchMaybeMetadataFromSeeds(rpc, {
+      program: address as SolanaAddress,
+      authority: null,
+      seed: "idl",
+    });
 
-    const idlAddr = await idlAddress(programId);
-    const accountInfo = await provider.connection.getAccountInfo(idlAddr);
-    if (!accountInfo) {
+    if (!metadataAccount.exists) {
       return null;
     }
-    // Chop off account discriminator.
-    let idlAccount = decodeIdlAccount(accountInfo.data.slice(8));
-    const inflatedIdl = inflate(idlAccount.data);
+
+    // Default encoding used by the CLI, consider supporting other options
+    const metadata = metadataAccount.data;
+    if (metadata.dataSource !== DataSource.Direct) {
+      throw new Error(
+        `Unsupported IDL metadata source for program ${programId.toString()}: ${metadata.dataSource}`
+      );
+    }
+    if (metadata.encoding !== Encoding.Utf8) {
+      throw new Error(
+        `Unsupported IDL metadata encoding for program ${programId.toString()}: ${metadata.encoding}`
+      );
+    }
+    if (metadata.compression !== Compression.Zlib) {
+      throw new Error(
+        `Unsupported IDL metadata compression for program ${programId.toString()}: ${metadata.compression}`
+      );
+    }
+
+    const inflatedIdl = inflate(metadata.data.slice(0));
     return JSON.parse(utf8.decode(inflatedIdl));
   }
 
