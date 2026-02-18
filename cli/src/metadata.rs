@@ -111,7 +111,7 @@ impl FundedIdlSubcommand {
                 idl_filepath: filepath,
                 non_canonical,
             } => {
-                args.extend(["idl", program_id, filepath]);
+                args.extend(["write", "idl", program_id, filepath]);
                 if *non_canonical {
                     args.push("--non-canonical");
                 }
