@@ -354,7 +354,7 @@ export class Program<IDL extends Idl = Idl> {
     const programId = translateAddress(address);
     const rpc = createSolanaRpc(provider.connection.rpcEndpoint);
     const metadataAccount = await fetchMaybeMetadataFromSeeds(rpc, {
-      program: address as SolanaAddress,
+      program: programId.toBase58() as SolanaAddress,
       authority: null,
       seed: "idl",
     });
