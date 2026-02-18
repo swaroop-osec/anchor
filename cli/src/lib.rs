@@ -642,6 +642,9 @@ pub enum IdlCommand {
         /// Create non-canonical metadata account (third-party metadata)
         #[clap(long)]
         non_canonical: bool,
+        /// Allow running against a localnet cluster (disabled by default)
+        #[clap(long)]
+        allow_localnet: bool,
     },
     /// Upgrades the IDL to the new file. An alias for first writing and then
     /// then setting the idl buffer account.
@@ -650,6 +653,9 @@ pub enum IdlCommand {
         filepath: String,
         #[clap(long)]
         priority_fee: Option<u64>,
+        /// Allow running against a localnet cluster (disabled by default)
+        #[clap(long)]
+        allow_localnet: bool,
     },
     /// Generates the IDL for the program using the compilation method.
     #[clap(alias = "b")]
@@ -2389,11 +2395,19 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             filepath,
             priority_fee,
             non_canonical,
-        } => idl_init(cfg_override, filepath, priority_fee, non_canonical),
+            allow_localnet,
+        } => idl_init(
+            cfg_override,
+            filepath,
+            priority_fee,
+            non_canonical,
+            allow_localnet,
+        ),
         IdlCommand::Upgrade {
             filepath,
             priority_fee,
-        } => idl_upgrade(cfg_override, filepath, priority_fee),
+            allow_localnet,
+        } => idl_upgrade(cfg_override, filepath, priority_fee, allow_localnet),
         IdlCommand::Build {
             program_name,
             out,
@@ -2457,14 +2471,16 @@ fn idl_init(
     idl_filepath: String,
     priority_fee: Option<u64>,
     non_canonical: bool,
+    allow_localnet: bool,
 ) -> Result<()> {
     // Get cluster URL and wallet path from Anchor config
     let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
-    // Skip IDL initialization on localnet
     let is_localnet = cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1");
-    if is_localnet {
-        println!("Skipping IDL initialization on localnet");
+    if is_localnet && !allow_localnet {
+        println!(
+            "Skipping IDL initialization on localnet. To deploy on localnet, use --allow-localnet"
+        );
         return Ok(());
     }
 
@@ -2498,14 +2514,14 @@ fn idl_upgrade(
     cfg_override: &ConfigOverride,
     idl_filepath: String,
     priority_fee: Option<u64>,
+    allow_localnet: bool,
 ) -> Result<()> {
     // Get cluster URL and wallet path from Anchor config
     let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
 
-    // Skip IDL upgrade on localnet
     let is_localnet = cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1");
-    if is_localnet {
-        println!("Skipping IDL upgrade on localnet");
+    if is_localnet && !allow_localnet {
+        println!("Skipping IDL upgrade on localnet. To deploy on localnet, use --allow-localnet");
         return Ok(());
     }
 
