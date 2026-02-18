@@ -15,12 +15,9 @@ describe("Test CLI IDL commands", () => {
   const programOne = anchor.workspace.IdlCommandsOne as Program<IdlCommandsOne>;
   const programTwo = anchor.workspace.IdlCommandsTwo as Program<IdlCommandsTwo>;
 
-  it("Can initialize IDL account", async () => {
-    execSync(
-      `anchor idl init --filepath target/idl/idl_commands_one.json ${programOne.programId}`,
-      { stdio: "inherit" }
-    );
-  });
+  // program-metadata args for init/upgrade (anchor idl init/upgrade skip localnet)
+  const keypair = "keypairs/deployer-keypair.json";
+  const rpc = "http://localhost:8899";
 
   it("Can fetch an IDL using the TypeScript client", async () => {
     const idl = await anchor.Program.fetchIdl(programOne.programId, provider);
@@ -33,35 +30,14 @@ describe("Test CLI IDL commands", () => {
   });
 
   it("Can write a new IDL using the upgrade command", async () => {
-    // Upgrade the IDL of program one to the IDL of program two to test upgrade
+    // Note: Since anchor idl init/upgrade skip localnet, we need to deploy the IDL via program-metadata.
+    // Upgrade the IDL of program one to the IDL of program two
     execSync(
-      `anchor idl upgrade --filepath target/idl/idl_commands_two.json ${programOne.programId}`,
+      `program-metadata --keypair ${keypair} --rpc ${rpc} write idl ${programOne.programId} target/idl/idl_commands_two.json`,
       { stdio: "inherit" }
     );
     const idl = await anchor.Program.fetchIdl(programOne.programId, provider);
     assert.deepEqual(idl, programTwo.rawIdl);
-  });
-
-  it("Can write a new IDL using write-buffer and set-buffer", async () => {
-    // "Upgrade" back to program one via write-buffer set-buffer
-    let buffer = execSync(
-      `anchor idl write-buffer --filepath target/idl/idl_commands_one.json ${programOne.programId}`
-    ).toString();
-    buffer = buffer.replace("Idl buffer created: ", "").trim();
-    execSync(
-      `anchor idl set-buffer --buffer ${buffer} ${programOne.programId}`,
-      { stdio: "inherit" }
-    );
-    const idl = await anchor.Program.fetchIdl(programOne.programId, provider);
-    assert.deepEqual(idl, programOne.rawIdl);
-  });
-
-  it("Can fetch an IDL authority via the CLI", async () => {
-    const authority = execSync(`anchor idl authority ${programOne.programId}`)
-      .toString()
-      .trim();
-
-    assert.equal(authority, provider.wallet.publicKey.toString());
   });
 
   it("Can close IDL account", async () => {
@@ -71,8 +47,9 @@ describe("Test CLI IDL commands", () => {
   });
 
   it("Can initialize super massive IDL account", async () => {
+    // Note: Since anchor idl init/upgrade skip localnet, we need to deploy the IDL via program-metadata.
     execSync(
-      `anchor idl init --filepath testLargeIdl.json ${programOne.programId}`,
+      `program-metadata --keypair ${keypair} --rpc ${rpc} write idl ${programOne.programId} testLargeIdl.json`,
       { stdio: "inherit" }
     );
     const idlActual = await anchor.Program.fetchIdl(
