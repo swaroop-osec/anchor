@@ -2707,8 +2707,9 @@ fn idl_close_metadata(
     seed: String,
     priority_fee: Option<u64>,
 ) -> Result<()> {
+    let (cluster_url, wallet_path) = get_cluster_and_wallet(cfg_override)?;
     let program_id_str = program_id.to_string();
-    let mut args = vec!["close", &seed, &program_id_str];
+    let mut args = vec!["--keypair", &wallet_path, "--rpc", &cluster_url];
 
     let priority_fee_str;
     if let Some(priority_fee) = priority_fee {
@@ -2717,9 +2718,9 @@ fn idl_close_metadata(
         args.push(&priority_fee_str);
     }
 
-    let url = rpc_url(cfg_override)?;
-    args.push("--rpc");
-    args.push(&url);
+    args.push("close");
+    args.push(&seed);
+    args.push(&program_id_str);
 
     let status = ProcessCommand::new("npx")
         .arg("@solana-program/program-metadata")
