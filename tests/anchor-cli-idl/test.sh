@@ -3,7 +3,7 @@
 DEPLOYER_KEYPAIR="keypairs/deployer-keypair.json"
 PROGRAM_ONE="2uA3amp95zsEHUpo8qnLMhcFAUsiKVEcKHXS1JetFjU5"
 
-# Write a keypair for program deploy
+# Write a keypair for program deploy and set the program one address
 mkdir -p target/deploy
 cp keypairs/idl_commands_one-keypair.json target/deploy
 # Generate over 20kb bytes of random data (base64 encoded), surround it with quotes, and store it in a variable
