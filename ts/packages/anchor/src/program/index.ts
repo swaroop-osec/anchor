@@ -6,7 +6,7 @@ import {
   Encoding,
   fetchMaybeMetadataFromSeeds,
 } from "@solana-program/program-metadata";
-import { Address as SolanaAddress } from '@solana/addresses';
+import { Address as SolanaAddress } from "@solana/addresses";
 import { createSolanaRpc } from "@solana/kit";
 import { BorshCoder, Coder } from "../coder/index.js";
 import { Idl, IdlInstruction, convertIdlToCamelCase } from "../idl.js";
@@ -367,17 +367,23 @@ export class Program<IDL extends Idl = Idl> {
     const metadata = metadataAccount.data;
     if (metadata.dataSource !== DataSource.Direct) {
       throw new Error(
-        `Unsupported IDL metadata source for program ${programId.toString()}: ${metadata.dataSource}`
+        `Unsupported IDL metadata source for program ${programId.toString()}: ${
+          metadata.dataSource
+        }`
       );
     }
     if (metadata.encoding !== Encoding.Utf8) {
       throw new Error(
-        `Unsupported IDL metadata encoding for program ${programId.toString()}: ${metadata.encoding}`
+        `Unsupported IDL metadata encoding for program ${programId.toString()}: ${
+          metadata.encoding
+        }`
       );
     }
     if (metadata.compression !== Compression.Zlib) {
       throw new Error(
-        `Unsupported IDL metadata compression for program ${programId.toString()}: ${metadata.compression}`
+        `Unsupported IDL metadata compression for program ${programId.toString()}: ${
+          metadata.compression
+        }`
       );
     }
 

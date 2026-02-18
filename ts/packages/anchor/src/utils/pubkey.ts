@@ -10,7 +10,9 @@ export function createWithSeedSync(
   const fromKey = fromPublicKey.toBytes();
   const seedBytes = new TextEncoder().encode(seed);
   const program = programId.toBytes();
-  const data = new Uint8Array(fromKey.length + seedBytes.length + program.length);
+  const data = new Uint8Array(
+    fromKey.length + seedBytes.length + program.length
+  );
   data.set(fromKey, 0);
   data.set(seedBytes, fromKey.length);
   data.set(program, fromKey.length + seedBytes.length);

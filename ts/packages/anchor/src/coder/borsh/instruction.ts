@@ -79,7 +79,9 @@ export class BorshInstructionCoder implements InstructionCoder {
     }
 
     for (const [name, layout] of this.ixLayouts) {
-      const givenDisc = Uint8Array.from(ix.subarray(0, layout.discriminator.length));
+      const givenDisc = Uint8Array.from(
+        ix.subarray(0, layout.discriminator.length)
+      );
       const matches = bytesEqual(
         Uint8Array.from(layout.discriminator),
         givenDisc
