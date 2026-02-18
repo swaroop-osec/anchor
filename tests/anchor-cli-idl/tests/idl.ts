@@ -34,7 +34,7 @@ describe("Test CLI IDL commands", () => {
     // Upgrade the IDL of program one to the IDL of program two
     execSync(
       `program-metadata --keypair ${keypair} --rpc ${rpc} write idl ${programOne.programId} target/idl/idl_commands_two.json`,
-      { stdio: "inherit" },
+      { stdio: "inherit" }
     );
     const idl = await anchor.Program.fetchIdl(programOne.programId, provider);
     assert.deepEqual(idl, programTwo.rawIdl);
@@ -50,14 +50,14 @@ describe("Test CLI IDL commands", () => {
     // Note: Since anchor idl init/upgrade skip localnet, we need to deploy the IDL via program-metadata.
     execSync(
       `program-metadata --keypair ${keypair} --rpc ${rpc} write idl ${programOne.programId} testLargeIdl.json`,
-      { stdio: "inherit" },
+      { stdio: "inherit" }
     );
     const idlActual = await anchor.Program.fetchIdl(
       programOne.programId,
-      provider,
+      provider
     );
     const idlExpected = JSON.parse(
-      fs.readFileSync("testLargeIdl.json", "utf8"),
+      fs.readFileSync("testLargeIdl.json", "utf8")
     );
     assert.deepEqual(idlActual, idlExpected);
   });
