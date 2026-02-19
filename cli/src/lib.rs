@@ -644,6 +644,7 @@ pub enum IdlCommand {
         non_canonical: bool,
         /// Allow running against a localnet cluster (disabled by default)
         #[clap(long)]
+        #[cfg(feature = "idl-localnet-testing")]
         allow_localnet: bool,
     },
     /// Upgrades the IDL to the new file. An alias for first writing and then
@@ -655,6 +656,7 @@ pub enum IdlCommand {
         priority_fee: Option<u64>,
         /// Allow running against a localnet cluster (disabled by default)
         #[clap(long)]
+        #[cfg(feature = "idl-localnet-testing")]
         allow_localnet: bool,
     },
     /// Generates the IDL for the program using the compilation method.
@@ -2395,19 +2397,33 @@ fn idl(cfg_override: &ConfigOverride, subcmd: IdlCommand) -> Result<()> {
             filepath,
             priority_fee,
             non_canonical,
+            #[cfg(feature = "idl-localnet-testing")]
             allow_localnet,
-        } => idl_init(
-            cfg_override,
-            filepath,
-            priority_fee,
-            non_canonical,
-            allow_localnet,
-        ),
+        } => {
+            #[cfg(feature = "idl-localnet-testing")]
+            let allow_localnet = allow_localnet;
+            #[cfg(not(feature = "idl-localnet-testing"))]
+            let allow_localnet = false;
+            idl_init(
+                cfg_override,
+                filepath,
+                priority_fee,
+                non_canonical,
+                allow_localnet,
+            )
+        }
         IdlCommand::Upgrade {
             filepath,
             priority_fee,
+            #[cfg(feature = "idl-localnet-testing")]
             allow_localnet,
-        } => idl_upgrade(cfg_override, filepath, priority_fee, allow_localnet),
+        } => {
+            #[cfg(feature = "idl-localnet-testing")]
+            let allow_localnet = allow_localnet;
+            #[cfg(not(feature = "idl-localnet-testing"))]
+            let allow_localnet = false;
+            idl_upgrade(cfg_override, filepath, priority_fee, allow_localnet)
+        }
         IdlCommand::Build {
             program_name,
             out,
@@ -2478,9 +2494,12 @@ fn idl_init(
 
     let is_localnet = cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1");
     if is_localnet && !allow_localnet {
+        #[cfg(feature = "idl-localnet-testing")]
         println!(
             "Skipping IDL initialization on localnet. To deploy on localnet, use --allow-localnet"
         );
+        #[cfg(not(feature = "idl-localnet-testing"))]
+        println!("Skipping IDL initialization on localnet");
         return Ok(());
     }
 
@@ -2521,7 +2540,10 @@ fn idl_upgrade(
 
     let is_localnet = cluster_url.contains("localhost") || cluster_url.contains("127.0.0.1");
     if is_localnet && !allow_localnet {
+        #[cfg(feature = "idl-localnet-testing")]
         println!("Skipping IDL upgrade on localnet. To deploy on localnet, use --allow-localnet");
+        #[cfg(not(feature = "idl-localnet-testing"))]
+        println!("Skipping IDL upgrade on localnet");
         return Ok(());
     }
 
