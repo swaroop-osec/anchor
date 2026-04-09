@@ -1,5 +1,4 @@
-use crate::prelude::*;
-use crate::Bumps;
+use crate::{prelude::*, Bumps};
 
 /// Trait for the **validation** phase of the account lifecycle, which runs
 /// after deserialization and before the user handler:
@@ -83,19 +82,12 @@ use crate::Bumps;
 #[diagnostic::on_unimplemented(
     message = "`{Self}` must implement `Validate` for account validation",
     label = "`Validate` is required here",
-    note = "Add `#[validate]` to your `#[derive(Accounts)]` struct to automatically\n\
-            generate a `Validate` impl that runs all account attribute constraints.\n\
-            \n\
-            Alternatively, implement the trait manually for custom validation:\n\
-            \n\
-            impl<'info> Validate for MyAccounts<'info> {{\n\
-                type IxArgs = MyAccountsArgs;\n\
-                \n\
-                fn validate(&self, ctx: &Context<'info, Self>, args: &Self::IxArgs) -> Result<()> {{\n\
-                    // business-logic validation here\n\
-                    Ok(())\n\
-                }}\n\
-            }}"
+    note = "Add `#[validate]` to your `#[derive(Accounts)]` struct to automatically\ngenerate a \
+            `Validate` impl that runs all account attribute constraints.\n\nAlternatively, \
+            implement the trait manually for custom validation:\n\nimpl<'info> Validate for \
+            MyAccounts<'info> {{\ntype IxArgs = MyAccountsArgs;\n\nfn validate(&self, ctx: \
+            &Context<'info, Self>, args: &Self::IxArgs) -> Result<()> {{\n// business-logic \
+            validation here\nOk(())\n}}\n}}"
 )]
 pub trait Validate: Bumps + Sized {
     type IxArgs: AnchorDeserialize;

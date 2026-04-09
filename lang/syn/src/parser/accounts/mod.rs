@@ -62,7 +62,12 @@ pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
 
     constraints_cross_checks(&fields)?;
 
-    Ok(AccountsStruct::new(accounts_struct, fields, instruction_api, derive_constraints))
+    Ok(AccountsStruct::new(
+        accounts_struct,
+        fields,
+        instruction_api,
+        derive_constraints,
+    ))
 }
 
 fn constraints_cross_checks(fields: &[AccountField]) -> ParseResult<()> {

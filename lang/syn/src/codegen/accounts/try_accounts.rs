@@ -278,7 +278,11 @@ pub fn generate_constraints(accs: &AccountsStruct) -> proc_macro2::TokenStream {
         .filter_map(|af| match af {
             AccountField::Field(f) if !is_init(af) => {
                 let ts = constraints::generate_seeds_bump_population(f);
-                if ts.is_empty() { None } else { Some(ts) }
+                if ts.is_empty() {
+                    None
+                } else {
+                    Some(ts)
+                }
             }
             _ => None,
         })
