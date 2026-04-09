@@ -145,6 +145,12 @@ pub struct AccountsStruct {
     pub fields: Vec<AccountField>,
     // Instruction data api expression.
     instruction_api: Option<Punctuated<Expr, Comma>>,
+    // When true, #[derive(Accounts)] generates a full `Validate` impl that
+    // runs all non-mutating constraint checks (access guards, `has_one`,
+    // `owner`, `signer`, token/mint guards, duplicate-mutable detection, etc.).
+    // Set by placing `#[validate]` on the accounts struct.
+    // Without it, no impl is generated and the user must provide one manually.
+    pub derive_constraints: bool,
 }
 
 impl Parse for AccountsStruct {
@@ -171,6 +177,7 @@ impl AccountsStruct {
         strct: ItemStruct,
         fields: Vec<AccountField>,
         instruction_api: Option<Punctuated<Expr, Comma>>,
+        derive_constraints: bool,
     ) -> Self {
         let ident = strct.ident.clone();
         let generics = strct.generics;
@@ -179,6 +186,7 @@ impl AccountsStruct {
             generics,
             fields,
             instruction_api,
+            derive_constraints,
         }
     }
 

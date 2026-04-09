@@ -22,6 +22,14 @@ pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
         .map(|ix_attr| ix_attr.parse_args_with(Punctuated::<Expr, Comma>::parse_terminated))
         .transpose()?;
 
+    // `#[validate]` opts the struct into an auto-generated `Validate` impl
+    // that runs all attribute-based security checks.
+    // Without it, the user must provide their own `Validate` implementation.
+    let derive_constraints = accounts_struct
+        .attrs
+        .iter()
+        .any(|a| a.path.get_ident().is_some_and(|ident| ident == "validate"));
+
     #[cfg(feature = "event-cpi")]
     let accounts_struct = {
         let is_event_cpi = accounts_struct
@@ -54,11 +62,7 @@ pub fn parse(accounts_struct: &syn::ItemStruct) -> ParseResult<AccountsStruct> {
 
     constraints_cross_checks(&fields)?;
 
-    Ok(AccountsStruct::new(
-        accounts_struct,
-        fields,
-        instruction_api,
-    ))
+    Ok(AccountsStruct::new(accounts_struct, fields, instruction_api, derive_constraints))
 }
 
 fn constraints_cross_checks(fields: &[AccountField]) -> ParseResult<()> {

@@ -56,6 +56,120 @@ pub fn generate(f: &Field, accs: &AccountsStruct) -> proc_macro2::TokenStream {
     }
 }
 
+/// Generates validation code for the `Validate` trait, including support for
+/// raw `constraint = <expr>` checks.
+///
+/// This provides a clean environment for evaluating arbitrary Rust expressions
+/// by destructuring accounts and instruction arguments into local references
+/// (e.g. `let Self { user, .. } = self;` and `let Self::IxArgs { amount, .. } = args;`).
+/// This allows security logic to reference transaction data and account state
+/// identically to how it works in `try_accounts`, but within the modular
+/// validation phase.
+pub fn generate_for_validate(f: &Field, accs: &AccountsStruct) -> proc_macro2::TokenStream {
+    let constraints: Vec<Constraint> = linearize(&f.constraints).into_iter().collect();
+
+    if constraints.is_empty() {
+        return quote! {};
+    }
+
+    let rent = if constraints
+        .iter()
+        .any(|c| matches!(c, Constraint::RentExempt(ConstraintRentExempt::Enforce)))
+    {
+        quote! { let __anchor_rent = Rent::get()?; }
+    } else {
+        quote! {}
+    };
+
+    let checks: Vec<proc_macro2::TokenStream> = constraints
+        .iter()
+        .map(|c| generate_constraint(f, c, accs))
+        .collect();
+
+    let mut all_checks = quote! {#(#checks)*};
+
+    if f.is_optional {
+        let ident = &f.ident;
+        let ty_decl = f.ty_decl(false);
+        all_checks = match &constraints[0] {
+            Constraint::Init(_) | Constraint::Zeroed(_) => {
+                quote! {
+                    let #ident: #ty_decl = if let Some(#ident) = #ident {
+                        #all_checks
+                        Some(#ident)
+                    } else {
+                        None
+                    };
+                }
+            }
+            _ => {
+                quote! {
+                    if let Some(#ident) = &#ident {
+                        #all_checks
+                    }
+                }
+            }
+        };
+    }
+
+    quote! {
+        #rent
+        #all_checks
+    }
+}
+
+/// Generates only the PDA-bump population portion of a `seeds` constraint,
+/// for use in `try_accounts` where we need to fill `ctx.bumps` before the
+/// validate phase runs. The address check is deferred to `Validate::validate`.
+///
+/// Returns empty tokens when:
+/// - the field has no `seeds` constraint
+/// - `seeds` is used with `init` (the init constraint handles bump derivation)
+/// - an explicit bump value is provided (no `find_program_address` needed, so
+///   there is no computed bump to store)
+pub fn generate_seeds_bump_population(f: &Field) -> proc_macro2::TokenStream {
+    let seeds_group = match &f.constraints.seeds {
+        Some(s) if !s.is_init && s.bump.is_none() => s,
+        _ => return quote! {},
+    };
+
+    let name = &f.ident;
+
+    let deriving_program_id = seeds_group
+        .program_seed
+        .clone()
+        .map(|program_id| quote! { #program_id.key() })
+        .unwrap_or(quote! { __program_id });
+
+    let bump_store = if f.is_optional {
+        quote! { Some(__bump) }
+    } else {
+        quote! { __bump }
+    };
+
+    match &seeds_group.seeds {
+        SeedsExpr::List(list) => {
+            let maybe_seeds_plus_comma = (!list.is_empty()).then(|| quote! { #list, });
+            quote! {
+                {
+                    let (_, __bump) = Pubkey::find_program_address(
+                        &[ #maybe_seeds_plus_comma ],
+                        &#deriving_program_id,
+                    );
+                    __bumps.#name = #bump_store;
+                }
+            }
+        }
+        SeedsExpr::Expr(expr) => quote! {
+            {
+                let __seeds_slice: &[&[u8]] = #expr;
+                let (_, __bump) = Pubkey::find_program_address(__seeds_slice, &#deriving_program_id);
+                __bumps.#name = #bump_store;
+            }
+        },
+    }
+}
+
 pub fn generate_composite(f: &CompositeField) -> proc_macro2::TokenStream {
     let checks: Vec<proc_macro2::TokenStream> = linearize(&f.constraints)
         .iter()

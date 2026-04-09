@@ -3,6 +3,7 @@
 use {
     crate::{
         solana_program::{account_info::AccountInfo, instruction::AccountMeta, pubkey::Pubkey},
+        validate::Validate,
         Accounts, Bumps, ToAccountInfos, ToAccountMetas,
     },
     std::fmt,
@@ -71,6 +72,20 @@ where
     }
 }
 
+impl<'info, T> Context<'info, T>
+where
+    T: Validate,
+{
+    /// Run the account context's validation logic
+    ///
+    /// Called automatically by the instruction dispatch after
+    /// [`Accounts::try_accounts`] and before the user handler. Can also be
+    /// called manually when building custom dispatch logic.
+    pub fn validate(&self, args: &T::IxArgs) -> crate::Result<()> {
+        self.accounts.validate(self, args)
+    }
+}
+
 /// Context specifying non-argument inputs for cross-program-invocations.
 ///
 /// # Example with and without PDA signature
@@ -103,6 +118,7 @@ where
 /// }
 ///
 /// #[derive(Accounts)]
+/// #[validate]
 /// pub struct Init<'info> {
 ///     #[account(init, payer = payer)]
 ///     pub data: Account<'info, Data>,
@@ -112,6 +128,7 @@ where
 /// }
 ///
 /// #[derive(Accounts)]
+/// #[validate]
 /// pub struct SetData<'info> {
 ///     #[account(mut, has_one = authority)]
 ///     pub data_acc: Account<'info, Data>,

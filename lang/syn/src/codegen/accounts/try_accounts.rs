@@ -248,7 +248,7 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
                 #(#deser_fields)*
                 // Execute accounts constraints.
                 #constraints
-                // Success. Return the validated accounts.
+                // Success. Return the deserialized accounts.
                 Ok(#accounts_instance)
             }
         }
@@ -256,40 +256,37 @@ pub fn generate(accs: &AccountsStruct) -> proc_macro2::TokenStream {
 }
 
 pub fn generate_constraints(accs: &AccountsStruct) -> proc_macro2::TokenStream {
-    let non_init_fields: Vec<&AccountField> =
-        accs.fields.iter().filter(|af| !is_init(af)).collect();
-
-    // Deserialization for each pda init field. This must be after
-    // the initial extraction from the accounts slice and before access_checks.
+    // Phase 1a: init/zeroed/realloc — must run here because they allocate or
+    // mutate account state (create, zero, resize).
     let init_fields: Vec<proc_macro2::TokenStream> = accs
         .fields
         .iter()
         .filter_map(|af| match af {
-            AccountField::CompositeField(_s) => None,
-            AccountField::Field(f) => match is_init(af) {
-                false => None,
-                true => Some(f),
-            },
+            AccountField::CompositeField(_) => None,
+            AccountField::Field(f) if is_init(af) => Some(constraints::generate(f, accs)),
+            _ => None,
         })
-        .map(|f| constraints::generate(f, accs))
         .collect();
 
-    // Generate duplicate mutable account validation
-    let duplicate_checks = generate_duplicate_mutable_checks(accs);
-
-    // Constraint checks for each account fields.
-    let access_checks: Vec<proc_macro2::TokenStream> = non_init_fields
+    // Phase 1b: seeds bump-population for non-init PDAs.
+    // `Validate::validate` (phase 2) will verify the PDA address; here we
+    // only store the derived bump so `ctx.bumps` is populated before the
+    // handler runs.  All other access-guard checks have moved to phase 2.
+    let seeds_bump_population: Vec<proc_macro2::TokenStream> = accs
+        .fields
         .iter()
-        .map(|af: &&AccountField| match af {
-            AccountField::Field(f) => constraints::generate(f, accs),
-            AccountField::CompositeField(s) => constraints::generate_composite(s),
+        .filter_map(|af| match af {
+            AccountField::Field(f) if !is_init(af) => {
+                let ts = constraints::generate_seeds_bump_population(f);
+                if ts.is_empty() { None } else { Some(ts) }
+            }
+            _ => None,
         })
         .collect();
 
     quote! {
         #(#init_fields)*
-        #duplicate_checks
-        #(#access_checks)*
+        #(#seeds_bump_population)*
     }
 }
 
@@ -325,7 +322,7 @@ fn is_init(af: &AccountField) -> bool {
 }
 
 // Generates duplicate mutable account validation logic
-fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::TokenStream {
+pub fn generate_duplicate_mutable_checks(accs: &AccountsStruct) -> proc_macro2::TokenStream {
     // Collect all mutable account fields without `dup` constraint that serialize on exit.
     // Only types that serialize on exit are included, as duplicate mutable accounts
     // are problematic due to double serialization (the second write overwrites the first).

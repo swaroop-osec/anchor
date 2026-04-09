@@ -131,35 +131,48 @@ pub fn generate(program: &Program) -> proc_macro2::TokenStream {
                         unsafe { ::core::mem::transmute(value) }
                     }
 
+                    // Build the Context.
+                    //
+                    // SAFETY: `__shrink_lifetime` is used to *shrink* the lifetime of
+                    // the inner `AccountInfo` from `'info` to the local function lifetime.
+                    // No lifetime is extended by this operation.
+                    // The lifetime is not shrunk automatically as `RefCell` causes `AccountInfo`
+                    // to be invariant.
+                    // This is sound provided the following invariants hold:
+                    // (1) The `'info` lifetime strictly outlives the local function
+                    //     lifetime; therefore, the transmuted references cannot outlive
+                    //     their backing data.
+                    // (2) `AccountInfo` does not implement custom `Drop` logic and does not
+                    //     rely on its lifetime parameter during destruction.
+                    // (3) The `Context` value is dropped before the `__accounts` reference
+                    //     is dropped or otherwise accessed, preventing any use-after-scope.
+                    //
+                    // This lifetime narrowing is required to conform to the `Context`
+                    // struct’s single-lifetime parameterization, which uses a single
+                    // lifetime to keep the API simple and ergonomic.
+                    let __ctx = anchor_lang::context::Context::new(
+                        __program_id,
+                        unsafe { __shrink_lifetime(&mut __accounts) },
+                        __remaining_accounts,
+                        __bumps,
+                    );
+
+                    // Validate accounts (lifecycle phase 2).
+                    // This runs all non-mutating constraint checks (access guards,
+                    // owner/signer checks, etc.) as well as any user-defined
+                    // logic in the `Validate` trait.
+                    {
+                        use anchor_lang::AnchorDeserialize;
+                        let mut __ix_data_ptr = __ix_data;
+                        let __args = <#accounts_struct_name as anchor_lang::validate::Validate>::IxArgs::deserialize(
+                            &mut __ix_data_ptr,
+                        ).map_err(|_| anchor_lang::error::ErrorCode::InstructionDidNotDeserialize)?;
+
+                        __ctx.validate(&__args)?;
+                    }
+
                     // Invoke user defined handler.
-                    let result = #program_name::#ix_method_name(
-                        anchor_lang::context::Context::new(
-                            __program_id,
-                            // SAFETY: `__shrink_lifetime` is used to *shrink* the lifetime of
-                            // the inner `AccountInfo` from `'info` to the local function lifetime.
-                            // No lifetime is extended by this operation.
-                            // The lifetime is not shrunk automatically as `RefCell` causes `AccountInfo`
-                            // to be invariant.
-                            // This is sound provided the following invariants hold:
-                            // (1) The `'info` lifetime strictly outlives the local function
-                            //     lifetime; therefore, the transmuted references cannot outlive
-                            //     their backing data.
-                            // (2) `AccountInfo` does not implement custom `Drop` logic and does not
-                            //     rely on its lifetime parameter during destruction.
-                            // (3) The `Context` value is dropped before the `__accounts` reference
-                            //     is dropped or otherwise accessed, preventing any use-after-scope.
-                            //
-                            // This lifetime narrowing is required to conform to the `Context`
-                            // struct’s single-lifetime parameterization, which uses a single
-                            // lifetime to keep the API simple and ergonomic.
-                            unsafe {
-                                __shrink_lifetime(&mut __accounts)
-                            },
-                            __remaining_accounts,
-                            __bumps,
-                        ),
-                        #(#ix_arg_names),*
-                    )?;
+                    let result = #program_name::#ix_method_name(__ctx, #(#ix_arg_names),*)?;
 
                     // Maybe set Solana return data.
                     #maybe_set_return_data
