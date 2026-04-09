@@ -1,0 +1,13 @@
+{
+  "name": "validate-trait",
+  "version": "0.1.0",
+  "license": "(MIT OR Apache-2.0)",
+  "type": "module",
+  "scripts": {
+    "test": "anchor test"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "file:../../ts/packages/anchor",
+    "mocha": "9.2.2"
+  }
+}
