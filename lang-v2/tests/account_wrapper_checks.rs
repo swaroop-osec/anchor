@@ -15,11 +15,12 @@
 
 use {
     anchor_lang_v2::{
-        accounts::{Program, Signer, SystemAccount, Sysvar, UncheckedAccount},
+        accounts::{BorshAccount, Program, Signer, SystemAccount, Sysvar, UncheckedAccount},
         programs::{System, Token},
         testing::AccountBuffer,
-        AnchorAccount, ErrorCode,
+        AnchorAccount, Discriminator, ErrorCode, Owner,
     },
+    borsh::{BorshDeserialize, BorshSerialize},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
 };
@@ -29,6 +30,37 @@ const SYSTEM_PROGRAM_ID: [u8; 32] = [0u8; 32];
 
 fn program_id() -> Address {
     Address::new_from_array(PROGRAM_ID)
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Default)]
+struct Counter {
+    value: u64,
+}
+
+impl Owner for Counter {
+    fn owner(program_id: &Address) -> Address {
+        *program_id
+    }
+}
+
+impl Discriminator for Counter {
+    // sha256("account:Counter")[..8]
+    const DISCRIMINATOR: &'static [u8] = &[
+        0xff, 0xb0, 0x04, 0xf5, 0xbc, 0xfd, 0x7c, 0x19,
+    ];
+}
+
+fn setup_borsh_counter_buf(
+    buf: &mut AccountBuffer<128>,
+    owner: [u8; 32],
+    writable: bool,
+    value: u64,
+) {
+    buf.init([0x44; 32], owner, 16, false, writable, false);
+    let mut data = [0u8; 16];
+    data[..8].copy_from_slice(Counter::DISCRIMINATOR);
+    data[8..16].copy_from_slice(&value.to_le_bytes());
+    buf.write_data(&data);
 }
 
 // The account wrappers don't `#[derive(Debug)]`, so `Result::unwrap_err`
@@ -228,4 +260,53 @@ fn sysvar_load_rejects_wrong_address() {
     let view = unsafe { buf.view() };
     let err = expect_err(Sysvar::<pinocchio::sysvars::clock::Clock>::load(view, &program_id()));
     assert_eq!(err, ProgramError::InvalidArgument);
+}
+
+// -- BorshAccount<T> ---------------------------------------------------
+
+#[test]
+fn borsh_account_load_accepts_valid_owner_and_discriminator() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_borsh_counter_buf(&mut buf, PROGRAM_ID, false, 9);
+    let view = unsafe { buf.view() };
+    let acct = BorshAccount::<Counter>::load(view, &program_id()).unwrap();
+    assert_eq!(acct.value, 9);
+}
+
+#[cfg(feature = "guardrails")]
+#[test]
+fn borsh_account_load_mut_rejects_non_writable() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_borsh_counter_buf(&mut buf, PROGRAM_ID, false, 9);
+    let view = unsafe { buf.view() };
+    let err = expect_err(unsafe { BorshAccount::<Counter>::load_mut(view, &program_id()) });
+    assert_eq!(err, ProgramError::InvalidAccountData);
+}
+
+#[test]
+fn borsh_account_load_rejects_wrong_owner() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_borsh_counter_buf(&mut buf, [0x99; 32], true, 9);
+    let view = unsafe { buf.view() };
+    let err = expect_err(BorshAccount::<Counter>::load(view, &program_id()));
+    assert_eq!(err, ProgramError::IllegalOwner);
+}
+
+#[test]
+fn borsh_account_load_mut_accepts_writable_account() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_borsh_counter_buf(&mut buf, PROGRAM_ID, true, 9);
+    let view = unsafe { buf.view() };
+    let acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id()) }.unwrap();
+    assert_eq!(acct.value, 9);
+}
+
+#[test]
+#[should_panic(expected = "use #[account(mut)] for mutable access")]
+fn borsh_account_deref_mut_panics_when_loaded_read_only() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_borsh_counter_buf(&mut buf, PROGRAM_ID, false, 9);
+    let view = unsafe { buf.view() };
+    let mut acct = BorshAccount::<Counter>::load(view, &program_id()).unwrap();
+    acct.value = 10;
 }

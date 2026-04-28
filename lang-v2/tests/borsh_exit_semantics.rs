@@ -318,6 +318,20 @@ fn release_borrow_commits_in_memory_changes_to_buffer() {
     );
 }
 
+#[test]
+#[should_panic(expected = "account borrow released (closed)")]
+fn deref_mut_panics_after_release_borrow() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf, 42);
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    let view = unsafe { buf.view() };
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+
+    acct.release_borrow().unwrap();
+    acct.value = 100;
+}
+
 // -- 6. Stale detection DOES fire on size change --------------------
 //
 // Positive test: the belt-and-braces heuristic works for the case it
