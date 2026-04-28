@@ -1818,11 +1818,7 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
 
             // Parse the discriminator.
             #disc_parse
-
             let __num = *(__input as *const u64) as usize;
-            if let Err(__e) = anchor_lang_v2::check_max_accounts(__num, __ANCHOR_MAX_ACCOUNTS) {
-                return __e.into();
-            }
 
             let mut __lookup: [::core::mem::MaybeUninit<anchor_lang_v2::AccountView>;
                 __ANCHOR_MAX_ACCOUNTS] =

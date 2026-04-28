@@ -287,21 +287,6 @@ pub fn check_program_id(
     Ok(())
 }
 
-/// Guardrail: verify the runtime-supplied account count doesn't exceed
-/// `__ANCHOR_MAX_ACCOUNTS` (256). Gated behind the `guardrails` feature —
-/// when disabled, compiles away entirely.
-#[inline(always)]
-pub fn check_max_accounts(
-    _num: usize,
-    _max: usize,
-) -> core::result::Result<(), solana_program_error::ProgramError> {
-    #[cfg(feature = "guardrails")]
-    if _num > _max {
-        return Err(ErrorCode::AccountNotEnoughKeys.into());
-    }
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // require! macros — no_std compatible
 // ---------------------------------------------------------------------------
