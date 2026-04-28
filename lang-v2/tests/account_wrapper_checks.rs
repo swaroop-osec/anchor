@@ -15,12 +15,13 @@
 
 use {
     anchor_lang_v2::{
-        accounts::{BorshAccount, Program, Signer, SystemAccount, Sysvar, UncheckedAccount},
+        accounts::{Account, BorshAccount, Program, Signer, SystemAccount, Sysvar, UncheckedAccount},
         programs::{System, Token},
         testing::AccountBuffer,
         AnchorAccount, Discriminator, ErrorCode, Owner,
     },
     borsh::{BorshDeserialize, BorshSerialize},
+    bytemuck::{Pod, Zeroable},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
 };
@@ -50,6 +51,25 @@ impl Discriminator for Counter {
     ];
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct PodCounter {
+    value: u64,
+}
+
+impl Owner for PodCounter {
+    fn owner(program_id: &Address) -> Address {
+        *program_id
+    }
+}
+
+impl Discriminator for PodCounter {
+    // sha256("account:PodCounter")[..8]
+    const DISCRIMINATOR: &'static [u8] = &[
+        0x4c, 0xde, 0x7f, 0x28, 0x61, 0x2f, 0x07, 0x73,
+    ];
+}
+
 fn setup_borsh_counter_buf(
     buf: &mut AccountBuffer<128>,
     owner: [u8; 32],
@@ -59,6 +79,19 @@ fn setup_borsh_counter_buf(
     buf.init([0x44; 32], owner, 16, false, writable, false);
     let mut data = [0u8; 16];
     data[..8].copy_from_slice(Counter::DISCRIMINATOR);
+    data[8..16].copy_from_slice(&value.to_le_bytes());
+    buf.write_data(&data);
+}
+
+fn setup_pod_counter_buf(
+    buf: &mut AccountBuffer<128>,
+    owner: [u8; 32],
+    writable: bool,
+    value: u64,
+) {
+    buf.init([0x45; 32], owner, 16, false, writable, false);
+    let mut data = [0u8; 16];
+    data[..8].copy_from_slice(PodCounter::DISCRIMINATOR);
     data[8..16].copy_from_slice(&value.to_le_bytes());
     buf.write_data(&data);
 }
@@ -260,6 +293,37 @@ fn sysvar_load_rejects_wrong_address() {
     let view = unsafe { buf.view() };
     let err = expect_err(Sysvar::<pinocchio::sysvars::clock::Clock>::load(view, &program_id()));
     assert_eq!(err, ProgramError::InvalidArgument);
+}
+
+// -- Account<T> / Slab<H, HeaderOnly> ----------------------------------
+
+#[test]
+fn account_load_accepts_valid_owner_and_discriminator() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_pod_counter_buf(&mut buf, PROGRAM_ID, false, 17);
+    let view = unsafe { buf.view() };
+    let acct = Account::<PodCounter>::load(view, &program_id()).unwrap();
+    assert_eq!(acct.value, 17);
+}
+
+#[cfg(feature = "guardrails")]
+#[test]
+fn account_load_mut_rejects_non_writable() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_pod_counter_buf(&mut buf, PROGRAM_ID, false, 17);
+    let view = unsafe { buf.view() };
+    let err = expect_err(unsafe { Account::<PodCounter>::load_mut(view, &program_id()) });
+    assert_eq!(err, ProgramError::InvalidAccountData);
+}
+
+#[test]
+#[should_panic(expected = "Slab<H, T> mutably dereferenced but loaded read-only. Add #[account(mut)] to your accounts struct.")]
+fn account_deref_mut_panics_when_loaded_read_only() {
+    let mut buf = AccountBuffer::<128>::new();
+    setup_pod_counter_buf(&mut buf, PROGRAM_ID, false, 17);
+    let view = unsafe { buf.view() };
+    let mut acct = Account::<PodCounter>::load(view, &program_id()).unwrap();
+    acct.value = 18;
 }
 
 // -- BorshAccount<T> ---------------------------------------------------
