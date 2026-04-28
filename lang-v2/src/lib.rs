@@ -296,18 +296,26 @@ pub fn check_program_id(
 /// Can be used with or without a custom error code.
 ///
 /// # Example
-/// ```rust,ignore
-/// require!(amount > 0, ErrorCode::ConstraintRaw);
-/// require!(amount > 0, MyError::InvalidAmount);
+/// ```rust,no_run
+/// # use anchor_lang_v2::prelude::*;
+/// fn check(amount: u64) -> Result<()> {
+///     require!(amount > 0, ConstraintRaw);
+///     require!(amount > 0, ProgramError::InvalidArgument);
+///     Ok(())
+/// }
 /// ```
 #[macro_export]
 macro_rules! require {
     ($invariant:expr, $error:tt $(,)?) => {
+        #[allow(unused_imports)]
+        use $crate::ErrorCode::*;
         if !($invariant) {
             return Err($crate::ErrorCode::$error.into());
         }
     };
     ($invariant:expr, $error:expr $(,)?) => {
+        #[allow(unused_imports)]
+        use $crate::ErrorCode::*;
         if !($invariant) {
             return Err(core::convert::Into::into($error));
         }
@@ -319,13 +327,20 @@ macro_rules! require {
 /// Use [require_keys_eq] to compare two pubkeys/addresses.
 ///
 /// # Example
-/// ```rust,ignore
-/// require_eq!(ctx.accounts.data.count, 0);
-/// require_eq!(ctx.accounts.data.count, 0, MyError::InvalidCount);
+/// ```rust,no_run
+/// # use anchor_lang_v2::prelude::*;
+/// fn check(count: u64) -> Result<()> {
+///     require_eq!(count, 0);
+///     require_eq!(count, 0, RequireEqViolated);
+///     require_eq!(count, 0, ProgramError::InvalidArgument);
+///     Ok(())
+/// }
 /// ```
 #[macro_export]
 macro_rules! require_eq {
     ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+        #[allow(unused_imports)]
+        use $crate::ErrorCode::*;
         if $value1 != $value2 {
             $crate::msg!(
                 "require_eq violation: left = {}, right = {}",
@@ -352,13 +367,20 @@ macro_rules! require_eq {
 /// Use [require_keys_neq] to compare two pubkeys/addresses.
 ///
 /// # Example
-/// ```rust,ignore
-/// require_neq!(ctx.accounts.data.count, 0);
-/// require_neq!(ctx.accounts.data.count, 0, MyError::InvalidCount);
+/// ```rust,no_run
+/// # use anchor_lang_v2::prelude::*;
+/// fn check(count: u64) -> Result<()> {
+///     require_neq!(count, 0);
+///     require_neq!(count, 0, RequireNeqViolated);
+///     require_neq!(count, 0, ProgramError::InvalidArgument);
+///     Ok(())
+/// }
 /// ```
 #[macro_export]
 macro_rules! require_neq {
     ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+        #[allow(unused_imports)]
+        use $crate::ErrorCode::*;
         if $value1 == $value2 {
             $crate::msg!(
                 "require_neq violation: left = {}, right = {}",
@@ -385,12 +407,19 @@ macro_rules! require_neq {
 /// Use [require_eq] to compare two non-pubkey values.
 ///
 /// # Example
-/// ```rust,ignore
-/// require_keys_eq!(*ctx.accounts.data.authority(), *ctx.accounts.authority.address());
+/// ```rust,no_run
+/// # use anchor_lang_v2::prelude::*;
+/// fn check(authority: Address) -> Result<()> {
+///     require_keys_eq!(authority, authority);
+///     require_keys_eq!(authority, authority, RequireKeysEqViolated);
+///     Ok(())
+/// }
 /// ```
 #[macro_export]
 macro_rules! require_keys_eq {
     ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+        #[allow(unused_imports)]
+        use $crate::ErrorCode::*;
         if $value1 != $value2 {
             $crate::msg!("require_keys_eq violation");
             return Err(core::convert::Into::into($error_code));
@@ -409,12 +438,19 @@ macro_rules! require_keys_eq {
 /// Use [require_neq] to compare two non-pubkey values.
 ///
 /// # Example
-/// ```rust,ignore
-/// require_keys_neq!(*ctx.accounts.data.authority(), *ctx.accounts.other.address());
+/// ```rust,no_run
+/// # use anchor_lang_v2::prelude::*;
+/// fn check(authority: Address, other: Address) -> Result<()> {
+///     require_keys_neq!(authority, other);
+///     require_keys_neq!(authority, other, RequireKeysNeqViolated);
+///     Ok(())
+/// }
 /// ```
 #[macro_export]
 macro_rules! require_keys_neq {
     ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+        #[allow(unused_imports)]
+        use $crate::ErrorCode::*;
         if $value1 == $value2 {
             $crate::msg!("require_keys_neq violation");
             return Err(core::convert::Into::into($error_code));
@@ -431,13 +467,20 @@ macro_rules! require_keys_neq {
 /// Ensures the first value is greater than the second.
 ///
 /// # Example
-/// ```rust,ignore
-/// require_gt!(ctx.accounts.data.count, 0);
-/// require_gt!(ctx.accounts.data.count, 0, MyError::InvalidCount);
+/// ```rust,no_run
+/// # use anchor_lang_v2::prelude::*;
+/// fn check(count: u64) -> Result<()> {
+///     require_gt!(count, 0);
+///     require_gt!(count, 0, RequireGtViolated);
+///     require_gt!(count, 0, ProgramError::InvalidArgument);
+///     Ok(())
+/// }
 /// ```
 #[macro_export]
 macro_rules! require_gt {
     ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+        #[allow(unused_imports)]
+        use $crate::ErrorCode::*;
         if $value1 <= $value2 {
             $crate::msg!(
                 "require_gt violation: left = {}, right = {}",
@@ -462,13 +505,20 @@ macro_rules! require_gt {
 /// Ensures the first value is greater than or equal to the second.
 ///
 /// # Example
-/// ```rust,ignore
-/// require_gte!(ctx.accounts.data.count, 1);
-/// require_gte!(ctx.accounts.data.count, 1, MyError::InvalidCount);
+/// ```rust,no_run
+/// # use anchor_lang_v2::prelude::*;
+/// fn check(count: u64) -> Result<()> {
+///     require_gte!(count, 1);
+///     require_gte!(count, 1, RequireGteViolated);
+///     require_gte!(count, 1, ProgramError::InvalidArgument);
+///     Ok(())
+/// }
 /// ```
 #[macro_export]
 macro_rules! require_gte {
     ($value1:expr, $value2:expr, $error_code:expr $(,)?) => {
+        #[allow(unused_imports)]
+        use $crate::ErrorCode::*;
         if $value1 < $value2 {
             $crate::msg!(
                 "require_gte violation: left = {}, right = {}",
