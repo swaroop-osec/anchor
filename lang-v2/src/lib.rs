@@ -33,9 +33,9 @@ pub use cpi::realloc_account;
 pub use pinocchio::address::address_eq;
 /// Re-export declare_id from solana-address.
 pub use solana_address::declare_id;
+/// Implementation detail of [`solana_msg`] - re-exported for macro access only.
 #[doc(hidden)]
-pub use solana_program_log::log as __log_impl;
-
+pub use solana_msg;
 // Re-export for `debug!` macro — routes through this crate's namespace so
 // user programs don't need `solana-program-log` or `extern crate alloc;`.
 #[cfg(feature = "compat")]
@@ -47,16 +47,17 @@ pub use solana_program_log::log as __log_str;
 #[doc(hidden)]
 pub extern crate alloc as __alloc;
 
-/// Logs a message via `solana_program_log`.
+/// Logs a message via `solana_msg`.
 ///
-/// Thin wrapper around `solana_program_log::log!` that always evaluates to
+/// Thin wrapper around `solana_msg::msg!` that always evaluates to
 /// `()`, so it's usable in expression position (match arms, closures, tuples,
-/// etc.) where the underlying macro's trailing-semicolon emission would
-/// otherwise produce a parse error.
+/// etc.).
 #[macro_export]
 macro_rules! msg {
     ($($arg:tt)*) => {{
-        $crate::__log_impl!($($arg)*);
+        // bring into scope from re-export as the macro accesses it
+        use $crate::solana_msg;
+        solana_msg::msg!($($arg)*);
     }};
 }
 
