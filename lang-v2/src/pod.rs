@@ -954,6 +954,13 @@ impl<T: bytemuck::Pod, const MAX: usize> Default for PodVec<T, MAX> {
     }
 }
 
+impl From<CapacityError> for solana_program_error::ProgramError {
+    fn from(_: CapacityError) -> Self {
+        // CapacityOverflow in lang/src/error.rs
+        solana_program_error::ProgramError::Custom(4103)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate alloc;
