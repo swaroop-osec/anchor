@@ -10,6 +10,7 @@ path = "src/lib.rs"
 [dependencies]
 anchor-lang-v2 = { path = "../lang-v2" }
 borsh-realloc = { path = "programs/borsh-realloc", features = ["cpi"] }
+idl-const-seed = { path = "programs/idl-const-seed", features = ["cpi"] }
 callee = { path = "programs/callee", features = ["cpi"] }
 caller = { path = "programs/caller", features = ["cpi"] }
 constraints = { path = "programs/constraints" }

@@ -3118,6 +3118,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "idl-const-seed"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "borsh 1.6.1",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "solana-program-error 3.0.0",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "idna"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8859,6 +8872,7 @@ dependencies = [
  "custom-constraints",
  "derives-test",
  "dup-mut",
+ "idl-const-seed",
  "litesvm",
  "seeds",
  "sha2 0.10.9",
