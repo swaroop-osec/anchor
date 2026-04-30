@@ -1,11 +1,7 @@
 use {
     proc_macro2::TokenStream as TokenStream2,
     quote::{quote, quote_spanned},
-    syn::{
-        ext::IdentExt,
-        parse::ParseStream,
-        Attribute, Expr, Ident, Token, Type,
-    },
+    syn::{ext::IdentExt, parse::ParseStream, Attribute, Expr, Ident, Token, Type},
 };
 
 /// snake_case → PascalCase + `Constraint` suffix, for looking up the
@@ -562,7 +558,7 @@ fn address_v1_relation_source(
         _ => return None,
     };
     let _ = subfield; // silence unused — we only needed it for the match guard
-    // Base must be a bare sibling ident (not a method call, not a path).
+                      // Base must be a bare sibling ident (not a method call, not a path).
     let base = if let Expr::Path(ep) = &*fa.base {
         ep
     } else {
@@ -873,10 +869,12 @@ pub fn parse_field(
     //     pubkeys at IDL-build time, and dotted paths flow through as
     //     client-side resolution hints.
     let (idl_address, idl_address_v1_source) = match attrs.address.as_ref() {
-        Some(addr) => match address_v1_relation_source(addr, &field_name.to_string(), field_names) {
-            Some(sibling) => (None, Some(sibling)),
-            None => (Some(stringify_address_expr(addr)), None),
-        },
+        Some(addr) => {
+            match address_v1_relation_source(addr, &field_name.to_string(), field_names) {
+                Some(sibling) => (None, Some(sibling)),
+                None => (Some(stringify_address_expr(addr)), None),
+            }
+        }
         None => (None, None),
     };
     let idl_docs = crate::idl::extract_doc_lines(&field.attrs);
@@ -1047,9 +1045,8 @@ pub fn parse_field(
         }
     } else if attrs.is_init {
         let init_body = emit_init_body(field_name, field_ty, &attrs, field_names, false);
-        let init_body_with_constraints = wrap_init_body_with_constraints(
-            field_ty, &attrs, &init_body,
-        );
+        let init_body_with_constraints =
+            wrap_init_body_with_constraints(field_ty, &attrs, &init_body);
         quote! {
             let mut #field_name: #field_ty = {
                 let __target = __views[#offset_expr];
@@ -1058,9 +1055,8 @@ pub fn parse_field(
         }
     } else if attrs.is_init_if_needed {
         let init_body = emit_init_body(field_name, field_ty, &attrs, field_names, false);
-        let init_body_with_constraints = wrap_init_body_with_constraints(
-            field_ty, &attrs, &init_body,
-        );
+        let init_body_with_constraints =
+            wrap_init_body_with_constraints(field_ty, &attrs, &init_body);
         quote! {
             let mut #field_name: #field_ty = {
                 let __target = __views[#offset_expr];
