@@ -50,6 +50,7 @@ use {
 
 mod account;
 mod checks;
+pub mod codama;
 pub mod config;
 pub mod coverage;
 pub mod debugger;
@@ -482,6 +483,11 @@ pub enum Command {
     Program {
         #[clap(subcommand)]
         subcmd: ProgramCommand,
+    },
+    /// Codama IDL integration commands
+    Codama {
+        #[clap(subcommand)]
+        subcmd: codama::CodamaCommand,
     },
 }
 
@@ -1438,6 +1444,7 @@ fn process_command(opts: Opts) -> Result<()> {
         Command::ShowAccount { cmd } => account::show_account(&opts.cfg_override, cmd),
         Command::Keygen { subcmd } => keygen::keygen(&opts.cfg_override, subcmd),
         Command::Program { subcmd } => program::program(&opts.cfg_override, subcmd),
+        Command::Codama { subcmd } => codama::entry(subcmd),
     }
 }
 
@@ -2005,8 +2012,8 @@ pub fn build(
             &cfg,
             cfg.path(),
             no_idl,
-            idl_out,
-            idl_ts_out,
+            idl_out.clone(),
+            idl_ts_out.clone(),
             &build_config,
             stdout,
             stderr,
@@ -2020,8 +2027,8 @@ pub fn build(
             &cfg,
             cfg.path(),
             no_idl,
-            idl_out,
-            idl_ts_out,
+            idl_out.clone(),
+            idl_ts_out.clone(),
             &build_config,
             stdout,
             stderr,
@@ -2035,8 +2042,8 @@ pub fn build(
             &cfg,
             cargo.path().to_path_buf(),
             no_idl,
-            idl_out,
-            idl_ts_out,
+            idl_out.clone(),
+            idl_ts_out.clone(),
             &build_config,
             stdout,
             stderr,
@@ -2048,9 +2055,40 @@ pub fn build(
     }
     cfg.run_hooks(HookType::PostBuild)?;
 
+    // Auto-generate Codama clients when `[clients] auto = true` is set in
+    // `Anchor.toml`. We do this after `PostBuild` so user hooks can still
+    // mutate the IDL (or skip it via `--no-idl`) before the renderers run.
+    if cfg.clients.auto && !no_idl {
+        if let Some(idl_dir) = idl_out.as_ref() {
+            let idl_paths = collect_idl_files(idl_dir)?;
+            codama::auto_generate_for_workspace(&cfg.clients, cfg_parent, &idl_paths)?;
+        }
+    }
+
     set_workspace_dir_or_exit();
 
     Ok(())
+}
+
+/// List every `*.json` IDL file directly inside `idl_dir`, sorted for
+/// deterministic ordering. Used by the `[clients] auto = true` hook to feed
+/// each program's IDL into Codama after `anchor build` finishes.
+fn collect_idl_files(idl_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut idls = Vec::new();
+    if !idl_dir.exists() {
+        return Ok(idls);
+    }
+    for entry in
+        fs::read_dir(idl_dir).with_context(|| format!("Failed to read `{}`", idl_dir.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() && path.extension().is_some_and(|e| e == "json") {
+            idls.push(path);
+        }
+    }
+    idls.sort();
+    Ok(idls)
 }
 
 #[allow(clippy::too_many_arguments)]
