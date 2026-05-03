@@ -25,6 +25,9 @@ extern crate alloc;
 /// `__register_idl_deps` handles transitive type registration: user structs
 /// push their type def and recurse into fields. Primitives/collections
 /// default to no-op; wrappers delegate to the inner type.
+#[diagnostic::on_unimplemented(
+    message = "Ensure that `{Self}` has an `#[account]` attribute"
+)]
 pub trait IdlAccountType {
     const __IDL_TYPE: Option<&'static str> = None;
     const __IDL_IS_SIGNER: bool = false;
