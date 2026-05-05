@@ -132,7 +132,7 @@ check_surfpool() {
 }
 
 start_surfpool() {
-    surfpool start --ci --offline --daemon &>/dev/null &
+    surfpool start --ci --offline --daemon --feature deprecate_rent_exemption_threshold &>/dev/null &
     local surfpool_pid=$!
 
     sleep 3
