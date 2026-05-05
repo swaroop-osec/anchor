@@ -252,6 +252,10 @@ fn cargo_toml(name: &str, test_template: Option<&TestTemplate>) -> String {
             r#"
 [dev-dependencies]
 mollusk-svm = "~0.10"
+solana-account = "3"
+solana-pubkey = "4"
+solana-sdk-ids = "3"
+bytemuck = "1"
 "#
         }
         Some(TestTemplate::Litesvm) => {
@@ -888,23 +892,60 @@ fn create_program_template_mollusk_test(name: &str, tests_path: &Path) -> Files 
             r#"#![cfg(feature = "test-sbf")]
 
 use {{
-    anchor_lang_v2::{{solana_program::instruction::Instruction, InstructionData, ToAccountMetas}},
-    mollusk_svm::{{result::Check, Mollusk}},
+    anchor_lang_v2::{{
+        accounts::Account, solana_program::instruction::Instruction, InstructionData, Space,
+        ToAccountMetas,
+    }},
+    mollusk_svm::{{program::keyed_account_for_system_program, result::Check, Mollusk}},
+    solana_account::Account as SolanaAccount,
+    solana_pubkey::Pubkey,
 }};
 
 #[test]
 fn test_initialize() {{
     let program_id = {0}::id();
-
     let mollusk = Mollusk::new(&program_id, "{0}");
+
+    let payer = Pubkey::new_unique();
+    let counter = Pubkey::new_unique();
 
     let instruction = Instruction::new_with_bytes(
         program_id,
         &{0}::instruction::Initialize {{}}.data(),
-        {0}::accounts::Initialize {{}}.to_account_metas(None),
+        {0}::accounts::Initialize {{
+            payer,
+            counter,
+            system_program: solana_sdk_ids::system_program::id(),
+        }}
+        .to_account_metas(None),
     );
 
-    mollusk.process_and_validate_instruction(&instruction, &[], &[Check::success()]);
+    let counter_space = <Account<{0}::state::Counter> as Space>::INIT_SPACE;
+    let accounts = vec![
+        (
+            payer,
+            SolanaAccount::new(1_000_000_000, 0, &solana_sdk_ids::system_program::id()),
+        ),
+        (counter, SolanaAccount::default()),
+        keyed_account_for_system_program(),
+    ];
+
+    let result = mollusk.process_and_validate_instruction(
+        &instruction,
+        &accounts,
+        &[Check::success()],
+    );
+
+    let counter_account = result
+        .resulting_accounts
+        .iter()
+        .find(|(pk, _)| *pk == counter)
+        .map(|(_, a)| a)
+        .expect("counter account");
+    assert_eq!(counter_account.data.len(), counter_space);
+    let counter_state: &{0}::state::Counter = bytemuck::from_bytes(&counter_account.data[8..]);
+    assert_eq!(counter_state.count, 0);
+    assert_eq!(counter_state.authority, payer);
 }}
 "#,
             name.to_snake_case(),
