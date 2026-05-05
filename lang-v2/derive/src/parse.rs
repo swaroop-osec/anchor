@@ -318,6 +318,23 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
             Ok(())
         })?;
     }
+
+    // Reject `init` + `bump = <expr>` (mirroring Anchor v1). Account
+    // creation requires an off-curve address, which is only guaranteed by
+    // the canonical bump returned by `find_program_address`. A caller-
+    // supplied bump could be non-canonical and either create the wrong
+    // PDA or fail under the runtime's curve check, so we don't allow the
+    // combination at all.
+    if (result.is_init || result.is_init_if_needed) && matches!(result.bump, Some(Some(_))) {
+        if let Some(Some(ref bump_expr)) = result.bump {
+            return Err(syn::Error::new(
+                syn::spanned::Spanned::span(bump_expr),
+                "`bump = <expr>` is not allowed with `init` / `init_if_needed`: account creation \
+                 must use the canonical bump (write `bump` without a value)",
+            ));
+        }
+    }
+
     Ok(result)
 }
 
@@ -1675,6 +1692,41 @@ mod tests {
         assert!(
             joined.contains("ConstraintSeeds"),
             "expected ConstraintSeeds error path in generated constraints, got: {joined}"
+        );
+    }
+
+    #[test]
+    fn init_with_explicit_bump_is_rejected() {
+        // Mirrors Anchor v1: `init` requires the canonical bump (off-curve
+        // guarantee), so caller-supplied bumps must be rejected at parse
+        // time rather than silently discarded by the codegen.
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(init, payer = payer, space = 8, seeds = [b"x"], bump = 0)]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("init + bump=<expr> must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("`bump = <expr>` is not allowed with `init`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn init_if_needed_with_explicit_bump_is_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(init_if_needed, payer = payer, space = 8, seeds = [b"x"], bump = 0)]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("init_if_needed + bump=<expr> must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("`bump = <expr>` is not allowed with `init`"),
+            "unexpected error: {err}"
         );
     }
 
