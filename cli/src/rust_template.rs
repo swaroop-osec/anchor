@@ -833,6 +833,8 @@ anchor-client = {{ git = "https://github.com/solana-foundation/anchor.git", bran
 {name} = {{ version = "0.1.0", path = "../programs/{name}" }}
 solana-keypair = "3.0.0"
 solana-pubkey = "3.0.0"
+solana-sdk-ids = "3"
+solana-signer = "3"
 "#
     )
 }
@@ -855,14 +857,16 @@ mod test_initialize;
     CommitmentConfig,
     Client, Cluster,
 }};
-use solana_keypair::{{read_keypair_file}};
+use solana_keypair::{{read_keypair_file, Keypair}};
 use solana_pubkey::Pubkey;
+use solana_signer::Signer;
 
 #[test]
 fn test_initialize() {{
     let program_id = "{0}";
     let anchor_wallet = std::env::var("ANCHOR_WALLET").unwrap();
     let payer = read_keypair_file(&anchor_wallet).unwrap();
+    let counter = Keypair::new();
 
     let client = Client::new_with_options(Cluster::Localnet, &payer, CommitmentConfig::confirmed());
     let program_id = Pubkey::try_from(program_id).unwrap();
@@ -870,8 +874,13 @@ fn test_initialize() {{
 
     let tx = program
         .request()
-        .accounts({1}::accounts::Initialize {{}})
+        .accounts({1}::accounts::Initialize {{
+            payer: payer.pubkey(),
+            counter: counter.pubkey(),
+            system_program: solana_sdk_ids::system_program::id(),
+        }})
         .args({1}::instruction::Initialize {{}})
+        .signer(&counter)
         .send()
         .expect("");
 
