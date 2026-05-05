@@ -29,7 +29,7 @@ impl SysvarId for pinocchio::sysvars::clock::Clock {
 impl<T: Deref<Target = [u8]>> SysvarId for pinocchio::sysvars::instructions::Instructions<T> {
     const SYSVAR_ID: Address = pinocchio::sysvars::instructions::INSTRUCTIONS_ID;
     #[cfg(feature = "idl-build")]
-    const IDL_ADDRESS: &'static str = "SysvarC1ock11111111111111111111111111111111";
+    const IDL_ADDRESS: &'static str = "Sysvar1nstructions1111111111111111111111111";
 }
 
 impl SysvarId for pinocchio::sysvars::rent::Rent {
