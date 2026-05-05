@@ -264,7 +264,6 @@ pub mod cpi {
         alloc::{vec, vec::Vec},
         anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
         pinocchio::instruction::InstructionAccount,
-        solana_program_error::ProgramError,
     };
 
     /// Accounts structs consumed by each CPI helper. Each field is a
@@ -560,96 +559,84 @@ pub mod cpi {
     const DISC_BURN_CHECKED: u8 = 15;
     const DISC_SYNC_NATIVE: u8 = 17;
 
-    pub fn transfer<'a>(
-        ctx: CpiContext<'a, accounts::Transfer<'a>>,
-        amount: u64,
-    ) -> Result<(), ProgramError> {
+    pub fn transfer<'a>(ctx: CpiContext<'a, accounts::Transfer<'a>>, amount: u64) {
         let mut data = [0u8; 9];
         data[0] = DISC_TRANSFER;
         data[1..9].copy_from_slice(&amount.to_le_bytes());
-        ctx.invoke(&data)
+        ctx.invoke(&data);
     }
 
     pub fn transfer_checked<'a>(
         ctx: CpiContext<'a, accounts::TransferChecked<'a>>,
         amount: u64,
         decimals: u8,
-    ) -> Result<(), ProgramError> {
+    ) {
         let mut data = [0u8; 10];
         data[0] = DISC_TRANSFER_CHECKED;
         data[1..9].copy_from_slice(&amount.to_le_bytes());
         data[9] = decimals;
-        ctx.invoke(&data)
+        ctx.invoke(&data);
     }
 
-    pub fn mint_to<'a>(
-        ctx: CpiContext<'a, accounts::MintTo<'a>>,
-        amount: u64,
-    ) -> Result<(), ProgramError> {
+    pub fn mint_to<'a>(ctx: CpiContext<'a, accounts::MintTo<'a>>, amount: u64) {
         let mut data = [0u8; 9];
         data[0] = DISC_MINT_TO;
         data[1..9].copy_from_slice(&amount.to_le_bytes());
-        ctx.invoke(&data)
+        ctx.invoke(&data);
     }
 
     pub fn mint_to_checked<'a>(
         ctx: CpiContext<'a, accounts::MintToChecked<'a>>,
         amount: u64,
         decimals: u8,
-    ) -> Result<(), ProgramError> {
+    ) {
         let mut data = [0u8; 10];
         data[0] = DISC_MINT_TO_CHECKED;
         data[1..9].copy_from_slice(&amount.to_le_bytes());
         data[9] = decimals;
-        ctx.invoke(&data)
+        ctx.invoke(&data);
     }
 
-    pub fn burn<'a>(
-        ctx: CpiContext<'a, accounts::Burn<'a>>,
-        amount: u64,
-    ) -> Result<(), ProgramError> {
+    pub fn burn<'a>(ctx: CpiContext<'a, accounts::Burn<'a>>, amount: u64) {
         let mut data = [0u8; 9];
         data[0] = DISC_BURN;
         data[1..9].copy_from_slice(&amount.to_le_bytes());
-        ctx.invoke(&data)
+        ctx.invoke(&data);
     }
 
     pub fn burn_checked<'a>(
         ctx: CpiContext<'a, accounts::BurnChecked<'a>>,
         amount: u64,
         decimals: u8,
-    ) -> Result<(), ProgramError> {
+    ) {
         let mut data = [0u8; 10];
         data[0] = DISC_BURN_CHECKED;
         data[1..9].copy_from_slice(&amount.to_le_bytes());
         data[9] = decimals;
-        ctx.invoke(&data)
+        ctx.invoke(&data);
     }
 
-    pub fn approve<'a>(
-        ctx: CpiContext<'a, accounts::Approve<'a>>,
-        amount: u64,
-    ) -> Result<(), ProgramError> {
+    pub fn approve<'a>(ctx: CpiContext<'a, accounts::Approve<'a>>, amount: u64) {
         let mut data = [0u8; 9];
         data[0] = DISC_APPROVE;
         data[1..9].copy_from_slice(&amount.to_le_bytes());
-        ctx.invoke(&data)
+        ctx.invoke(&data);
     }
 
     pub fn approve_checked<'a>(
         ctx: CpiContext<'a, accounts::ApproveChecked<'a>>,
         amount: u64,
         decimals: u8,
-    ) -> Result<(), ProgramError> {
+    ) {
         let mut data = [0u8; 10];
         data[0] = DISC_APPROVE_CHECKED;
         data[1..9].copy_from_slice(&amount.to_le_bytes());
         data[9] = decimals;
-        ctx.invoke(&data)
+        ctx.invoke(&data);
     }
 
-    pub fn revoke<'a>(ctx: CpiContext<'a, accounts::Revoke<'a>>) -> Result<(), ProgramError> {
-        ctx.invoke(&[DISC_REVOKE])
+    pub fn revoke<'a>(ctx: CpiContext<'a, accounts::Revoke<'a>>) {
+        ctx.invoke(&[DISC_REVOKE]);
     }
 
     /// SPL Token `SetAuthority`.
@@ -662,7 +649,7 @@ pub mod cpi {
         ctx: CpiContext<'a, accounts::SetAuthority<'a>>,
         authority_type: u8,
         new_authority: Option<&anchor_lang_v2::Address>,
-    ) -> Result<(), ProgramError> {
+    ) {
         // Layout: disc(1) + authority_type(1) + option_tag(1) + [address(32)] = 3 or 35.
         let mut data = [0u8; 35];
         data[0] = DISC_SET_AUTHORITY;
@@ -671,36 +658,28 @@ pub mod cpi {
             Some(addr) => {
                 data[2] = 1;
                 data[3..35].copy_from_slice(addr.as_ref());
-                ctx.invoke(&data[..35])
+                ctx.invoke(&data[..35]);
             }
             None => {
                 data[2] = 0;
-                ctx.invoke(&data[..3])
+                ctx.invoke(&data[..3]);
             }
         }
     }
 
-    pub fn close_account<'a>(
-        ctx: CpiContext<'a, accounts::CloseAccount<'a>>,
-    ) -> Result<(), ProgramError> {
+    pub fn close_account<'a>(ctx: CpiContext<'a, accounts::CloseAccount<'a>>) {
         ctx.invoke(&[DISC_CLOSE_ACCOUNT])
     }
 
-    pub fn freeze_account<'a>(
-        ctx: CpiContext<'a, accounts::FreezeAccount<'a>>,
-    ) -> Result<(), ProgramError> {
+    pub fn freeze_account<'a>(ctx: CpiContext<'a, accounts::FreezeAccount<'a>>) {
         ctx.invoke(&[DISC_FREEZE_ACCOUNT])
     }
 
-    pub fn thaw_account<'a>(
-        ctx: CpiContext<'a, accounts::ThawAccount<'a>>,
-    ) -> Result<(), ProgramError> {
+    pub fn thaw_account<'a>(ctx: CpiContext<'a, accounts::ThawAccount<'a>>) {
         ctx.invoke(&[DISC_THAW_ACCOUNT])
     }
 
-    pub fn sync_native<'a>(
-        ctx: CpiContext<'a, accounts::SyncNative<'a>>,
-    ) -> Result<(), ProgramError> {
+    pub fn sync_native<'a>(ctx: CpiContext<'a, accounts::SyncNative<'a>>) {
         ctx.invoke(&[DISC_SYNC_NATIVE])
     }
 }

@@ -1671,7 +1671,7 @@ fn process_handler(
             pub fn #fn_name #lt_decl(
                 __ctx: anchor_lang_v2::CpiContext<'a, accounts::#accounts_type<'a>>,
                 #(#extra_arg_names: #extra_arg_types,)*
-            ) -> anchor_lang_v2::Result<()> {
+            ) {
                 let __ix = super::instruction::#ix_struct_name #ix_lt_use_local {
                     #(#extra_arg_names,)*
                 };
@@ -1679,7 +1679,7 @@ fn process_handler(
                     super::instruction::#ix_struct_name #ix_lt_use_local
                     as anchor_lang_v2::InstructionData
                 >::data(&__ix);
-                __ctx.invoke(&__data)
+                __ctx.invoke(&__data);
             }
         }
     };
