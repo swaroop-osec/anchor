@@ -1,0 +1,147 @@
+name: Template Tests
+
+on:
+  push:
+    branches:
+      - anchor-next
+    paths-ignore:
+      - "docs/**"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+  workflow_dispatch:
+
+env:
+  SOLANA_VERSION: "3.1.10"
+  NODE_VERSION: "20"
+
+jobs:
+  # Build CLI once to share across test jobs
+  build-cli:
+    name: Build CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup/
+
+      - uses: actions/cache@v4
+        name: Cache Cargo home
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-home-${{ runner.os }}-template-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-home-${{ runner.os }}-template-
+
+      - uses: actions/cache@v4
+        name: Cache cargo target
+        with:
+          path: ./target/
+          key: cargo-target-template-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-target-template-${{ runner.os }}-
+
+      - run: cargo build -p anchor-cli --release --locked
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anchor-cli
+          path: target/release/anchor
+          retention-days: 1
+          if-no-files-found: error
+
+  # Rust-only test templates: `--javascript` and `--package-manager` don't
+  # apply, so the matrix is just template × test-template (2 × 3 = 6 cells).
+  template-rust-tests:
+    name: ${{ matrix.template }} + ${{ matrix.test_template }}
+    needs: build-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [single, multiple]
+        test_template: [rust, mollusk, litesvm]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-solana/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: anchor-cli
+          path: ~/.cargo/bin/
+      - run: chmod +x ~/.cargo/bin/anchor
+
+      # Match `tests-v2/src/lib.rs::build_program`. Pre-install so concurrent
+      # `cargo build-sbf` invocations don't race on the platform-tools rename.
+      - run: cargo build-sbf --tools-version v1.52 --install-only
+
+      - name: anchor init
+        working-directory: /tmp
+        run: |
+          anchor init my_program \
+            --template ${{ matrix.template }} \
+            --test-template ${{ matrix.test_template }} \
+            --no-git \
+            --no-install
+
+      - name: anchor test
+        working-directory: /tmp/my_program
+        run: anchor test
+
+  # JS-based test templates: cross-product over template × language ×
+  # package manager (2 × 2 × 2 × 4 = 32 cells).
+  template-js-tests:
+    name: ${{ matrix.template }} + ${{ matrix.test_template }} + ${{ matrix.language }} + ${{ matrix.package_manager }}
+    needs: build-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [single, multiple]
+        test_template: [mocha, jest]
+        language: [typescript, javascript]
+        package_manager: [npm, yarn, pnpm, bun]
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup/
+      - uses: ./.github/actions/setup-solana/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Corepack ships with Node and provides yarn + pnpm without extra
+      # downloads. `corepack enable` makes the shims executable; we don't
+      # pin a specific version so each project's `packageManager` field
+      # (when present) drives resolution.
+      - if: matrix.package_manager == 'yarn' || matrix.package_manager == 'pnpm'
+        run: corepack enable
+
+      - if: matrix.package_manager == 'bun'
+        uses: oven-sh/setup-bun@v2
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: anchor-cli
+          path: ~/.cargo/bin/
+      - run: chmod +x ~/.cargo/bin/anchor
+
+      - run: cargo build-sbf --tools-version v1.52 --install-only
+
+      - name: anchor init
+        working-directory: /tmp
+        run: |
+          anchor init my_program \
+            --template ${{ matrix.template }} \
+            --test-template ${{ matrix.test_template }} \
+            --package-manager ${{ matrix.package_manager }} \
+            ${{ matrix.language == 'javascript' && '--javascript' || '' }} \
+            --no-git
+
+      - name: anchor test
+        working-directory: /tmp/my_program
+        run: anchor test
