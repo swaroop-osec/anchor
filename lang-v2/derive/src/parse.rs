@@ -1206,8 +1206,11 @@ pub fn parse_field(
                         {
                             let __seed_val = #seeds_expr;
                             let __seed_ref: &[&[u8]] = __seed_val.as_ref();
-                            let __bump_val: u8 = #bump_expr;
-                            let __bump_bytes = [__bump_val];
+                            if __seed_ref.len() > 16 {
+                                return Err(anchor_lang_v2::ErrorCode::ConstraintSeeds.into());
+                            }
+                            let __bump: u8 = #bump_expr;
+                            let __bump_bytes = [__bump];
                             let mut __seed_buf: [&[u8]; 17] = [&[]; 17];
                             let __n = __seed_ref.len();
                             __seed_buf[..__n].copy_from_slice(__seed_ref);
@@ -1217,7 +1220,7 @@ pub fn parse_field(
                                 #pda_program,
                                 #field_name.account().address(),
                             )?;
-                            __bumps.#field_name = __bump_val;
+                            __bumps.#field_name = #bump_assign;
                         }
                     });
                 } else {
@@ -1642,6 +1645,37 @@ mod tests {
         assert!(parsed_attrs.seeds.is_some());
         assert!(parsed_attrs.bump.is_some());
         assert!(parsed_attrs.is_signer);
+    }
+
+    #[test]
+    fn opaque_seeds_with_explicit_bump_emits_seed_len_guard() {
+        // The opaque-seeds + explicit-bump branch builds a fixed
+        // `[&[u8]; 17]` buffer at runtime. Without a length guard, a seed
+        // expression returning more than 16 elements panics in
+        // `copy_from_slice` or when writing the bump byte. Assert that the
+        // generated code rejects oversized seeds with `ConstraintSeeds`
+        // before touching the buffer.
+        use syn::parse::Parser;
+        let field: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(seeds = MyAcc::seeds(), bump = 0)]
+                pub my_acc: Account<MyAcc>
+            })
+            .unwrap();
+        let parsed = parse_field(&field, &[], quote::quote!(0usize), &[]).unwrap();
+        let joined = parsed
+            .constraints
+            .iter()
+            .map(|t| t.to_string())
+            .collect::<String>();
+        assert!(
+            joined.contains("__seed_ref . len () > 16"),
+            "expected seed-length guard in generated constraints, got: {joined}"
+        );
+        assert!(
+            joined.contains("ConstraintSeeds"),
+            "expected ConstraintSeeds error path in generated constraints, got: {joined}"
+        );
     }
 
     #[test]
