@@ -828,7 +828,8 @@ edition = "2021"
 rust-version = "{ANCHOR_MSRV}"
 
 [dependencies]
-anchor-client = "{VERSION}"
+# Once anchor-client v2 is published to crates.io, swap to: anchor-client = "{VERSION}"
+anchor-client = {{ git = "https://github.com/solana-foundation/anchor.git", branch = "anchor-next" }}
 {name} = {{ version = "0.1.0", path = "../programs/{name}" }}
 solana-keypair = "3.0.0"
 solana-pubkey = "3.0.0"
