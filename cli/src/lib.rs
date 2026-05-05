@@ -4492,15 +4492,16 @@ fn surfpool_flags(
         flags.push("--no-studio".to_string());
     }
 
-    // Mirror mainnet's active feature set. The single feature pinocchio's
-    // `Rent::get` reads correctly is `deprecate_rent_exemption_threshold`:
-    // pre-feature, the on-chain sysvar stores `lamports_per_byte_year=3480`
-    // + `exemption_threshold=2.0` and pinocchio drops the threshold,
-    // returning half the rent-exempt minimum and surfacing as
-    // `InsufficientFundsForRent` at simulation. Activating the feature
-    // collapses the threshold into `lamports_per_byte_year=6960` so the
-    // single-field read matches the runtime check. Mainnet has had this
-    // feature on for some time; pin it so test clusters match.
+    // FIXME: drop this once surfpool's bundled mainnet feature defaults
+    // catch up. Surfpool advertises "mainnet defaults" but its baked-in
+    // feature set is stale and missing `deprecate_rent_exemption_threshold`,
+    // which mainnet has had on for some time. Pinocchio's `Rent::get` only
+    // reads `lamports_per_byte_year` and treats it as the post-multiplied
+    // per-byte rate; that's correct under the feature (sysvar stores 6960,
+    // threshold 1.0) but returns half on stale-default surfpool (sysvar
+    // stores 3480, threshold 2.0), surfacing as `InsufficientFundsForRent`
+    // at simulation. Forcing the feature here aligns surfpool with mainnet
+    // until upstream refreshes its defaults.
     flags.push("--feature".to_string());
     flags.push("deprecate_rent_exemption_threshold".to_string());
 
