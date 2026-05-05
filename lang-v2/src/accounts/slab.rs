@@ -656,6 +656,32 @@ where
             .ok_or(ProgramError::ArithmeticOverflow)?;
         destination.set_lamports(dest_lamports);
         self_view.set_lamports(0);
+
+        // Defense-in-depth: scrub the discriminator to [u8::MAX; 8] before
+        // pinocchio's close() zeros the 48-byte header (data is left
+        // untouched until SVM end-of-instruction zero). If a future caller
+        // restores data_len + owner without going through SVM zero-on-
+        // allocate, the stale discriminator would otherwise allow a reload
+        // with pre-close state. Mirrors `BorshAccount::close`. Gated on
+        // `HEADER_OFFSET >= 8` so SPL-owned schemas (Mint / TokenAccount,
+        // `DATA_OFFSET = 0`, no discriminator) don't have their first 8
+        // bytes corrupted.
+        if Self::HEADER_OFFSET >= 8 {
+            // SAFETY: `&mut self` plus `is_mutable` (close is only emitted
+            // by the derive for mutable contexts) means no aliasing borrow
+            // exists; the view's data is valid for the instruction lifetime.
+            let data = unsafe { self_view.borrow_unchecked_mut() };
+            if data.len() >= 8 {
+                data[..8].copy_from_slice(&[u8::MAX; 8]);
+            }
+        }
+
+        // Flip is_mutable so any post-close DerefMut / tail-mutation panics
+        // loudly instead of silently writing through the cached header_ptr
+        // to memory pinocchio is about to mark closed. Mirrors how
+        // `BorshAccount::close` transitions its borrow guard to Released.
+        self.is_mutable = false;
+
         // SAFETY: Slab owns exclusive access (borrow flag is set). Use
         // close_unchecked to bypass pinocchio's is_borrowed() check.
         unsafe { self_view.close_unchecked() };

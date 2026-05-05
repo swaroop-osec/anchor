@@ -47,9 +47,11 @@
 
 use {
     anchor_lang_v2::{
-        prelude::BorshAccount, testing::AccountBuffer, AnchorAccount, Discriminator, Owner,
+        accounts::Slab, prelude::BorshAccount, testing::AccountBuffer, AnchorAccount,
+        Discriminator, Owner,
     },
     borsh::{BorshDeserialize, BorshSerialize},
+    bytemuck::{Pod, Zeroable},
     pinocchio::{account::RuntimeAccount, address::Address},
 };
 
@@ -295,5 +297,132 @@ fn create_account_zeroes_data_on_allocation() {
         result.is_err(),
         "after create_account's SVM-mandated zero-on-allocate, load must reject (data[..8] = [0; \
          8] != Vault::DISCRIMINATOR)"
+    );
+}
+
+// =====================================================================
+// Slab::close — same defenses as BorshAccount::close.
+//
+// These mirror the BorshAccount tests above but exercise the Slab path:
+//   1. discriminator scrub to [u8::MAX; 8]
+//   2. is_mutable flip so post-close DerefMut panics
+//   3. reload after attacker-resurrection rejects on the scrubbed disc
+// =====================================================================
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Default)]
+struct CounterHeader {
+    value: u64,
+    bump: u8,
+    _pad: [u8; 7],
+}
+
+impl Owner for CounterHeader {
+    fn owner(program_id: &Address) -> Address {
+        *program_id
+    }
+}
+
+impl Discriminator for CounterHeader {
+    // sha256("account:CounterHeader")[..8] — distinct from Vault's.
+    const DISCRIMINATOR: &'static [u8] = &[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+}
+
+fn counter_disc() -> [u8; 8] {
+    [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]
+}
+
+fn setup_counter_buf(buf: &mut AccountBuffer<256>) {
+    let data_len = 8 + core::mem::size_of::<CounterHeader>();
+    buf.init([0xAA; 32], PROGRAM_ID, data_len, false, true, false);
+    let mut data = [0u8; 24];
+    data[..8].copy_from_slice(&counter_disc());
+    // Non-zero header bytes so a stale read would be visible.
+    data[8..16].copy_from_slice(&999u64.to_le_bytes());
+    data[16] = 7; // bump
+    buf.write_data(&data);
+    buf.set_lamports(1_000_000_000);
+}
+
+#[test]
+fn slab_close_scrubs_discriminator_to_closed_sentinel() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let mut dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    {
+        let view = unsafe { buf.view() };
+        let dest_view = unsafe { dest_buf.view() };
+        let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view, &program_id) }.unwrap();
+        counter.close(dest_view).unwrap();
+    }
+
+    let raw = unsafe { &*(buf.raw() as *const RuntimeAccount) };
+    assert_eq!(raw.data_len, 0);
+
+    let data = raw_data_bytes(&buf);
+    assert_eq!(
+        &data[..8],
+        &[u8::MAX; 8][..],
+        "Slab::close must scrub the discriminator to the closed sentinel"
+    );
+}
+
+#[test]
+#[should_panic(expected = "Slab<H, T> mutably dereferenced but loaded read-only")]
+fn slab_close_flips_is_mutable_so_deref_mut_panics() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let mut dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let program_id = Address::new_from_array(PROGRAM_ID);
+    let view = unsafe { buf.view() };
+    let dest_view = unsafe { dest_buf.view() };
+    let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view, &program_id) }.unwrap();
+    counter.close(dest_view).unwrap();
+
+    // Post-close: is_mutable should be flipped to false. DerefMut must
+    // panic instead of silently writing through the cached header_ptr to
+    // memory pinocchio is about to mark closed.
+    let _ = &mut *counter;
+}
+
+#[test]
+fn slab_resurrected_account_reload_rejects_after_disc_scrub() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_counter_buf(&mut buf);
+
+    let mut dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    {
+        let view = unsafe { buf.view() };
+        let dest_view = unsafe { dest_buf.view() };
+        let mut counter = unsafe { Slab::<CounterHeader>::load_mut(view, &program_id) }.unwrap();
+        counter.close(dest_view).unwrap();
+    }
+
+    // Attacker resurrection: restore data_len + owner + lamports without
+    // re-allocating (so SVM's zero-on-allocate doesn't run).
+    unsafe {
+        let raw = &mut *(buf.raw() as *mut RuntimeAccount);
+        raw.data_len = (8 + core::mem::size_of::<CounterHeader>()) as u64;
+        raw.owner = Address::new_from_array(PROGRAM_ID);
+        raw.lamports = 1_000_000_000;
+    }
+
+    let view = unsafe { buf.view() };
+    let result = Slab::<CounterHeader>::load(view, &program_id);
+    assert!(
+        result.is_err(),
+        "Post-fix: reload must reject because scrubbed disc != CounterHeader::DISCRIMINATOR"
     );
 }
