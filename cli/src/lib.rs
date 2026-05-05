@@ -1503,12 +1503,12 @@ fn init(
     let test_script = test_template.get_test_script(javascript, &package_manager);
     cfg.scripts.insert("test".to_owned(), test_script);
 
-    // In-process test templates (currently just litesvm) drive the Solana VM
+    // In-process test templates (litesvm + mollusk) drive the Solana VM
     // inside the `cargo test` process, so auto-starting a validator at
     // `anchor test` time is pure overhead. Mark the workspace so the test
     // command knows to skip validator startup without the user having to pass
     // `--skip-local-validator` every run.
-    if matches!(test_template, TestTemplate::Litesvm) {
+    if matches!(test_template, TestTemplate::Litesvm | TestTemplate::Mollusk) {
         cfg.skip_local_validator = Some(true);
     }
 
