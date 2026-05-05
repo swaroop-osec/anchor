@@ -321,8 +321,10 @@ dependencies = [
 name = "anchor-client"
 version = "2.0.0"
 dependencies = [
- "anchor-lang",
+ "anchor-lang-v2",
  "anyhow",
+ "base64 0.22.1",
+ "borsh 1.6.1",
  "futures",
  "regex",
  "serde",

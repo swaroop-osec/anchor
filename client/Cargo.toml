@@ -18,8 +18,10 @@ debug = []
 mock = []
 
 [dependencies]
-anchor-lang = { path = "../lang", version = "2.0.0" }
+anchor-lang-v2 = { path = "../lang-v2", version = "2.0.0" }
 anyhow = "1"
+base64 = "0.22"
+borsh = "1"
 futures = "0.3"
 regex = "1"
 serde = { version = "1", features = ["derive"] }

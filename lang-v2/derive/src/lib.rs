@@ -1089,6 +1089,67 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         Fields::Unit => Vec::new(),
     };
 
+    // Client-side `AccountDeserialize` impl. Mode-dependent: borsh accounts
+    // run `BorshDeserialize` over the post-disc tail; pod accounts do a
+    // `bytemuck::pod_read_unaligned` on a sized slice. Both share the disc-
+    // check shape so a wrong-type fetch surfaces as `InvalidAccountData`.
+    let account_deserialize_impl = if is_borsh {
+        quote! {
+            impl anchor_lang_v2::AccountDeserialize for #name {
+                fn try_deserialize(
+                    buf: &mut &[u8],
+                ) -> ::core::result::Result<Self, anchor_lang_v2::Error> {
+                    use anchor_lang_v2::Discriminator as _;
+                    if buf.len() < <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len() {
+                        return Err(anchor_lang_v2::Error::AccountDataTooSmall);
+                    }
+                    let (disc, rest) = buf.split_at(<Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len());
+                    if disc != <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR {
+                        return Err(anchor_lang_v2::Error::InvalidAccountData);
+                    }
+                    *buf = rest;
+                    Self::try_deserialize_unchecked(buf)
+                }
+                fn try_deserialize_unchecked(
+                    buf: &mut &[u8],
+                ) -> ::core::result::Result<Self, anchor_lang_v2::Error> {
+                    <Self as anchor_lang_v2::borsh::BorshDeserialize>::deserialize(buf)
+                        .map_err(|_| anchor_lang_v2::Error::InvalidAccountData)
+                }
+            }
+        }
+    } else {
+        quote! {
+            impl anchor_lang_v2::AccountDeserialize for #name {
+                fn try_deserialize(
+                    buf: &mut &[u8],
+                ) -> ::core::result::Result<Self, anchor_lang_v2::Error> {
+                    use anchor_lang_v2::Discriminator as _;
+                    if buf.len() < <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len() {
+                        return Err(anchor_lang_v2::Error::AccountDataTooSmall);
+                    }
+                    let (disc, rest) = buf.split_at(<Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len());
+                    if disc != <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR {
+                        return Err(anchor_lang_v2::Error::InvalidAccountData);
+                    }
+                    *buf = rest;
+                    Self::try_deserialize_unchecked(buf)
+                }
+                fn try_deserialize_unchecked(
+                    buf: &mut &[u8],
+                ) -> ::core::result::Result<Self, anchor_lang_v2::Error> {
+                    let n = ::core::mem::size_of::<Self>();
+                    if buf.len() < n {
+                        return Err(anchor_lang_v2::Error::AccountDataTooSmall);
+                    }
+                    let value: Self = anchor_lang_v2::bytemuck::pod_read_unaligned(&buf[..n]);
+                    *buf = &buf[n..];
+                    Ok(value)
+                }
+            }
+        }
+    };
+
     let (struct_attrs, pod_impls) = if is_borsh {
         (
             quote! { #[derive(anchor_lang_v2::borsh::BorshSerialize, anchor_lang_v2::borsh::BorshDeserialize, Default)] },
@@ -1159,6 +1220,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
         impl anchor_lang_v2::Discriminator for #name {
             const DISCRIMINATOR: &'static [u8] = &[#(#disc_literals),*];
         }
+        #account_deserialize_impl
         #[cfg(feature = "idl-build")]
         impl anchor_lang_v2::IdlAccountType for #name {
             const __IDL_TYPE: Option<&'static str> = Some(#idl_type_json);

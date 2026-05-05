@@ -67,7 +67,7 @@
 #[cfg(feature = "async")]
 pub use nonblocking::ThreadSafeSigner;
 pub use {
-    anchor_lang,
+    anchor_lang_v2,
     cluster::Cluster,
     solana_commitment_config::CommitmentConfig,
     solana_instruction::Instruction,
@@ -81,10 +81,8 @@ pub use {
     solana_transaction::Transaction,
 };
 use {
-    anchor_lang::{
-        solana_program::{program_error::ProgramError, pubkey::Pubkey},
-        AccountDeserialize, Discriminator, InstructionData, ToAccountMetas,
-    },
+    anchor_lang_v2::{AccountDeserialize, Discriminator, InstructionData, ToAccountMetas},
+    solana_program::{program_error::ProgramError, pubkey::Pubkey},
     futures::{Future, StreamExt},
     regex::Regex,
     solana_account_decoder::{UiAccount, UiAccountEncoding},
@@ -295,7 +293,7 @@ impl<C: Deref<Target = impl Signer> + Clone> Program<C> {
         })
     }
 
-    async fn on_internal<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
+    async fn on_internal<T: anchor_lang_v2::Event + anchor_lang_v2::AnchorDeserialize>(
         &self,
         mut f: impl FnMut(&EventContext, T) + Send + 'static,
     ) -> Result<
@@ -370,14 +368,11 @@ impl<T> Iterator for ProgramAccountsIterator<T> {
     }
 }
 
-pub fn handle_program_log<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
+pub fn handle_program_log<T: anchor_lang_v2::Event + anchor_lang_v2::AnchorDeserialize>(
     self_program_str: &str,
     l: &str,
 ) -> Result<(Option<T>, Option<String>, bool), ClientError> {
-    use {
-        anchor_lang::__private::base64,
-        base64::{engine::general_purpose::STANDARD, Engine},
-    };
+    use base64::{engine::general_purpose::STANDARD, Engine};
 
     // Log emitted from the current program.
     if let Some(log) = l
@@ -476,8 +471,6 @@ pub struct EventContext {
 pub enum ClientError {
     #[error("Account not found")]
     AccountNotFound,
-    #[error("{0}")]
-    AnchorError(#[from] anchor_lang::error::Error),
     #[error("{0}")]
     ProgramError(#[from] ProgramError),
     #[error("{0}")]
@@ -673,7 +666,7 @@ impl<C: Deref<Target = impl Signer> + Clone, S: AsSigner> RequestBuilder<'_, C, 
     }
 }
 
-fn parse_logs_response<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
+fn parse_logs_response<T: anchor_lang_v2::Event + anchor_lang_v2::AnchorDeserialize>(
     logs: RpcResponse<RpcLogsResponse>,
     program_id_str: &str,
 ) -> Result<Vec<T>, ClientError> {
@@ -733,18 +726,29 @@ fn parse_logs_response<T: anchor_lang::Event + anchor_lang::AnchorDeserialize>(
 
 #[cfg(test)]
 mod tests {
-    // Creating a mock struct that implements `anchor_lang::events`
-    // for type inference in `test_logs`
+    // Mock event: minimal manual impl avoiding the `#[event]` macro, which
+    // depends on the `wincode` derive (anchor-lang-v2 transitively pulls it
+    // in but the re-exported derive's generated code references the bare
+    // `wincode` path, not visible from this crate). The test only needs
+    // `Event + AnchorDeserialize + Discriminator` for type inference inside
+    // `parse_logs_response::<MockEvent>`.
     use {
-        anchor_lang::prelude::*,
+        anchor_lang_v2::{AnchorDeserialize, AnchorSerialize, Discriminator, Event},
         futures::{SinkExt, StreamExt},
         solana_rpc_client_api::response::RpcResponseContext,
         std::sync::atomic::{AtomicU64, Ordering},
         tokio_tungstenite::tungstenite::Message,
     };
-    #[derive(Debug, Clone, Copy)]
-    #[event]
+    #[derive(Debug, Clone, Copy, AnchorSerialize, AnchorDeserialize)]
     pub struct MockEvent {}
+    impl Discriminator for MockEvent {
+        const DISCRIMINATOR: &'static [u8] = &[0; 8];
+    }
+    impl Event for MockEvent {
+        fn data(&self) -> Vec<u8> {
+            Vec::new()
+        }
+    }
 
     use super::*;
     #[test]
@@ -775,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_logs_response() -> Result<()> {
+    fn test_parse_logs_response() -> anyhow::Result<()> {
         // Mock logs received within an `RpcResponse`. These are based on a Jupiter transaction.
         let logs = vec![
             "Program VeryCoolProgram invoke [1]", // Outer instruction #1 starts
@@ -892,7 +896,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_logs_response_fake_pop() -> Result<()> {
+    fn test_parse_logs_response_fake_pop() -> anyhow::Result<()> {
         let logs = [
             "Program fake111111111111111111111111111111111111112 invoke [1]",
             "Program log: i logged success",
