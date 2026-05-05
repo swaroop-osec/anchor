@@ -14,6 +14,7 @@ on:
 env:
   SOLANA_VERSION: "3.1.10"
   NODE_VERSION: "20"
+  SURFPOOL_CLI_VERSION: "1.1.1"
 
 jobs:
   # Build CLI once to share across test jobs
@@ -67,6 +68,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-solana/
+      - uses: ./.github/actions/setup-surfpool/
 
       - uses: actions/download-artifact@v4
         with:
@@ -109,6 +111,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup/
       - uses: ./.github/actions/setup-solana/
+      - uses: ./.github/actions/setup-surfpool/
 
       - uses: actions/setup-node@v4
         with:
