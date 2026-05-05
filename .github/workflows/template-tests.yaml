@@ -42,12 +42,12 @@ jobs:
           key: cargo-target-template-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-target-template-${{ runner.os }}-
 
-      - run: cargo build -p anchor-cli --release --locked
+      - run: cargo install --path cli --locked --debug --force --target-dir ./target
 
       - uses: actions/upload-artifact@v4
         with:
           name: anchor-cli
-          path: target/release/anchor
+          path: ~/.cargo/bin/anchor
           retention-days: 1
           if-no-files-found: error
 
