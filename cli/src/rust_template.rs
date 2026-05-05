@@ -85,14 +85,34 @@ declare_id!("{}");
 pub mod {} {{
     use super::*;
 
-    pub fn initialize(_ctx: &mut Context<Initialize>) -> Result<()> {{
-        msg!("Initialized");
+    pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {{
+        ctx.accounts.counter.count = 0;
+        ctx.accounts.counter.authority = *ctx.accounts.payer.address();
+        msg!("Counter initialized");
         Ok(())
     }}
 }}
 
+pub mod state {{
+    use super::*;
+
+    #[account]
+    pub struct Counter {{
+        pub count: u64,
+        pub authority: Address,
+    }}
+}}
+
+use state::Counter;
+
 #[derive(Accounts)]
-pub struct Initialize {{}}
+pub struct Initialize {{
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer)]
+    pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}}
 "#,
             get_or_create_program_id(name),
             name.to_snake_case(),
