@@ -80,14 +80,28 @@ jobs:
       # `cargo build-sbf` invocations don't race on the platform-tools rename.
       - run: cargo build-sbf --tools-version v1.52 --install-only
 
+      # Cache the generated project's `target/` so subsequent runs reuse
+      # compiled deps. Restored before `anchor init` (which is invoked with
+      # `--force`, leaving `target/` intact); the deps don't depend on the
+      # template-files diff, so a partial restore from a prior commit is
+      # always a hit. Per-cell key avoids cross-pollination — different
+      # test templates pull different dev-deps.
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/my_program/target/
+          key: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-${{ github.sha }}
+          restore-keys: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-
+
       - name: anchor init
         working-directory: /tmp
         run: |
+          mkdir -p my_program
           anchor init my_program \
             --template ${{ matrix.template }} \
             --test-template ${{ matrix.test_template }} \
             --no-git \
-            --no-install
+            --no-install \
+            --force
 
       - name: anchor test
         working-directory: /tmp/my_program
@@ -135,15 +149,33 @@ jobs:
 
       - run: cargo build-sbf --tools-version v1.52 --install-only
 
+      # Cache cargo `target/` and `node_modules/` for the generated project.
+      # `anchor init --force` leaves both alone, so the dirs survive a fresh
+      # init. Caching keys are per-cell so e.g. `mocha+ts+npm` doesn't pull
+      # `jest+js+pnpm`'s lockfile artifacts. `restore-keys` lets a stale
+      # commit's cache hit when the SHA-suffixed primary key misses.
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/my_program/target/
+          key: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-${{ github.sha }}
+          restore-keys: template-target-${{ runner.os }}-${{ matrix.template }}-${{ matrix.test_template }}-
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/my_program/node_modules/
+          key: template-nm-${{ runner.os }}-${{ matrix.test_template }}-${{ matrix.language }}-${{ matrix.package_manager }}-${{ github.sha }}
+          restore-keys: template-nm-${{ runner.os }}-${{ matrix.test_template }}-${{ matrix.language }}-${{ matrix.package_manager }}-
+
       - name: anchor init
         working-directory: /tmp
         run: |
+          mkdir -p my_program
           anchor init my_program \
             --template ${{ matrix.template }} \
             --test-template ${{ matrix.test_template }} \
             --package-manager ${{ matrix.package_manager }} \
             ${{ matrix.language == 'javascript' && '--javascript' || '' }} \
-            --no-git
+            --no-git \
+            --force
 
       - name: anchor test
         working-directory: /tmp/my_program
