@@ -68,8 +68,12 @@ pub struct AccountAttrs {
     pub owner: Option<Expr>,
     pub owner_error: Option<Expr>,
     pub close: Option<Ident>,
-    pub constraint: Option<Expr>,
-    pub constraint_error: Option<Expr>,
+    /// Arbitrary boolean constraints in source order. Each entry is `(expr,
+    /// optional custom-error expr)`. Both `constraint = expr [@ err]` and
+    /// the parenthesized `constraint(expr [@ err])` push here, and any
+    /// number of either spelling may appear in a single `#[account(...)]` —
+    /// they are emitted as checks in the order written.
+    pub raw_constraints: Vec<(Expr, Option<Expr>)>,
     pub realloc: Option<Expr>,
     pub realloc_payer: Option<Ident>,
     pub realloc_zero: bool,
@@ -107,8 +111,7 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
         owner: None,
         owner_error: None,
         close: None,
-        constraint: None,
-        constraint_error: None,
+        raw_constraints: Vec::new(),
         realloc: None,
         realloc_payer: None,
         realloc_zero: false,
@@ -264,12 +267,39 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
                         result.close = Some(input.parse()?);
                     }
                     "constraint" => {
-                        input.parse::<Token![=]>()?;
-                        result.constraint = Some(input.parse()?);
-                        // Optional: @ ErrorExpr
-                        if input.peek(Token![@]) {
-                            input.parse::<Token![@]>()?;
-                            result.constraint_error = Some(input.parse()?);
+                        // Two accepted spellings, both pushing to the same
+                        // ordered list:
+                        //   - `constraint = expr [@ err]`     (legacy)
+                        //   - `constraint(expr [@ err])`      (parens)
+                        // Either form may appear multiple times in a single
+                        // `#[account(...)]`; checks fire in source order.
+                        if input.peek(syn::token::Paren) {
+                            let content;
+                            syn::parenthesized!(content in input);
+                            let expr: Expr = content.parse()?;
+                            let err = if content.peek(Token![@]) {
+                                content.parse::<Token![@]>()?;
+                                Some(content.parse()?)
+                            } else {
+                                None
+                            };
+                            if !content.is_empty() {
+                                return Err(content.error(
+                                    "expected a single `expr [@ err]` inside `constraint(...)`; \
+                                     write multiple `constraint(...)` entries to chain checks",
+                                ));
+                            }
+                            result.raw_constraints.push((expr, err));
+                        } else {
+                            input.parse::<Token![=]>()?;
+                            let expr: Expr = input.parse()?;
+                            let err = if input.peek(Token![@]) {
+                                input.parse::<Token![@]>()?;
+                                Some(input.parse()?)
+                            } else {
+                                None
+                            };
+                            result.raw_constraints.push((expr, err));
                         }
                     }
                     _ => {
@@ -1327,9 +1357,9 @@ pub fn parse_field(
         });
     }
 
-    // constraint
-    if let Some(ref expr) = attrs.constraint {
-        let err = if let Some(ref custom_err) = attrs.constraint_error {
+    // constraint(s) — emitted in the order they appeared in the attribute.
+    for (expr, custom_err) in &attrs.raw_constraints {
+        let err = if let Some(custom_err) = custom_err {
             quote! { core::convert::Into::into(#custom_err) }
         } else {
             quote! { anchor_lang_v2::ErrorCode::ConstraintRaw.into() }
@@ -1726,6 +1756,61 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("`bump = <expr>` is not allowed with `init`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn multiple_constraints_collected_in_source_order() {
+        // Mixed `=` and parenthesized spellings, repeated. Each entry
+        // must land in `raw_constraints` at the index it appears, so
+        // codegen emits the checks in the same order the user wrote.
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(
+                mut,
+                constraint = a == b,
+                constraint(c == d @ MyErr::X),
+                constraint(e.f()),
+                constraint = g @ MyErr::Y,
+            )]
+        )];
+        let parsed = parse_account_attrs(&attrs).unwrap();
+        assert_eq!(parsed.raw_constraints.len(), 4);
+        let strs: Vec<(String, Option<String>)> = parsed
+            .raw_constraints
+            .iter()
+            .map(|(e, err)| {
+                (
+                    quote!(#e).to_string(),
+                    err.as_ref().map(|x| quote!(#x).to_string()),
+                )
+            })
+            .collect();
+        assert_eq!(strs[0].0, "a == b");
+        assert_eq!(strs[0].1, None);
+        assert_eq!(strs[1].0, "c == d");
+        assert_eq!(strs[1].1.as_deref(), Some("MyErr :: X"));
+        assert_eq!(strs[2].0, "e . f ()");
+        assert_eq!(strs[2].1, None);
+        assert_eq!(strs[3].0, "g");
+        assert_eq!(strs[3].1.as_deref(), Some("MyErr :: Y"));
+    }
+
+    #[test]
+    fn paren_constraint_rejects_extra_tokens() {
+        // `constraint(a, b)` is not a chain — chained checks must be
+        // written as separate `constraint(...)` entries. The parser
+        // surfaces the misuse at parse time rather than silently
+        // dropping the trailing tokens.
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(constraint(a == b, c == d))]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("expected `constraint(a, b)` to be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains("single `expr"),
             "unexpected error: {err}"
         );
     }

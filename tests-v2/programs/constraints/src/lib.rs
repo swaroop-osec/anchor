@@ -44,6 +44,10 @@ pub enum MyErr {
     BadOwner,
     #[msg("arbitrary constraint expression was false")]
     BadConstraint,
+    #[msg("first chained constraint was false")]
+    BadFirst,
+    #[msg("second chained constraint was false")]
+    BadSecond,
 }
 
 // -- Account types -----------------------------------------------------------
@@ -152,6 +156,15 @@ pub mod constraints {
     /// path but reached via the `address` codegen branch.
     #[discrim = 15]
     pub fn check_address_field_path(_ctx: &mut Context<CheckAddressFieldPath>) -> Result<()> {
+        Ok(())
+    }
+
+    /// Multiple `constraint`s on one field. Mixes the parenthesized
+    /// `constraint(...)` form with the legacy `constraint = ...` form,
+    /// with and without custom errors. Each check must fire in source
+    /// order — the first violating check decides the surfaced error.
+    #[discrim = 16]
+    pub fn check_multiple_constraints(_ctx: &mut Context<CheckMultipleConstraints>) -> Result<()> {
         Ok(())
     }
 }
@@ -294,6 +307,23 @@ pub struct CheckZeroed {
 pub struct CheckSigner {
     #[account(signer)]
     pub user: UncheckedAccount,
+}
+
+// 16. Multiple `constraint`s on a single field, mixing both spellings.
+//
+// Order of evaluation matters: the first failing check is the one whose
+// error surfaces. The integration tests trip each entry in turn to
+// confirm that.
+#[derive(Accounts)]
+pub struct CheckMultipleConstraints {
+    pub a: UncheckedAccount,
+    pub b: UncheckedAccount,
+    #[account(
+        constraint(a.address() != b.address() @ MyErr::BadFirst),
+        constraint = a.address() != c.address() @ MyErr::BadSecond,
+        constraint(b.address() != c.address()),
+    )]
+    pub c: UncheckedAccount,
 }
 
 // -- IDL-only fixtures -------------------------------------------------------
