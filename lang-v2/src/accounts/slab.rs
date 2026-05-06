@@ -206,6 +206,15 @@ where
 
     #[inline(always)]
     fn from_ref(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
+        // Solana guarantees account data buffers are 8-byte aligned. Headers
+        // demanding stricter alignment would produce misaligned reads through
+        // the cached `header_ptr`. Caught at monomorphization.
+        const {
+            assert!(
+                core::mem::align_of::<H>() <= 8,
+                "Slab header alignment exceeds Solana's 8-byte account data alignment",
+            )
+        };
         // SAFETY: AccountView's data pointer is valid for the instruction lifetime
         // (Solana runtime guarantee). Duplicate mutable accounts are rejected at
         // deserialization, so no aliasing can occur.
