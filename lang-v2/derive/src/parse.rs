@@ -1334,8 +1334,14 @@ pub fn parse_field(
         };
         constraints.push(quote! {
             {
-                // Bind the expected address to a local for `address_eq`.
-                let __expected: anchor_lang_v2::Address = #addr;
+                // Accept any `T: Into<Address>` on the RHS — `Address`
+                // itself goes through the blanket `From<T> for T`,
+                // `&Address`, `[u8; 32]`, and any user-defined wrapper
+                // with an `Into<Address>` impl all flow through the
+                // same conversion. Still binds to a local first so
+                // `address_eq` sees a stable reference.
+                let __expected: anchor_lang_v2::Address =
+                    core::convert::Into::into(#addr);
                 if !anchor_lang_v2::address_eq(#field_name.account().address(), &__expected) {
                     return Err(#err);
                 }

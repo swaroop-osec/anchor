@@ -703,6 +703,66 @@ fn signer_on_unchecked_ok_when_signed() {
     .expect("signed");
 }
 
+// ---- 17/18. address = <Into<Address> expr> -------------------------------
+//
+// Asserts the constraint accepts any `Into<Address>` RHS, not just an
+// `Address` literal. Two fixtures cover the two non-trivial impls in
+// `solana-address`:
+//   - `From<[u8; 32]> for Address` — `address = SOME_BYTES`
+//   - `From<&Address>  for Address` — `address = some_fn_returning_ref()`
+
+#[test]
+fn address_into_from_byte_array_match_ok() {
+    let (mut svm, payer, _) = setup();
+    call(
+        &mut svm,
+        &payer,
+        17,
+        vec![AccountMeta::new_readonly(pinned_address(), false)],
+        &[],
+    )
+    .expect("address from [u8; 32]");
+}
+
+#[test]
+fn address_into_from_byte_array_mismatch_rejected() {
+    let (mut svm, payer, _) = setup();
+    let result = call_raw(
+        &mut svm,
+        &payer,
+        17,
+        vec![AccountMeta::new_readonly(Pubkey::new_unique(), false)],
+        &[],
+    );
+    assert_err_contains(&result, "InvalidAccountData");
+}
+
+#[test]
+fn address_into_from_ref_match_ok() {
+    let (mut svm, payer, _) = setup();
+    call(
+        &mut svm,
+        &payer,
+        18,
+        vec![AccountMeta::new_readonly(pinned_address(), false)],
+        &[],
+    )
+    .expect("address from &Address");
+}
+
+#[test]
+fn address_into_from_ref_mismatch_rejected() {
+    let (mut svm, payer, _) = setup();
+    let result = call_raw(
+        &mut svm,
+        &payer,
+        18,
+        vec![AccountMeta::new_readonly(Pubkey::new_unique(), false)],
+        &[],
+    );
+    assert_err_contains(&result, "InvalidAccountData");
+}
+
 // ---- 16. Multiple constraints on a single field --------------------------
 //
 // `CheckMultipleConstraints` carries three `constraint`s on its `c` field,

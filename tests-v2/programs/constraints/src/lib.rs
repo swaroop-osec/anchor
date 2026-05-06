@@ -167,6 +167,22 @@ pub mod constraints {
     pub fn check_multiple_constraints(_ctx: &mut Context<CheckMultipleConstraints>) -> Result<()> {
         Ok(())
     }
+
+    /// `address = <expr>` accepting an `Into<Address>` RHS. The fixture
+    /// uses `[u8; 32]` (which has `From<[u8; 32]> for Address`) and a
+    /// helper returning `&Address` (`From<&Address> for Address`) — both
+    /// would have failed the prior `let __expected: Address = #expr`
+    /// type-ascription path.
+    #[discrim = 17]
+    pub fn check_address_into(_ctx: &mut Context<CheckAddressInto>) -> Result<()> {
+        Ok(())
+    }
+
+    /// Same but feeding `address` from a function returning `&Address`.
+    #[discrim = 18]
+    pub fn check_address_into_ref(_ctx: &mut Context<CheckAddressIntoRef>) -> Result<()> {
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -309,11 +325,36 @@ pub struct CheckSigner {
     pub user: UncheckedAccount,
 }
 
+/// `[u8; 32]` form of `PINNED_ADDRESS`. Used in the `Into<Address>` test
+/// fixture so the RHS goes through `From<[u8; 32]> for Address` rather
+/// than the trivial identity coercion.
+pub const PINNED_BYTES: [u8; 32] = PINNED_ADDRESS.to_bytes();
+
+/// Helper returning `&Address`. Exercises `From<&Address> for Address` on
+/// the constraint RHS — different impl from the `[u8; 32]` form.
+pub fn pinned_address_ref() -> &'static Address {
+    &PINNED_ADDRESS
+}
+
 // 16. Multiple `constraint`s on a single field, mixing both spellings.
 //
 // Order of evaluation matters: the first failing check is the one whose
 // error surfaces. The integration tests trip each entry in turn to
 // confirm that.
+// 17. address = <[u8; 32] expr> — RHS converts via `Into<Address>`.
+#[derive(Accounts)]
+pub struct CheckAddressInto {
+    #[account(address = PINNED_BYTES)]
+    pub pinned: UncheckedAccount,
+}
+
+// 18. address = <&Address expr> — RHS converts via `Into<Address>`.
+#[derive(Accounts)]
+pub struct CheckAddressIntoRef {
+    #[account(address = pinned_address_ref())]
+    pub pinned: UncheckedAccount,
+}
+
 #[derive(Accounts)]
 pub struct CheckMultipleConstraints {
     pub a: UncheckedAccount,
