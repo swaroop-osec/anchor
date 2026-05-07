@@ -103,6 +103,34 @@ jobs:
             --no-install \
             --force
 
+      # Redirect every `git = ".../anchor.git"` dep in the generated
+      # project to this PR's checkout so PR changes are exercised. Without
+      # this, `anchor init` resolves anchor-lang-v2 / anchor-client /
+      # anchor-v2-testing from upstream `anchor-next`, masking any local
+      # changes. Listed crates that the lockfile doesn't reference are
+      # silently ignored (Cargo emits a warning, not an error). The rust
+      # test template has its own non-workspace `tests/Cargo.toml`, so
+      # we patch it separately when present.
+      - name: Patch generated project to use PR checkout
+        env:
+          REPO: ${{ github.workspace }}
+        run: |
+          patch_block() {
+            cat <<EOF >> "$1"
+
+          [patch."https://github.com/solana-foundation/anchor.git"]
+          anchor-lang-v2 = { path = "$REPO/lang-v2" }
+          anchor-derive-accounts-v2 = { path = "$REPO/lang-v2/derive" }
+          anchor-client = { path = "$REPO/client" }
+          anchor-spl-v2 = { path = "$REPO/spl-v2" }
+          anchor-v2-testing = { path = "$REPO/v2-testing" }
+          EOF
+          }
+          patch_block /tmp/my_program/Cargo.toml
+          if [ -f /tmp/my_program/tests/Cargo.toml ]; then
+            patch_block /tmp/my_program/tests/Cargo.toml
+          fi
+
       - name: anchor test
         working-directory: /tmp/my_program
         run: anchor test
@@ -176,6 +204,23 @@ jobs:
             ${{ matrix.language == 'javascript' && '--javascript' || '' }} \
             --no-git \
             --force
+
+      # Redirect git deps to this PR's checkout. See the rust matrix above
+      # for the rationale; JS templates only carry git deps through the
+      # program crate (no separate `tests/Cargo.toml`).
+      - name: Patch generated project to use PR checkout
+        env:
+          REPO: ${{ github.workspace }}
+        run: |
+          cat <<EOF >> /tmp/my_program/Cargo.toml
+
+          [patch."https://github.com/solana-foundation/anchor.git"]
+          anchor-lang-v2 = { path = "$REPO/lang-v2" }
+          anchor-derive-accounts-v2 = { path = "$REPO/lang-v2/derive" }
+          anchor-client = { path = "$REPO/client" }
+          anchor-spl-v2 = { path = "$REPO/spl-v2" }
+          anchor-v2-testing = { path = "$REPO/v2-testing" }
+          EOF
 
       - name: anchor test
         working-directory: /tmp/my_program
