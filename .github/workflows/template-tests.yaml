@@ -159,13 +159,17 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # Corepack ships with Node and provides yarn + pnpm without extra
-      # downloads. `corepack enable` makes the shims executable; we don't
-      # pin a specific version so each project's `packageManager` field
-      # (when present) drives resolution.
-      - if: matrix.package_manager == 'yarn' || matrix.package_manager == 'pnpm'
-        run: corepack enable
-
+      # Each PM gets its own setup. Corepack's shim approach didn't work
+      # reliably without a `packageManager` field in package.json, and
+      # ubuntu-latest only ships yarn classic pre-installed.
+      #   - npm: bundled with Node (no setup needed)
+      #   - yarn: pre-installed on ubuntu-latest as yarn classic
+      #   - pnpm: pnpm/action-setup adds the binary to PATH
+      #   - bun:  oven-sh/setup-bun does the same
+      - if: matrix.package_manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - if: matrix.package_manager == 'bun'
         uses: oven-sh/setup-bun@v2
 
