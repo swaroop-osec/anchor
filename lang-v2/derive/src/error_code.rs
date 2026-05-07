@@ -78,12 +78,25 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     };
 
+    // `__idl_errors()` mirrors `__idl_accounts()` (lang-v2/derive/src/idl.rs):
+    // a `pub fn` on the type returning the IDL JSON string. Lets the existing
+    // `mod idl_tests { ... }` style suites parse the output with
+    // `serde_json::from_str::<Vec<IdlErrorCode>>()` instead of capturing
+    // stdout from the `__anchor_private_print_idl_errors_*` test fn.
     let idl_print = quote! {
+        #[cfg(feature = "idl-build")]
+        impl #name {
+            #[doc(hidden)]
+            pub fn __idl_errors() -> anchor_lang_v2::__alloc::string::String {
+                anchor_lang_v2::__alloc::string::String::from(#idl_json)
+            }
+        }
+
         #[cfg(all(test, feature = "idl-build"))]
         #[test]
         fn #idl_fn_name() {
             println!("--- IDL begin errors ---");
-            println!("{}", #idl_json);
+            println!("{}", #name::__idl_errors());
             println!("--- IDL end errors ---");
         }
     };

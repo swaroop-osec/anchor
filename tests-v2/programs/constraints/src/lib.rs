@@ -597,4 +597,183 @@ mod idl_tests {
             );
         }
     }
+
+    /// `#[error_code]` IDL surface. Every enum exposes
+    /// `pub fn __idl_errors() -> String` (mirroring `__idl_accounts()`),
+    /// so the tests parse the JSON with the typed `IdlErrorCode` spec
+    /// and assert structurally rather than against literal strings.
+    /// Each test that exercises auto-numbering also cross-checks the
+    /// runtime `From<E> for Error` path, since the IDL `code` and
+    /// `Error::Custom(code)` must agree for clients to surface the
+    /// right error name.
+    mod idl_errors {
+        use {super::*, anchor_lang_idl_spec::IdlErrorCode};
+
+        fn parse_errors(json: &str) -> Vec<IdlErrorCode> {
+            serde_json::from_str(json)
+                .unwrap_or_else(|e| panic!("failed to parse errors JSON: {e}\njson: {json}"))
+        }
+
+        fn custom_code(e: Error) -> u32 {
+            match e {
+                Error::Custom(c) => c,
+                other => panic!("expected Error::Custom, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn fixture_my_err_default_offset_with_msgs() {
+            // `MyErr` is the program's actual error enum — every variant
+            // has a `#[msg("...")]` and uses default sequential numbering
+            // from the v1-compatible 6000 offset.
+            let errors = parse_errors(&MyErr::__idl_errors());
+            let names: Vec<&str> = errors.iter().map(|e| e.name.as_str()).collect();
+            assert_eq!(
+                names,
+                vec![
+                    "BadAddress",
+                    "BadAuthority",
+                    "BadOwner",
+                    "BadConstraint",
+                    "BadFirst",
+                    "BadSecond",
+                ]
+            );
+            for (i, e) in errors.iter().enumerate() {
+                assert_eq!(e.code, 6000 + i as u32);
+                assert!(e.msg.is_some(), "{} should carry a msg", e.name);
+            }
+            assert_eq!(
+                errors[0].msg.as_deref(),
+                Some("address did not match expected pinned value")
+            );
+        }
+
+        #[test]
+        fn from_impl_matches_idl_code_for_fixture() {
+            // The runtime path emits `Error::Custom(e as u32 + offset)`;
+            // the IDL advertises `offset + discriminator`. They must
+            // agree for every variant.
+            let errors = parse_errors(&MyErr::__idl_errors());
+            assert_eq!(custom_code(MyErr::BadAddress.into()), errors[0].code);
+            assert_eq!(custom_code(MyErr::BadAuthority.into()), errors[1].code);
+            assert_eq!(custom_code(MyErr::BadSecond.into()), errors[5].code);
+        }
+
+        #[error_code(offset = 7000)]
+        pub enum CustomOffset {
+            A,
+            B,
+        }
+
+        #[test]
+        fn custom_offset_shifts_codes() {
+            let errors = parse_errors(&CustomOffset::__idl_errors());
+            assert_eq!(
+                errors.iter().map(|e| e.code).collect::<Vec<_>>(),
+                vec![7000, 7001]
+            );
+            assert!(errors.iter().all(|e| e.msg.is_none()));
+            assert_eq!(custom_code(CustomOffset::A.into()), 7000);
+            assert_eq!(custom_code(CustomOffset::B.into()), 7001);
+        }
+
+        #[error_code]
+        pub enum AllExplicit {
+            Foo = 10,
+            Bar = 20,
+            Baz = 30,
+        }
+
+        #[test]
+        fn all_explicit_discriminators() {
+            let errors = parse_errors(&AllExplicit::__idl_errors());
+            assert_eq!(
+                errors.iter().map(|e| e.code).collect::<Vec<_>>(),
+                vec![6010, 6020, 6030]
+            );
+            assert_eq!(custom_code(AllExplicit::Foo.into()), 6010);
+            assert_eq!(custom_code(AllExplicit::Bar.into()), 6020);
+            assert_eq!(custom_code(AllExplicit::Baz.into()), 6030);
+        }
+
+        #[error_code]
+        pub enum MixedDiscrim {
+            Alpha = 100,
+            Beta,
+            Gamma = 200,
+            Delta,
+            Epsilon,
+        }
+
+        #[test]
+        fn explicit_then_implicit_auto_increments() {
+            // After an explicit discriminant, subsequent unannotated
+            // variants pick up at `prev + 1`. The macro replicates Rust's
+            // own enum semantics, so `as u32` and the IDL agree.
+            let errors = parse_errors(&MixedDiscrim::__idl_errors());
+            assert_eq!(
+                errors.iter().map(|e| e.code).collect::<Vec<_>>(),
+                vec![6100, 6101, 6200, 6201, 6202]
+            );
+            assert_eq!(custom_code(MixedDiscrim::Beta.into()), 6101);
+            assert_eq!(custom_code(MixedDiscrim::Delta.into()), 6201);
+        }
+
+        #[error_code]
+        pub enum PartialMsg {
+            Plain,
+            #[msg("hello")]
+            Greeted,
+            Silent,
+        }
+
+        #[test]
+        fn variants_without_msg_omit_field() {
+            // `IdlErrorCode.msg` is `Option<String>` with
+            // `skip_serializing_if`; the absence of `#[msg]` must round-
+            // trip back through serde as `None`, not `Some("")`.
+            let errors = parse_errors(&PartialMsg::__idl_errors());
+            assert_eq!(errors[0].msg, None);
+            assert_eq!(errors[1].msg.as_deref(), Some("hello"));
+            assert_eq!(errors[2].msg, None);
+        }
+
+        #[error_code]
+        pub enum Escapes {
+            #[msg("a \"quoted\" word")]
+            Quoted,
+            #[msg("a backslash \\ here")]
+            Backslash,
+            #[msg("both \\\" together")]
+            Both,
+        }
+
+        #[test]
+        fn json_escaping_round_trips_through_serde() {
+            // The macro escapes `"` and `\`; serde unescapes them on the
+            // way back. A regression where the macro emitted invalid JSON
+            // would surface as a parse failure here, not a string compare.
+            let errors = parse_errors(&Escapes::__idl_errors());
+            assert_eq!(errors[0].msg.as_deref(), Some(r#"a "quoted" word"#));
+            assert_eq!(errors[1].msg.as_deref(), Some(r"a backslash \ here"));
+            assert_eq!(errors[2].msg.as_deref(), Some(r#"both \" together"#));
+        }
+
+        #[error_code(offset = 0)]
+        pub enum ZeroOffset {
+            Zero,
+            One,
+        }
+
+        #[test]
+        fn zero_offset_boundary() {
+            let errors = parse_errors(&ZeroOffset::__idl_errors());
+            assert_eq!(
+                errors.iter().map(|e| e.code).collect::<Vec<_>>(),
+                vec![0, 1]
+            );
+            assert_eq!(custom_code(ZeroOffset::Zero.into()), 0);
+        }
+    }
 }
