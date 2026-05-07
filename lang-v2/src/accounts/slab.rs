@@ -794,3 +794,117 @@ where
         H::__register_idl_deps(types);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Borrow-state registration tests.
+//
+// `from_ref` / `build_mutable` mark the account's pinocchio borrow_state so
+// that a copied `AccountView` cannot escape into a raw mutable byte slice
+// while a typed wrapper is alive — otherwise `Slab::Deref{,Mut}` would
+// produce `&H` / `&mut H` aliasing a `RefMut<'_, [u8]>` from a *safe*
+// `try_borrow_mut()` call on the copy.
+// ---------------------------------------------------------------------------
+
+#[cfg(all(test, feature = "testing"))]
+mod tests {
+    use {
+        super::*,
+        crate::{testing::AccountBuffer, AnchorAccount, Discriminator, Owner},
+        bytemuck::{Pod, Zeroable},
+        solana_program_error::ProgramError,
+    };
+
+    const PROGRAM_ID: [u8; 32] = [0x42; 32];
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Pod, Zeroable)]
+    struct Counter {
+        value: u64,
+        _pad: [u8; 8],
+    }
+
+    impl Owner for Counter {
+        fn owner(program_id: &Address) -> Address {
+            *program_id
+        }
+    }
+
+    impl Discriminator for Counter {
+        const DISCRIMINATOR: &'static [u8] = &[0xff, 0xb0, 0x04, 0xf5, 0xbc, 0xfd, 0x7c, 0x19];
+    }
+
+    type CounterAccount = Slab<Counter, HeaderOnly>;
+
+    fn setup(buf: &mut AccountBuffer<256>, writable: bool) {
+        let data_len = 8 + core::mem::size_of::<Counter>();
+        buf.init([0xAA; 32], PROGRAM_ID, data_len, false, writable, false);
+        let mut data = [0u8; 24];
+        data[..8].copy_from_slice(Counter::DISCRIMINATOR);
+        data[8..16].copy_from_slice(&42u64.to_le_bytes());
+        buf.write_data(&data);
+    }
+
+    #[test]
+    fn read_only_load_blocks_try_borrow_mut_on_copy() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, false);
+        let pid = Address::new_from_array(PROGRAM_ID);
+        let view = unsafe { buf.view() };
+
+        let acct = CounterAccount::load(view, &pid).unwrap();
+        assert_eq!(acct.value, 42);
+
+        let mut view_copy = view;
+        assert_eq!(
+            view_copy.try_borrow_mut().err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "try_borrow_mut on a view copy must fail while a typed Slab is alive"
+        );
+
+        drop(acct);
+    }
+
+    #[test]
+    fn read_only_load_allows_try_borrow_on_copy() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, false);
+        let pid = Address::new_from_array(PROGRAM_ID);
+        let view = unsafe { buf.view() };
+
+        let acct = CounterAccount::load(view, &pid).unwrap();
+
+        let view_copy = view;
+        assert!(
+            view_copy.try_borrow().is_ok(),
+            "try_borrow on a view copy should succeed alongside a read-only Slab"
+        );
+
+        drop(acct);
+    }
+
+    #[test]
+    fn mut_load_blocks_all_borrows_on_copy() {
+        let mut buf = AccountBuffer::<256>::new();
+        setup(&mut buf, true);
+        let pid = Address::new_from_array(PROGRAM_ID);
+        let view = unsafe { buf.view() };
+
+        // SAFETY: this is the only live wrapper over `view`'s data.
+        let mut acct = unsafe { CounterAccount::load_mut(view, &pid).unwrap() };
+        acct.value = 99;
+
+        let mut view_copy = view;
+        assert_eq!(
+            view_copy.try_borrow_mut().err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "try_borrow_mut on a view copy must fail while a mutable Slab is alive"
+        );
+        assert_eq!(
+            view_copy.try_borrow().err(),
+            Some(ProgramError::AccountBorrowFailed),
+            "try_borrow on a view copy must fail while a mutable Slab is alive"
+        );
+
+        drop(acct);
+    }
+}
