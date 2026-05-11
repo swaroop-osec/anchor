@@ -159,7 +159,7 @@ jobs:
             log=$(mktemp)
 
             # Build phase — surface build breaks as a distinct error.
-            if ! ( cd "$prog" && anchor coverage --skip-run ); then
+            if ! ( cd "$prog" && anchor coverage ); then
               echo "::error::`anchor coverage` failed in $prog"
               fail=1
               rm -f "$log"
