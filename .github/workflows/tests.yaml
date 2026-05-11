@@ -158,8 +158,8 @@ jobs:
             log=$(mktemp)
 
             # Build phase — surface build breaks as a distinct error.
-            if ! ( cd "$prog" && cargo build-sbf --tools-version v1.52 ); then
-              echo "::error::cargo build-sbf failed in $prog"
+            if ! ( cd "$prog" && anchor coverage --skip-run ); then
+              echo "::error::`anchor coverage` failed in $prog"
               fail=1
               rm -f "$log"
               echo "::endgroup::"
@@ -170,7 +170,7 @@ jobs:
             # without toggling `set +e`/`set -e` around it.
             rc=0
             ( cd "$prog" && timeout --kill-after=30 30 \
-                script -qec 'anchor debugger' "$log" ) || rc=$?
+                script -qec 'anchor debugger --skip-build' "$log" ) || rc=$?
 
             if [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ]; then
               echo "::error::anchor debugger failed in $prog (exit $rc)"
