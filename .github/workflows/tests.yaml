@@ -122,15 +122,16 @@ jobs:
 
       # CLI: unit-test + build sanity only. No anchor-binary install,
       # no `anchor build`/`anchor test` flows, no tests/* integration.
-      - run: cargo check -p anchor-cli
-      - run: cargo test -p anchor-cli
+      - name: Run CLI Tests
+        run: cargo test -p anchor-cli
 
       # Install the `anchor` bin to `~/.cargo/bin` (already on PATH via
       # rustup). Shared `./target/` via `--target-dir` means the build
       # reuses artifacts from prior `cargo test -p anchor-cli` instead
       # of starting from scratch in a temp tree; `--debug` skips release
       # opt (smoke test — runtime speed doesn't matter).
-      - run: cargo install --path cli --locked --debug --force --target-dir ./target
+      - name: Install CLI
+        run: cargo install --path cli --locked --debug --force --target-dir ./target
 
       # `anchor debugger` smoke test. These bench crates have no
       # Anchor.toml, so the CLI falls into loose mode and runs the full
