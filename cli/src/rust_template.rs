@@ -1,7 +1,7 @@
 use {
     crate::{
-        config::ProgramWorkspace, create_files, override_or_create_files, Files, PackageManager,
-        VERSION,
+        config::ProgramWorkspace, create_files, override_or_create_files, AbsolutePath, Files,
+        PackageManager, VERSION,
     },
     anyhow::Result,
     clap::{Parser, ValueEnum},
@@ -21,7 +21,7 @@ use {
 const ANCHOR_MSRV: &str = "1.89.0";
 
 /// Program initialization template
-#[derive(Clone, Debug, Default, Eq, PartialEq, Parser, ValueEnum)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Parser, ValueEnum, AbsolutePath)]
 pub enum ProgramTemplate {
     /// Program with a single `lib.rs` file (not recommended for production)
     Single,
@@ -37,15 +37,27 @@ pub fn create_program(
     test_template: Option<&TestTemplate>,
 ) -> Result<()> {
     let program_path = Path::new("programs").join(name);
+    let lib_rs_path = program_path.join("src").join("lib.rs");
     let common_files = vec![
-        ("Cargo.toml".into(), workspace_manifest().into()),
+        ("Cargo.toml".into(), workspace_manifest()),
         ("rust-toolchain.toml".into(), rust_toolchain_toml()),
         (
             program_path.join("Cargo.toml"),
             cargo_toml(name, test_template),
         ),
-        // Note: Xargo.toml is no longer needed for modern Solana builds using SBF
+        // One of the create_program_template_* functions will write the full
+        // lib.rs, but we need an empty stub for now so cargo won't throw an
+        // error when asking it where the `target` dir is located.
+        (lib_rs_path.clone(), "".into()),
+        // Note: Xargo.toml is no longer needed for modern Solana builds using SBF.
     ];
+
+    create_files(&common_files)?;
+
+    let target_path = crate::target_dir()?;
+
+    // Remove the stub version
+    fs::remove_file(&lib_rs_path)?;
 
     let template_files = match template {
         ProgramTemplate::Single => {
@@ -53,12 +65,14 @@ pub fn create_program(
                 "Note: Using single-file template. For better code organization and \
                  maintainability, consider using --template multiple (default)."
             );
-            create_program_template_single(name, &program_path)
+            create_program_template_single(name, &program_path, target_path)
         }
-        ProgramTemplate::Multiple => create_program_template_multiple(name, &program_path),
+        ProgramTemplate::Multiple => {
+            create_program_template_multiple(name, &program_path, target_path)
+        }
     };
 
-    create_files(&[common_files, template_files].concat())
+    create_files(&template_files)
 }
 
 /// Helper to create a rust-toolchain.toml at the workspace root
@@ -73,7 +87,7 @@ profile = "minimal"
 }
 
 /// Create a program with a single `lib.rs` file.
-fn create_program_template_single(name: &str, program_path: &Path) -> Files {
+fn create_program_template_single(name: &str, program_path: &Path, target_path: &Path) -> Files {
     vec![(
         program_path.join("src").join("lib.rs"),
         format!(
@@ -114,14 +128,14 @@ pub struct Initialize {{
     pub system_program: Program<System>,
 }}
 "#,
-            get_or_create_program_id(name),
+            get_or_create_program_id(name, target_path),
             name.to_snake_case(),
         ),
     )]
 }
 
 /// Create a program with multiple files for instructions, state...
-fn create_program_template_multiple(name: &str, program_path: &Path) -> Files {
+fn create_program_template_multiple(name: &str, program_path: &Path, target_path: &Path) -> Files {
     let src_path = program_path.join("src");
     vec![
         (
@@ -147,7 +161,7 @@ pub mod {} {{
     }}
 }}
 "#,
-                get_or_create_program_id(name),
+                get_or_create_program_id(name, target_path),
                 name.to_snake_case(),
             ),
         ),
@@ -219,12 +233,17 @@ pub struct Counter {
     ]
 }
 
-const fn workspace_manifest() -> &'static str {
-    r#"[workspace]
+fn workspace_manifest() -> String {
+    format!(
+        r#"[workspace]
 members = [
     "programs/*"
 ]
 resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "{ANCHOR_MSRV}"
 
 [profile.release]
 overflow-checks = true
@@ -235,6 +254,7 @@ opt-level = 3
 incremental = false
 codegen-units = 1
 "#
+    )
 }
 
 fn cargo_toml(name: &str, test_template: Option<&TestTemplate>) -> String {
@@ -272,7 +292,8 @@ anchor-v2-testing = { git = "https://github.com/solana-foundation/anchor.git", b
 name = "{0}"
 version = "0.1.0"
 description = "Created with Anchor"
-edition = "2021"
+edition.workspace = true
+rust-version.workspace = true
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -305,8 +326,9 @@ unexpected_cfgs = {{ level = "warn", check-cfg = ['cfg(target_os, values("solana
 }
 
 /// Read the program keypair file or create a new one if it doesn't exist.
-pub fn get_or_create_program_id(name: &str) -> Pubkey {
-    let keypair_path = Path::new("target")
+pub fn get_or_create_program_id(name: &str, target_path: impl AsRef<Path>) -> Pubkey {
+    let keypair_path = target_path
+        .as_ref()
         .join("deploy")
         .join(format!("{}-keypair.json", name.to_snake_case()));
 
@@ -424,7 +446,7 @@ describe("{}", () => {{
     )
 }
 
-pub fn jest(name: &str) -> String {
+pub fn js_jest(name: &str) -> String {
     format!(
         r#"const anchor = require("@anchor-lang/core");
 
@@ -467,6 +489,17 @@ pub fn package_json(jest: bool, license: String) -> String {
   "devDependencies": {{
     "jest": "^30.3.0",
     "prettier": "^3.8.3"
+  }},
+  "overrides": {{
+    "uuid": "^9.0.1"
+  }},
+  "resolutions": {{
+    "uuid": "^9.0.1"
+  }},
+  "pnpm": {{
+    "overrides": {{
+      "uuid": "^9.0.1"
+    }}
   }}
 }}
     "#
@@ -513,6 +546,17 @@ pub fn ts_package_json(jest: bool, license: String) -> String {
     "prettier": "^3.8.3",
     "ts-jest": "^29.4.9",
     "typescript": "^5.9.3"
+  }},
+  "overrides": {{
+    "uuid": "^9.0.1"
+  }},
+  "resolutions": {{
+    "uuid": "^9.0.1"
+  }},
+  "pnpm": {{
+    "overrides": {{
+      "uuid": "^9.0.1"
+    }}
   }}
 }}
 "#
@@ -711,7 +755,7 @@ anchor.workspace.{} = new anchor.Program({}, provider);
 }
 
 /// Test initialization template
-#[derive(Clone, Debug, Default, Eq, PartialEq, Parser, ValueEnum)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Parser, ValueEnum, AbsolutePath)]
 pub enum TestTemplate {
     /// Generate template for Mocha unit-test
     Mocha,
@@ -775,8 +819,13 @@ impl TestTemplate {
                 // Build the test suite.
                 fs::create_dir_all("tests")?;
 
-                let mut test = File::create(format!("tests/{}.test.js", &project_name))?;
-                test.write_all(jest(project_name).as_bytes())?;
+                if js {
+                    let mut test = File::create(format!("tests/{}.test.js", &project_name))?;
+                    test.write_all(js_jest(project_name).as_bytes())?;
+                } else {
+                    let mut test = File::create(format!("tests/{}.test.ts", &project_name))?;
+                    test.write_all(ts_jest(project_name).as_bytes())?;
+                }
             }
             Self::Rust => {
                 // Do not initialize git repo
