@@ -249,6 +249,12 @@ where
         destination.set_lamports(dest_lamports);
         self_view.set_lamports(0);
 
+        // Drop any active borrow guard before the raw scrub below so the
+        // subsequent `borrow_unchecked_mut` is unaliased. If the user
+        // already called `release_borrow()` (e.g. a CPI between mutation
+        // and close), this is a no-op.
+        self.borrow = SerializedAccountBorrow::Released;
+
         // Defense-in-depth: write a closed-account sentinel ([u8::MAX; 8])
         // over the discriminator before pinocchio's close() zeros the
         // 48-byte header (lamports + data_len + owner). pinocchio's
@@ -256,14 +262,19 @@ where
         // `close_zeros_the_48_byte_header` test. If a future caller
         // restores data_len + owner without going through SVM zero-on-
         // allocate, the stale discriminator would otherwise allow a
-        // reload with pre-close state. Skipped if the borrow is not
-        // mutable (caller programming error, separate concern).
-        if let SerializedAccountBorrow::Mutable { ref mut guard } = self.borrow {
-            if guard.len() >= 8 {
-                guard[..8].copy_from_slice(&[u8::MAX; 8]);
-            }
+        // reload with pre-close state. Mirrors `Slab::close`. Runs
+        // unconditionally on borrow state: `release_borrow + close` is a
+        // sanctioned call sequence (pre-CPI commit + derive-emitted
+        // close), so the scrub must not be gated on holding a live
+        // guard.
+        //
+        // SAFETY: `&mut self` plus the guard release above means no
+        // other live borrow on this account; the view's data is valid
+        // until pinocchio's `close()` reassigns ownership below.
+        let data = unsafe { self_view.borrow_unchecked_mut() };
+        if data.len() >= 8 {
+            data[..8].copy_from_slice(&[u8::MAX; 8]);
         }
-        self.borrow = SerializedAccountBorrow::Released;
 
         self_view.close()?;
         Ok(())

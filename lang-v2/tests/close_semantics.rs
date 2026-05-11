@@ -183,6 +183,45 @@ fn close_scrubs_discriminator_to_closed_sentinel() {
     );
 }
 
+// -- Regression: scrub still runs after `release_borrow()` -----------
+//
+// `release_borrow + close` is a sanctioned call sequence: a handler can
+// commit `self.data` and drop the guard pre-CPI (or before letting the
+// derive's exit_accounts run close). If the scrub were gated on a live
+// `Mutable` guard, this flow would silently leave the discriminator
+// intact in the data region and re-open the close-then-resurrect window
+// the scrub exists to defend against.
+
+#[test]
+fn close_scrubs_discriminator_even_after_release_borrow() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_vault_buf(&mut buf);
+
+    let mut dest_buf = AccountBuffer::<256>::new();
+    dest_buf.init([0xDD; 32], PROGRAM_ID, 0, false, true, false);
+
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    {
+        let view = unsafe { buf.view() };
+        let dest_view = unsafe { dest_buf.view() };
+        let mut vault = unsafe { BorshAccount::<Vault>::load_mut(view, &program_id) }.unwrap();
+
+        // Simulate the handler committing state and dropping the guard
+        // (e.g. pre-CPI) before close runs in exit_accounts.
+        vault.release_borrow().unwrap();
+        vault.close(dest_view).unwrap();
+    }
+
+    let data = raw_data_bytes(&buf);
+    assert_eq!(
+        &data[..8],
+        &[u8::MAX; 8][..],
+        "scrub must run regardless of borrow state — release_borrow + close is legal and must not \
+         leave the discriminator intact",
+    );
+}
+
 // -- Defense: subsequent load rejects because data_len == 0 ----------
 
 #[test]
