@@ -152,6 +152,14 @@ where
     pub fn reacquire_guard_only(&mut self) -> Result<(), ProgramError> {
         let mut view_mut = self.view;
         let data_ref = view_mut.try_borrow_mut()?;
+        // A resize that left the buffer shorter than the discriminator
+        // means the on-chain `T` discriminator was just truncated. Reject
+        // here so the realloc gets rolled back rather than leaving the
+        // account permanently un-loadable (and panicking exit() at
+        // `guard[DISC_LEN..]`).
+        if data_ref.len() < DISC_LEN {
+            return Err(ProgramError::AccountDataTooSmall);
+        }
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         self.borrow = SerializedAccountBorrow::Mutable { guard };
         Ok(())
