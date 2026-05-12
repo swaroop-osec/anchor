@@ -57,6 +57,7 @@ pub struct TokenAccount {
 unsafe impl Pod for TokenAccount {}
 unsafe impl Zeroable for TokenAccount {}
 
+
 // TokenAccount is defined by the SPL Token program, not by the user's program
 // — its layout is known to any SPL-aware client. Default `__IDL_TYPE = None`
 // keeps it out of the user's IDL `types[]` array (matches v1's
@@ -559,11 +560,34 @@ pub mod cpi {
     const DISC_BURN_CHECKED: u8 = 15;
     const DISC_SYNC_NATIVE: u8 = 17;
 
-    pub fn transfer<'a>(ctx: CpiContext<'a, accounts::Transfer<'a>>, amount: u64) {
+    // Encode an SPL Token instruction with layout `[disc u8][amount u64 LE]`.
+    //
+    // Extracted as a pure helper so the Kani harness below can verify the
+    // real encoder byte-for-byte. Without this extraction, harnesses would
+    // have to rebuild the layout inline, leaving the production encoders
+    // (`transfer`, `mint_to`, `burn`, `approve`) unverified — they bury the
+    // encoding inside functions whose ultimate `ctx.invoke` is opaque to
+    // CBMC.
+    #[inline]
+    fn encode_amount_ix(disc: u8, amount: u64) -> [u8; 9] {
         let mut data = [0u8; 9];
-        data[0] = DISC_TRANSFER;
+        data[0] = disc;
         data[1..9].copy_from_slice(&amount.to_le_bytes());
-        ctx.invoke(&data);
+        data
+    }
+
+    // `*Checked` variants add a trailing `decimals` byte — same Kani rationale.
+    #[inline]
+    fn encode_amount_decimals_ix(disc: u8, amount: u64, decimals: u8) -> [u8; 10] {
+        let mut data = [0u8; 10];
+        data[0] = disc;
+        data[1..9].copy_from_slice(&amount.to_le_bytes());
+        data[9] = decimals;
+        data
+    }
+
+    pub fn transfer<'a>(ctx: CpiContext<'a, accounts::Transfer<'a>>, amount: u64) {
+        ctx.invoke(&encode_amount_ix(DISC_TRANSFER, amount));
     }
 
     pub fn transfer_checked<'a>(
@@ -571,18 +595,15 @@ pub mod cpi {
         amount: u64,
         decimals: u8,
     ) {
-        let mut data = [0u8; 10];
-        data[0] = DISC_TRANSFER_CHECKED;
-        data[1..9].copy_from_slice(&amount.to_le_bytes());
-        data[9] = decimals;
-        ctx.invoke(&data);
+        ctx.invoke(&encode_amount_decimals_ix(
+            DISC_TRANSFER_CHECKED,
+            amount,
+            decimals,
+        ));
     }
 
     pub fn mint_to<'a>(ctx: CpiContext<'a, accounts::MintTo<'a>>, amount: u64) {
-        let mut data = [0u8; 9];
-        data[0] = DISC_MINT_TO;
-        data[1..9].copy_from_slice(&amount.to_le_bytes());
-        ctx.invoke(&data);
+        ctx.invoke(&encode_amount_ix(DISC_MINT_TO, amount));
     }
 
     pub fn mint_to_checked<'a>(
@@ -590,18 +611,15 @@ pub mod cpi {
         amount: u64,
         decimals: u8,
     ) {
-        let mut data = [0u8; 10];
-        data[0] = DISC_MINT_TO_CHECKED;
-        data[1..9].copy_from_slice(&amount.to_le_bytes());
-        data[9] = decimals;
-        ctx.invoke(&data);
+        ctx.invoke(&encode_amount_decimals_ix(
+            DISC_MINT_TO_CHECKED,
+            amount,
+            decimals,
+        ));
     }
 
     pub fn burn<'a>(ctx: CpiContext<'a, accounts::Burn<'a>>, amount: u64) {
-        let mut data = [0u8; 9];
-        data[0] = DISC_BURN;
-        data[1..9].copy_from_slice(&amount.to_le_bytes());
-        ctx.invoke(&data);
+        ctx.invoke(&encode_amount_ix(DISC_BURN, amount));
     }
 
     pub fn burn_checked<'a>(
@@ -609,18 +627,15 @@ pub mod cpi {
         amount: u64,
         decimals: u8,
     ) {
-        let mut data = [0u8; 10];
-        data[0] = DISC_BURN_CHECKED;
-        data[1..9].copy_from_slice(&amount.to_le_bytes());
-        data[9] = decimals;
-        ctx.invoke(&data);
+        ctx.invoke(&encode_amount_decimals_ix(
+            DISC_BURN_CHECKED,
+            amount,
+            decimals,
+        ));
     }
 
     pub fn approve<'a>(ctx: CpiContext<'a, accounts::Approve<'a>>, amount: u64) {
-        let mut data = [0u8; 9];
-        data[0] = DISC_APPROVE;
-        data[1..9].copy_from_slice(&amount.to_le_bytes());
-        ctx.invoke(&data);
+        ctx.invoke(&encode_amount_ix(DISC_APPROVE, amount));
     }
 
     pub fn approve_checked<'a>(
@@ -628,11 +643,11 @@ pub mod cpi {
         amount: u64,
         decimals: u8,
     ) {
-        let mut data = [0u8; 10];
-        data[0] = DISC_APPROVE_CHECKED;
-        data[1..9].copy_from_slice(&amount.to_le_bytes());
-        data[9] = decimals;
-        ctx.invoke(&data);
+        ctx.invoke(&encode_amount_decimals_ix(
+            DISC_APPROVE_CHECKED,
+            amount,
+            decimals,
+        ));
     }
 
     pub fn revoke<'a>(ctx: CpiContext<'a, accounts::Revoke<'a>>) {
@@ -683,3 +698,4 @@ pub mod cpi {
         ctx.invoke(&[DISC_SYNC_NATIVE])
     }
 }
+

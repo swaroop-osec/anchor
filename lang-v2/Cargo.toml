@@ -77,6 +77,7 @@ level = "warn"
 check-cfg = [
     'cfg(target_os, values("solana"))',
     'cfg(feature, values("idl-build"))',
+    'cfg(kani)',
 ]
 
 # Integration tests that exercise `unsafe` paths via the `testing`
@@ -104,4 +105,24 @@ required-features = ["testing"]
 
 [[test]]
 name = "cursor_and_remaining_accounts"
+required-features = ["testing"]
+
+[[test]]
+name = "miri_account_view_aliasing"
+required-features = ["testing"]
+
+[[test]]
+name = "miri_cursor_walk"
+required-features = ["testing"]
+
+[[test]]
+name = "miri_slab_alignment"
+required-features = ["testing"]
+
+[[test]]
+name = "miri_slab_construction"
+required-features = ["testing"]
+
+[[test]]
+name = "miri_wrapper_accounts"
 required-features = ["testing"]

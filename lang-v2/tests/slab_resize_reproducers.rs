@@ -53,7 +53,7 @@ fn disc_bytes() -> [u8; 8] {
 }
 
 fn setup_ledger(capacity: usize, populated_len: u32) -> AccountBuffer<256> {
-    let mut buf = AccountBuffer::<256>::new();
+    let buf = AccountBuffer::<256>::new();
     let data_len = ITEMS_OFFSET + capacity * ITEM_SIZE;
     buf.init(
         [0xAA; 32], PROGRAM_ID, data_len, /*signer*/ false, /*writable*/ true,
@@ -76,7 +76,7 @@ fn expected_min_lamports(space: usize) -> Result<u64, ProgramError> {
 
 #[test]
 fn load_mut_rejects_data_len_below_items_offset() {
-    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 0);
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 0);
     let program_id = Address::new_from_array(PROGRAM_ID);
 
     // Load succeeds — data_len (60) > ITEMS_OFFSET (28).
@@ -129,7 +129,7 @@ fn load_mut_rejects_len_greater_than_capacity_via_validate_tail() {
 // `ITEMS_OFFSET`.
 #[test]
 fn capacity_returns_zero_when_data_len_below_items_offset() {
-    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 0);
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 0);
     let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
@@ -149,7 +149,7 @@ fn capacity_returns_zero_when_data_len_below_items_offset() {
 #[test]
 fn as_slice_clamps_len_to_capacity_after_external_shrink() {
     // Buffer with capacity 4, populated with 3 items (len=3).
-    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
     let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
@@ -177,7 +177,7 @@ fn as_slice_clamps_len_to_capacity_after_external_shrink() {
 
 #[test]
 fn pop_after_external_shrink_uses_effective_len() {
-    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
     let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
@@ -201,7 +201,7 @@ fn pop_after_external_shrink_uses_effective_len() {
 
 #[test]
 fn swap_remove_after_external_shrink_uses_effective_len() {
-    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
     let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
@@ -220,7 +220,7 @@ fn swap_remove_after_external_shrink_uses_effective_len() {
 #[test]
 #[should_panic(expected = "swap_remove index out of bounds")]
 fn swap_remove_panics_when_index_geq_effective_len() {
-    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
     let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
@@ -250,7 +250,7 @@ fn clear_panics_when_tail_mutation_uses_guard_bytes_mut_on_read_only_slab() {
 
 #[test]
 fn truncate_clamps_to_effective_len_after_shrink() {
-    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
     let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
@@ -276,7 +276,7 @@ fn truncate_clamps_to_effective_len_after_shrink() {
 
 #[test]
 fn slab_resize_to_capacity_clamps_len() {
-    let mut buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
     let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
