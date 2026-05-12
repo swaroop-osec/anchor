@@ -1,7 +1,7 @@
 use {
     crate::{
         config::{Config, Program, WithPath},
-        target_dir, ConfigOverride, ProgramCommand,
+        target_dir, ConfigOverride, ProgramCommand, DEFAULT_MAX_SIGN_ATTEMPTS,
     },
     anchor_lang_idl::types::Idl,
     anyhow::{anyhow, bail, Result},
@@ -41,6 +41,14 @@ fn parse_priority_fee_from_args(args: &[String]) -> Option<u64> {
     args.windows(2)
         .find(|pair| pair[0] == "--with-compute-unit-price")
         .and_then(|pair| pair[1].parse().ok())
+}
+
+/// Parse `--max-sign-attempts` from solana args, falling back to the default.
+fn parse_max_sign_attempts_from_args(args: &[String]) -> usize {
+    args.windows(2)
+        .find(|pair| pair[0] == "--max-sign-attempts")
+        .and_then(|pair| pair[1].parse().ok())
+        .unwrap_or(DEFAULT_MAX_SIGN_ATTEMPTS)
 }
 
 fn discover_cargo_metadata(start_dir: &Path) -> Result<Option<Metadata>> {
@@ -491,6 +499,7 @@ pub fn program_deploy(
 
     // Parse priority fee from solana_args
     let priority_fee = parse_priority_fee_from_args(&solana_args);
+    let max_sign_attempts = parse_max_sign_attempts_from_args(&solana_args);
 
     // Read program data
     let program_data = fs::read(&program_filepath).map_err(|e| {
@@ -581,6 +590,7 @@ pub fn program_deploy(
                     min_context_slot: None,
                 },
                 priority_fee,
+                max_sign_attempts,
             )?
         };
 
@@ -617,6 +627,7 @@ pub fn program_deploy(
                     min_context_slot: None,
                 },
                 priority_fee,
+                max_sign_attempts,
             )?
         };
 
@@ -1026,6 +1037,7 @@ fn program_write_buffer(
             min_context_slot: None,
         },
         None,
+        DEFAULT_MAX_SIGN_ATTEMPTS,
     )?;
 
     println!("Buffer: {}", buffer_pubkey);
@@ -1329,6 +1341,7 @@ pub fn program_upgrade(
 
     // Parse priority fee from solana_args
     let priority_fee = parse_priority_fee_from_args(&solana_args);
+    let max_sign_attempts = parse_max_sign_attempts_from_args(&solana_args);
 
     // Determine upgrade authority
     let upgrade_authority_keypair = if let Some(auth_path) = upgrade_authority {
@@ -1407,6 +1420,7 @@ pub fn program_upgrade(
                 min_context_slot: None,
             },
             priority_fee,
+            max_sign_attempts,
         );
 
         let buffer_pubkey = match result {
@@ -1871,6 +1885,7 @@ pub fn write_program_buffer(
     commitment: CommitmentConfig,
     send_transaction_config: RpcSendTransactionConfig,
     priority_fee: Option<u64>,
+    max_sign_attempts: usize,
 ) -> Result<Pubkey> {
     let buffer_pubkey = buffer_keypair.pubkey();
 
@@ -1912,7 +1927,6 @@ pub fn write_program_buffer(
         priority_fee,
     );
 
-    const MAX_SIGN_ATTEMPTS: usize = 5;
     send_deploy_messages(
         rpc_client,
         initial_message,
@@ -1922,7 +1936,7 @@ pub fn write_program_buffer(
         Some(buffer_keypair),
         Some(payer),
         None,
-        MAX_SIGN_ATTEMPTS,
+        max_sign_attempts,
         commitment,
         send_transaction_config,
     )?;

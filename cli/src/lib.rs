@@ -5026,6 +5026,11 @@ fn get_node_version() -> Result<Version> {
     Version::parse(output).map_err(Into::into)
 }
 
+/// Default re-sign attempts when blockhashes expire mid-deploy.
+/// Matches Agave's `solana program deploy` default (agave/cli/src/program.rs).
+/// Each blockhash window is ~60s, so 5 → ~5 minutes of resign budget.
+pub const DEFAULT_MAX_SIGN_ATTEMPTS: usize = 5;
+
 fn add_recommended_deployment_solana_args(
     client: &RpcClient,
     args: Vec<String>,
@@ -5039,7 +5044,6 @@ fn add_recommended_deployment_solana_args(
         augmented_args.push(priority_fee.to_string());
     }
 
-    const DEFAULT_MAX_SIGN_ATTEMPTS: u8 = 30;
     if !args.contains(&"--max-sign-attempts".to_string()) {
         augmented_args.push("--max-sign-attempts".to_string());
         augmented_args.push(DEFAULT_MAX_SIGN_ATTEMPTS.to_string());
