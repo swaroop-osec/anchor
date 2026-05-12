@@ -10,6 +10,8 @@ use {
         send_and_confirm_transactions_in_parallel_blocking_v2, SendAndConfirmConfigV2,
     },
     solana_commitment_config::CommitmentConfig,
+    solana_compute_budget_interface::ComputeBudgetInstruction,
+    solana_instruction::Instruction,
     solana_keypair::Keypair,
     solana_loader_v3_interface::{
         instruction as loader_v3_instruction, state::UpgradeableLoaderState,
@@ -578,6 +580,7 @@ pub fn program_deploy(
                     max_retries: None,
                     min_context_slot: None,
                 },
+                priority_fee,
             )?
         };
 
@@ -613,6 +616,7 @@ pub fn program_deploy(
                     max_retries: None,
                     min_context_slot: None,
                 },
+                priority_fee,
             )?
         };
 
@@ -1021,6 +1025,7 @@ fn program_write_buffer(
             max_retries: None,
             min_context_slot: None,
         },
+        None,
     )?;
 
     println!("Buffer: {}", buffer_pubkey);
@@ -1401,6 +1406,7 @@ pub fn program_upgrade(
                 max_retries: None,
                 min_context_slot: None,
             },
+            priority_fee,
         );
 
         let buffer_pubkey = match result {
@@ -1864,6 +1870,7 @@ pub fn write_program_buffer(
     max_len: Option<usize>,
     commitment: CommitmentConfig,
     send_transaction_config: RpcSendTransactionConfig,
+    priority_fee: Option<u64>,
 ) -> Result<Pubkey> {
     let buffer_pubkey = buffer_keypair.pubkey();
 
@@ -1902,6 +1909,7 @@ pub fn write_program_buffer(
         buffer_authority,
         &payer.pubkey(),
         &blockhash,
+        priority_fee,
     );
 
     const MAX_SIGN_ATTEMPTS: usize = 5;
@@ -1928,11 +1936,31 @@ fn prepare_write_messages(
     buffer_authority: &Pubkey,
     fee_payer: &Pubkey,
     blockhash: &Hash,
+    priority_fee: Option<u64>,
 ) -> Vec<Message> {
+    // Tight CU limit so priority-fee-per-CU stays competitive with mainnet txs.
+    // Tx total: 2 × ComputeBudget ixs (150 each) + loader v3 Write (2,370) = 2,670.
+    // Source: agave/programs/compute-budget/src/lib.rs (DEFAULT_COMPUTE_UNITS),
+    // agave/programs/bpf_loader/src/lib.rs (UPGRADEABLE_LOADER_COMPUTE_UNITS).
+    const WRITE_COMPUTE_UNIT_LIMIT: u32 = 3_000;
+
     let create_msg = |offset: u32, bytes: Vec<u8>| {
-        let instruction =
-            loader_v3_instruction::write(buffer_pubkey, buffer_authority, offset, bytes);
-        Message::new_with_blockhash(&[instruction], Some(fee_payer), blockhash)
+        let mut instructions: Vec<Instruction> = Vec::with_capacity(3);
+        if let Some(price) = priority_fee {
+            if price > 0 {
+                instructions.push(ComputeBudgetInstruction::set_compute_unit_price(price));
+            }
+        }
+        instructions.push(ComputeBudgetInstruction::set_compute_unit_limit(
+            WRITE_COMPUTE_UNIT_LIMIT,
+        ));
+        instructions.push(loader_v3_instruction::write(
+            buffer_pubkey,
+            buffer_authority,
+            offset,
+            bytes,
+        ));
+        Message::new_with_blockhash(&instructions, Some(fee_payer), blockhash)
     };
 
     let mut write_messages = Vec::new();
