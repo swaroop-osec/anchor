@@ -866,9 +866,16 @@ fn get_cluster_and_wallet(cfg_override: &ConfigOverride) -> Result<(String, Stri
     Ok((final_cluster, wallet_path))
 }
 
-/// Get the recommended priority fee from the RPC client, falling back to 0 if unavailable
-pub fn get_recommended_micro_lamport_fee(client: &RpcClient) -> u64 {
-    let mut fees = match client.get_recent_prioritization_fees(&[]) {
+/// Get the recommended priority fee from the RPC client, falling back to 0 if unavailable.
+/// `write_locked_accounts` scopes the query to txs that write-locked all of these
+/// accounts in recent blocks — passing the accounts the upcoming tx will lock
+/// gives a contention-aware fee. Pass `&[]` for a global median (often too low
+/// for hot mainnet windows).
+pub fn get_recommended_micro_lamport_fee(
+    client: &RpcClient,
+    write_locked_accounts: &[Pubkey],
+) -> u64 {
+    let mut fees = match client.get_recent_prioritization_fees(write_locked_accounts) {
         // Fees may be empty or query may fail, e.g. on localnet
         Err(e) => {
             eprintln!("Warning: failed to fetch prioritization fees, defaulting to 0: {e}");
@@ -896,8 +903,10 @@ pub fn prepend_compute_unit_ix(
     instructions: Vec<Instruction>,
     client: &RpcClient,
     priority_fee: Option<u64>,
+    write_locked_accounts: &[Pubkey],
 ) -> Vec<Instruction> {
-    let priority_fee = priority_fee.unwrap_or_else(|| get_recommended_micro_lamport_fee(client));
+    let priority_fee = priority_fee
+        .unwrap_or_else(|| get_recommended_micro_lamport_fee(client, write_locked_accounts));
 
     if priority_fee > 0 {
         let mut instructions_appended = instructions.clone();
@@ -4285,10 +4294,6 @@ fn deploy(
         let url = cluster_url(cfg, &cfg.test_validator, &cfg.surfpool_config);
         let keypair = cfg.provider.wallet.to_string();
 
-        // Augment the given solana args with recommended defaults.
-        let client = create_client(&url);
-        let solana_args = add_recommended_deployment_solana_args(&client, solana_args)?;
-
         cfg.run_hooks(HookType::PreDeploy)?;
         // Deploy the programs.
         println!("Deploying cluster: {url}");
@@ -5034,12 +5039,13 @@ pub const DEFAULT_MAX_SIGN_ATTEMPTS: usize = 5;
 fn add_recommended_deployment_solana_args(
     client: &RpcClient,
     args: Vec<String>,
+    write_locked_accounts: &[Pubkey],
 ) -> Result<Vec<String>> {
     let mut augmented_args = args.clone();
 
     // If no priority fee is provided, calculate a recommended fee based on recent txs.
     if !args.contains(&"--with-compute-unit-price".to_string()) {
-        let priority_fee = get_recommended_micro_lamport_fee(client);
+        let priority_fee = get_recommended_micro_lamport_fee(client, write_locked_accounts);
         augmented_args.push("--with-compute-unit-price".to_string());
         augmented_args.push(priority_fee.to_string());
     }

@@ -494,23 +494,8 @@ pub fn program_deploy(
         binary_path
     };
 
-    // Augment solana_args with recommended defaults (priority fees, max sign attempts, buffer)
-    let solana_args = crate::add_recommended_deployment_solana_args(&rpc_client, solana_args)?;
-
-    // Parse priority fee from solana_args
-    let priority_fee = parse_priority_fee_from_args(&solana_args);
-    let max_sign_attempts = parse_max_sign_attempts_from_args(&solana_args);
-
-    // Read program data
-    let program_data = fs::read(&program_filepath).map_err(|e| {
-        anyhow!(
-            "Failed to read program file {}: {}",
-            program_filepath.display(),
-            e
-        )
-    })?;
-
-    // Determine program keypair
+    // Determine program keypair (loaded before fee discovery so program_id can
+    // scope the recent-prioritization-fees query to this program's contention).
     let loaded_program_keypair = if let Some(keypair_path) = program_keypair {
         // Load from specified keypair file
         Keypair::read_from_file(&keypair_path).map_err(|e| {
@@ -545,6 +530,25 @@ pub fn program_deploy(
     };
 
     let program_id = loaded_program_keypair.pubkey();
+
+    // Augment solana_args with recommended defaults (priority fees, max sign attempts, buffer).
+    // Pass program_id so the auto fee query reflects prior contention with this
+    // program (programdata is write-locked during upgrade).
+    let solana_args =
+        crate::add_recommended_deployment_solana_args(&rpc_client, solana_args, &[program_id])?;
+
+    // Parse priority fee from solana_args
+    let priority_fee = parse_priority_fee_from_args(&solana_args);
+    let max_sign_attempts = parse_max_sign_attempts_from_args(&solana_args);
+
+    // Read program data
+    let program_data = fs::read(&program_filepath).map_err(|e| {
+        anyhow!(
+            "Failed to read program file {}: {}",
+            program_filepath.display(),
+            e
+        )
+    })?;
 
     // Determine upgrade authority
     let upgrade_authority = if let Some(auth_path) = upgrade_authority {
@@ -907,8 +911,14 @@ fn deploy_program(
     )
     .map_err(|e| anyhow!("Failed to create deploy instruction: {}", e))?;
 
-    // Add priority fee if specified
-    deploy_ixs = crate::prepend_compute_unit_ix(deploy_ixs, rpc_client, priority_fee);
+    // Add priority fee if specified. Pass write-locked accounts so the RPC
+    // fee fallback returns contention-aware data rather than the global median.
+    deploy_ixs = crate::prepend_compute_unit_ix(
+        deploy_ixs,
+        rpc_client,
+        priority_fee,
+        &[program_id, *buffer],
+    );
 
     let recent_blockhash = rpc_client.get_latest_blockhash()?;
     let deploy_tx = Transaction::new_signed_with_payer(
@@ -952,7 +962,12 @@ fn upgrade_program(
     );
 
     // Add priority fee if specified
-    let upgrade_ixs = crate::prepend_compute_unit_ix(vec![upgrade_ix], rpc_client, priority_fee);
+    let upgrade_ixs = crate::prepend_compute_unit_ix(
+        vec![upgrade_ix],
+        rpc_client,
+        priority_fee,
+        &[*program_id, *buffer],
+    );
 
     let recent_blockhash = rpc_client.get_latest_blockhash()?;
     let upgrade_tx = Transaction::new_signed_with_payer(
@@ -1332,9 +1347,11 @@ pub fn program_upgrade(
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = get_payer_keypair(cfg_override, &config)?;
 
-    // Augment solana_args with recommended defaults if provided
+    // Augment solana_args with recommended defaults if provided.
+    // Pass program_id so recent prio-fee query reflects past upgrade contention
+    // for this program (programdata is write-locked during upgrade).
     let solana_args = if !solana_args.is_empty() {
-        crate::add_recommended_deployment_solana_args(&rpc_client, solana_args)?
+        crate::add_recommended_deployment_solana_args(&rpc_client, solana_args, &[program_id])?
     } else {
         solana_args
     };
