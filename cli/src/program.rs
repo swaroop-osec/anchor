@@ -614,6 +614,7 @@ pub fn program_deploy(
             &upgrade_authority,
             priority_fee,
             true, // skip_program_verification
+            skip_preflight,
         )?;
     } else {
         // New deployment
@@ -652,6 +653,7 @@ pub fn program_deploy(
             &upgrade_authority,
             max_data_len,
             priority_fee,
+            skip_preflight,
         )?;
     }
 
@@ -897,6 +899,7 @@ fn verify_program_can_be_upgraded(
 }
 
 #[allow(deprecated)]
+#[allow(clippy::too_many_arguments)]
 fn deploy_program(
     rpc_client: &RpcClient,
     payer: &Keypair,
@@ -905,6 +908,7 @@ fn deploy_program(
     upgrade_authority: &Keypair,
     max_data_len: usize,
     priority_fee: Option<u64>,
+    skip_preflight: bool,
 ) -> Result<()> {
     let program_id = program_keypair.pubkey();
     let mut deploy_ixs = loader_v3_instruction::deploy_with_max_program_len(
@@ -935,13 +939,27 @@ fn deploy_program(
         recent_blockhash,
     );
 
+    // `_with_spinner_and_config` over bare `send_and_confirm_transaction`:
+    // honors caller's preflight choice, shows progress, and lets RPC tuning
+    // (max_retries, commitment) flow through if added later.
     rpc_client
-        .send_and_confirm_transaction(&deploy_tx)
+        .send_and_confirm_transaction_with_spinner_and_config(
+            &deploy_tx,
+            CommitmentConfig::confirmed(),
+            RpcSendTransactionConfig {
+                skip_preflight,
+                preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
+                encoding: None,
+                max_retries: None,
+                min_context_slot: None,
+            },
+        )
         .map_err(|e| anyhow!("Failed to deploy program: {}", e))?;
 
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn upgrade_program(
     rpc_client: &RpcClient,
     payer: &Keypair,
@@ -950,6 +968,7 @@ fn upgrade_program(
     upgrade_authority: &Keypair,
     priority_fee: Option<u64>,
     skip_program_verification: bool,
+    skip_preflight: bool,
 ) -> Result<()> {
     // Verify program can be upgraded (unless caller already verified)
     if !skip_program_verification {
@@ -985,7 +1004,17 @@ fn upgrade_program(
     );
 
     let signature = rpc_client
-        .send_and_confirm_transaction(&upgrade_tx)
+        .send_and_confirm_transaction_with_spinner_and_config(
+            &upgrade_tx,
+            CommitmentConfig::confirmed(),
+            RpcSendTransactionConfig {
+                skip_preflight,
+                preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
+                encoding: None,
+                max_retries: None,
+                min_context_slot: None,
+            },
+        )
         .map_err(|e| anyhow!("Failed to upgrade program: {}", e))?;
     println!("Signature: {}", signature);
     Ok(())
@@ -1392,6 +1421,7 @@ pub fn program_upgrade(
             &upgrade_authority_keypair,
             priority_fee,
             true, // skip_program_verification - already done above
+            skip_preflight,
         );
     }
 
@@ -1470,6 +1500,7 @@ pub fn program_upgrade(
             &upgrade_authority_keypair,
             priority_fee,
             true, // skip_program_verification
+            skip_preflight,
         );
 
         match result {
