@@ -51,6 +51,12 @@ fn parse_max_sign_attempts_from_args(args: &[String]) -> usize {
         .unwrap_or(DEFAULT_MAX_SIGN_ATTEMPTS)
 }
 
+/// Opt-in: skip RPC preflight on chunked write txs.
+/// Default false to match Agave's `solana program deploy` behavior.
+fn parse_skip_preflight_from_args(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--skip-preflight")
+}
+
 fn discover_cargo_metadata(start_dir: &Path) -> Result<Option<Metadata>> {
     match MetadataCommand::new()
         .current_dir(start_dir)
@@ -540,6 +546,7 @@ pub fn program_deploy(
     // Parse priority fee from solana_args
     let priority_fee = parse_priority_fee_from_args(&solana_args);
     let max_sign_attempts = parse_max_sign_attempts_from_args(&solana_args);
+    let skip_preflight = parse_skip_preflight_from_args(&solana_args);
 
     // Read program data
     let program_data = fs::read(&program_filepath).map_err(|e| {
@@ -587,7 +594,7 @@ pub fn program_deploy(
                 max_len,
                 CommitmentConfig::confirmed(),
                 RpcSendTransactionConfig {
-                    skip_preflight: false,
+                    skip_preflight,
                     preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
                     encoding: None,
                     max_retries: None,
@@ -624,7 +631,7 @@ pub fn program_deploy(
                 max_len,
                 CommitmentConfig::confirmed(),
                 RpcSendTransactionConfig {
-                    skip_preflight: false,
+                    skip_preflight,
                     preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
                     encoding: None,
                     max_retries: None,
@@ -1359,6 +1366,7 @@ pub fn program_upgrade(
     // Parse priority fee from solana_args
     let priority_fee = parse_priority_fee_from_args(&solana_args);
     let max_sign_attempts = parse_max_sign_attempts_from_args(&solana_args);
+    let skip_preflight = parse_skip_preflight_from_args(&solana_args);
 
     // Determine upgrade authority
     let upgrade_authority_keypair = if let Some(auth_path) = upgrade_authority {
@@ -1430,7 +1438,7 @@ pub fn program_upgrade(
             None, // max_len
             CommitmentConfig::confirmed(),
             RpcSendTransactionConfig {
-                skip_preflight: false,
+                skip_preflight,
                 preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
                 encoding: None,
                 max_retries: None,
