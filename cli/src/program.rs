@@ -62,6 +62,12 @@ fn ensure_buffer_keypair_arg(mut args: Vec<String>, program_name: &str) -> Resul
         return Ok(args);
     }
     let deploy_dir = target_dir()?.join("deploy");
+    if deploy_dir.exists() && !deploy_dir.is_dir() {
+        bail!(
+            "Cannot create deploy dir at {}: path exists but is not a directory",
+            deploy_dir.display()
+        );
+    }
     std::fs::create_dir_all(&deploy_dir).map_err(|e| {
         anyhow!(
             "Failed to create deploy dir {}: {}",
