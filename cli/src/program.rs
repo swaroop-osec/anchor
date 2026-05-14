@@ -36,6 +36,50 @@ use {
     },
 };
 
+/// Outer retry cap on the full deploy/upgrade cycle (fetch buffer → write →
+/// final ix). Each attempt re-fetches on-chain buffer state for diff-only
+/// resume, so already-landed chunks aren't re-sent. Bounded small because
+/// beyond ~3 outer attempts failures are almost always persistent (wrong
+/// authority, fee floor, programdata too small) and more attempts just burn
+/// lamports. Inner per-batch resigning is governed by `max_sign_attempts`
+/// (default `DEFAULT_MAX_SIGN_ATTEMPTS`).
+const MAX_DEPLOY_ATTEMPTS: u32 = 3;
+
+/// CU limit for each buffer Write tx. Tight so priority-fee-per-CU stays
+/// competitive with mainnet contention. Actual tx cost: 2 × ComputeBudget ixs
+/// (150 each) + loader v3 Write (2,370) = 2,670. Sources:
+/// agave/programs/compute-budget/src/lib.rs (DEFAULT_COMPUTE_UNITS),
+/// agave/programs/bpf_loader/src/lib.rs (UPGRADEABLE_LOADER_COMPUTE_UNITS).
+const WRITE_COMPUTE_UNIT_LIMIT: u32 = 3_000;
+
+/// If `--buffer` is absent, inject a per-program persistent path at
+/// `target/deploy/{program_name}-upgrade-buffer.json`. Creates the keypair
+/// file on first run; subsequent runs reuse it so a failed deploy/upgrade
+/// resumes automatically (the on-chain buffer at that pubkey carries the
+/// partial bytes, and `write_program_buffer` diffs against it).
+fn ensure_buffer_keypair_arg(mut args: Vec<String>, program_name: &str) -> Result<Vec<String>> {
+    if args.iter().any(|a| a == "--buffer") {
+        return Ok(args);
+    }
+    let deploy_dir = target_dir()?.join("deploy");
+    std::fs::create_dir_all(&deploy_dir).map_err(|e| {
+        anyhow!(
+            "Failed to create deploy dir {}: {}",
+            deploy_dir.display(),
+            e
+        )
+    })?;
+    let path = deploy_dir.join(format!("{program_name}-upgrade-buffer.json"));
+    if !path.exists() {
+        Keypair::new().write_to_file(&path).map_err(|e| {
+            anyhow!("Failed to write buffer keypair to {}: {e:?}", path.display())
+        })?;
+    }
+    args.push("--buffer".to_owned());
+    args.push(path.to_string_lossy().into_owned());
+    Ok(args)
+}
+
 /// Parse priority fee from solana args
 fn parse_priority_fee_from_args(args: &[String]) -> Option<u64> {
     args.windows(2)
@@ -55,6 +99,156 @@ fn parse_max_sign_attempts_from_args(args: &[String]) -> usize {
 /// Default false to match Agave's `solana program deploy` behavior.
 fn parse_skip_preflight_from_args(args: &[String]) -> bool {
     args.iter().any(|a| a == "--skip-preflight")
+}
+
+/// Parse the `--buffer <path>` keypair path. `add_recommended_deployment_solana_args`
+/// injects a temp keypair path if the user didn't supply one — that's where
+/// persistence across retries comes from.
+fn parse_buffer_keypair_path_from_args(args: &[String]) -> Option<PathBuf> {
+    args.windows(2)
+        .find(|pair| pair[0] == "--buffer")
+        .map(|pair| PathBuf::from(&pair[1]))
+}
+
+/// Read the persistent buffer keypair from the path in solana_args.
+/// The path is guaranteed to exist post-`add_recommended_deployment_solana_args`
+/// (which creates a new keypair if missing). Returns None only if the flag is
+/// absent entirely (e.g. caller did not augment).
+fn read_buffer_keypair_from_args(args: &[String]) -> Result<Option<Keypair>> {
+    let Some(path) = parse_buffer_keypair_path_from_args(args) else {
+        return Ok(None);
+    };
+    let kp = Keypair::read_from_file(&path).map_err(|e| {
+        anyhow!(
+            "Failed to read buffer keypair from {}: {}",
+            path.display(),
+            e
+        )
+    })?;
+    Ok(Some(kp))
+}
+
+/// Existing on-chain buffer payload + capacity (bytes available for program
+/// data, excluding header). Capacity matters for resume: a persistent buffer
+/// from a prior run may be smaller than the current binary.
+pub struct ExistingBuffer {
+    pub data: Vec<u8>,
+    pub capacity: usize,
+}
+
+/// Fetch the on-chain state of a buffer account. Returns:
+/// - `Ok(None)` only when the RPC confirms the account does not exist
+///   (first deploy, or buffer was closed)
+/// - `Ok(Some(_))` if it exists with a valid header and matching authority
+/// - `Err` for transport/RPC failures, or for accounts that exist but are
+///   malformed / wrong owner / wrong authority
+///
+/// We use `get_account_with_commitment` so transient RPC errors propagate as
+/// `Err` instead of being silently converted to "no buffer" — that conversion
+/// would push the caller onto the fresh `CreateBuffer` path and lose the
+/// partial writes the resume flow is trying to recover.
+///
+/// Mirrors agave's `fetch_buffer_program_data` (cli/src/program.rs).
+fn fetch_buffer_program_data(
+    rpc_client: &RpcClient,
+    buffer_pubkey: &Pubkey,
+    expected_authority: &Pubkey,
+) -> Result<Option<ExistingBuffer>> {
+    let commitment = rpc_client.commitment();
+    let account = rpc_client
+        .get_account_with_commitment(buffer_pubkey, commitment)
+        .map_err(|e| anyhow!("Failed to fetch buffer account {}: {}", buffer_pubkey, e))?
+        .value;
+    let account = match account {
+        Some(a) => a,
+        None => return Ok(None),
+    };
+    if account.owner != bpf_loader_upgradeable_id::id() {
+        return Err(anyhow!(
+            "Account {} exists but is not owned by the BPF Upgradeable Loader",
+            buffer_pubkey
+        ));
+    }
+    let state: UpgradeableLoaderState = bincode::deserialize(&account.data)
+        .map_err(|e| anyhow!("Failed to deserialize buffer {}: {}", buffer_pubkey, e))?;
+    match state {
+        UpgradeableLoaderState::Buffer { authority_address } => {
+            if authority_address.is_none() {
+                return Err(anyhow!("Buffer {} is immutable", buffer_pubkey));
+            }
+            if authority_address != Some(*expected_authority) {
+                return Err(anyhow!(
+                    "Buffer {} authority {:?} does not match expected {}",
+                    buffer_pubkey,
+                    authority_address,
+                    expected_authority
+                ));
+            }
+        }
+        _ => {
+            return Err(anyhow!(
+                "Account {} is not a Buffer state account",
+                buffer_pubkey
+            ));
+        }
+    }
+    let header_size = UpgradeableLoaderState::size_of_buffer_metadata();
+    let capacity = account.data.len().saturating_sub(header_size);
+    Ok(Some(ExistingBuffer {
+        data: account.data[header_size..].to_vec(),
+        capacity,
+    }))
+}
+
+/// Close an existing buffer we own, refunding rent to `recipient`. Used when
+/// the persistent buffer keypair points at an on-chain account that is too
+/// small for the current binary — the next attempt will re-create it at the
+/// correct size.
+fn close_undersized_buffer(
+    rpc_client: &RpcClient,
+    payer: &Keypair,
+    buffer_pubkey: &Pubkey,
+    authority: &Keypair,
+    priority_fee: Option<u64>,
+    skip_preflight: bool,
+) -> Result<()> {
+    let close_ix = loader_v3_instruction::close_any(
+        buffer_pubkey,
+        &payer.pubkey(),
+        Some(&authority.pubkey()),
+        None,
+    );
+    let mut ixs: Vec<Instruction> = Vec::with_capacity(2);
+    if let Some(price) = priority_fee {
+        if price > 0 {
+            ixs.push(ComputeBudgetInstruction::set_compute_unit_price(price));
+        }
+    }
+    ixs.push(close_ix);
+
+    let blockhash = rpc_client.get_latest_blockhash()?;
+    let tx = Transaction::new_signed_with_payer(
+        &ixs,
+        Some(&payer.pubkey()),
+        &[payer, authority],
+        blockhash,
+    );
+    // Pin preflight commitment to confirmed so it matches the commitment of
+    // the just-fetched blockhash. Without this, preflight defaults to
+    // finalized on the RPC and rejects with "Blockhash not found" because the
+    // recent blockhash hasn't finalized yet.
+    rpc_client
+        .send_and_confirm_transaction_with_spinner_and_config(
+            &tx,
+            CommitmentConfig::confirmed(),
+            RpcSendTransactionConfig {
+                skip_preflight,
+                preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
+                ..RpcSendTransactionConfig::default()
+            },
+        )
+        .map_err(|e| anyhow!("Failed to close undersized buffer {}: {}", buffer_pubkey, e))?;
+    Ok(())
 }
 
 fn discover_cargo_metadata(start_dir: &Path) -> Result<Option<Metadata>> {
@@ -537,7 +731,20 @@ pub fn program_deploy(
 
     let program_id = loaded_program_keypair.pubkey();
 
-    // Augment solana_args with recommended defaults (priority fees, max sign attempts, buffer).
+    // Inject persistent --buffer keypair path (per-program) so retries within
+    // a run AND across runs land on the same on-chain buffer. Skipped when
+    // user supplied --buffer or a bare pubkey via `buffer`.
+    let solana_args = if buffer.is_some() {
+        solana_args
+    } else {
+        let program_name_stem = Path::new(&program_filepath)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| anyhow!("Invalid program filepath"))?;
+        ensure_buffer_keypair_arg(solana_args, program_name_stem)?
+    };
+
+    // Augment solana_args with recommended defaults (priority fees, max sign attempts).
     // Pass program_id so the auto fee query reflects prior contention with this
     // program (programdata is write-locked during upgrade).
     let solana_args =
@@ -570,91 +777,170 @@ pub fn program_deploy(
         payer.insecure_clone()
     };
 
-    // Check if program already exists
-    let program_account = rpc_client.get_account(&program_id);
+    // Check if program already exists → decides deploy vs upgrade path
+    let is_upgrade = rpc_client.get_account(&program_id).is_ok();
 
-    if program_account.is_ok() {
-        // Program exists - validate it can be upgraded BEFORE writing buffer
+    if is_upgrade {
         println!("Program already exists, upgrading...");
-
         // Verify program can be upgraded before doing expensive buffer write
         verify_program_can_be_upgraded(&rpc_client, &program_id, &upgrade_authority)?;
+    }
 
-        // Write to buffer
-        let buffer_pubkey = if let Some(buffer) = buffer {
-            buffer
-        } else {
-            let buffer_keypair = Keypair::new();
-            write_program_buffer(
-                &rpc_client,
-                &payer,
-                &program_data,
-                &upgrade_authority.pubkey(),
-                &buffer_keypair,
-                max_len,
-                CommitmentConfig::confirmed(),
-                RpcSendTransactionConfig {
-                    skip_preflight,
-                    preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
-                    encoding: None,
-                    max_retries: None,
-                    min_context_slot: None,
-                },
-                priority_fee,
-                max_sign_attempts,
-            )?
-        };
-
-        // Upgrade the program (skip verification - already done above at line 324)
-        upgrade_program(
-            &rpc_client,
-            &payer,
-            &program_id,
-            &buffer_pubkey,
-            &upgrade_authority,
-            priority_fee,
-            true, // skip_program_verification
-            skip_preflight,
-        )?;
+    // Resolve buffer: explicit pubkey from CLI flag (caller manages keypair
+    // out-of-band) vs persistent keypair loaded from the path
+    // `ensure_buffer_keypair_arg` injected. The persistent path is what
+    // enables auto-resume across runs.
+    let (buffer_pubkey, buffer_keypair): (Pubkey, Option<Keypair>) = if let Some(b) = buffer {
+        (b, None)
     } else {
-        // New deployment
+        let kp = read_buffer_keypair_from_args(&solana_args)?.ok_or_else(|| {
+            anyhow!("internal: --buffer not injected by ensure_buffer_keypair_arg")
+        })?;
+        (kp.pubkey(), Some(kp))
+    };
 
-        let buffer_pubkey = if let Some(buffer) = buffer {
-            buffer
-        } else {
-            let buffer_keypair = Keypair::new();
-            write_program_buffer(
+    let max_data_len = max_len.unwrap_or(program_data.len());
+    let send_config = RpcSendTransactionConfig {
+        skip_preflight,
+        preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
+        encoding: None,
+        max_retries: None,
+        min_context_slot: None,
+    };
+
+    // Retry the write+commit cycle. Each iteration re-fetches buffer state, so
+    // only chunks that didn't land last time are re-sent (diff-only resume).
+    let mut last_err: Option<anyhow::Error> = None;
+    for attempt in 0..MAX_DEPLOY_ATTEMPTS {
+        if attempt > 0 {
+            println!(
+                "\nDeploy attempt {} of {}",
+                attempt + 1,
+                MAX_DEPLOY_ATTEMPTS
+            );
+        }
+
+        let attempt_result: Result<()> = (|| {
+            // Fetch existing buffer data — if Some, write_program_buffer skips
+            // CreateBuffer and only writes chunks that differ.
+            let existing = fetch_buffer_program_data(
                 &rpc_client,
-                &payer,
-                &program_data,
+                &buffer_pubkey,
                 &upgrade_authority.pubkey(),
-                &buffer_keypair,
-                max_len,
-                CommitmentConfig::confirmed(),
-                RpcSendTransactionConfig {
-                    skip_preflight,
-                    preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
-                    encoding: None,
-                    max_retries: None,
-                    min_context_slot: None,
-                },
-                priority_fee,
-                max_sign_attempts,
-            )?
-        };
+            )?;
 
-        // Deploy from buffer
-        let max_data_len = max_len.unwrap_or(program_data.len());
-        deploy_program(
-            &rpc_client,
-            &payer,
-            &buffer_pubkey,
-            &loaded_program_keypair,
-            &upgrade_authority,
-            max_data_len,
-            priority_fee,
-            skip_preflight,
-        )?;
+            // A persistent buffer from a previous run may have been created
+            // with a smaller `max_len` than the current binary requires. The
+            // loader's Write ix rejects writes past the buffer's allocated
+            // size, so reusing it would deadlock retries. Close ours and let
+            // the next path recreate at the right size.
+            let existing_data = match existing {
+                Some(buf) if buf.capacity < max_data_len => {
+                    if buffer_keypair.is_none() {
+                        bail!(
+                            "Existing buffer {} has capacity {} but program needs {}; \
+                             user-supplied buffer must be closed manually: \
+                             solana program close {}",
+                            buffer_pubkey,
+                            buf.capacity,
+                            max_data_len,
+                            buffer_pubkey
+                        );
+                    }
+                    println!(
+                        "Existing buffer {} too small ({} < {} bytes); closing and recreating.",
+                        buffer_pubkey, buf.capacity, max_data_len
+                    );
+                    close_undersized_buffer(
+                        &rpc_client,
+                        &payer,
+                        &buffer_pubkey,
+                        &upgrade_authority,
+                        priority_fee,
+                        skip_preflight,
+                    )?;
+                    None
+                }
+                Some(buf) => Some(buf.data),
+                None => None,
+            };
+
+            // Need keypair to create a fresh buffer; if it doesn't exist and
+            // user gave us only a pubkey, we can't proceed.
+            if existing_data.is_none() && buffer_keypair.is_none() {
+                bail!(
+                    "Buffer {} does not exist on-chain and no keypair available to create it",
+                    buffer_pubkey
+                );
+            }
+
+            if let Some(ref kp) = buffer_keypair {
+                write_program_buffer(
+                    &rpc_client,
+                    &payer,
+                    &program_data,
+                    &upgrade_authority.pubkey(),
+                    kp,
+                    max_len,
+                    CommitmentConfig::confirmed(),
+                    send_config,
+                    priority_fee,
+                    max_sign_attempts,
+                    existing_data,
+                )?;
+            }
+
+            if is_upgrade {
+                upgrade_program(
+                    &rpc_client,
+                    &payer,
+                    &program_id,
+                    &buffer_pubkey,
+                    &upgrade_authority,
+                    priority_fee,
+                    true, // skip_program_verification - done above
+                    skip_preflight,
+                )?;
+            } else {
+                deploy_program(
+                    &rpc_client,
+                    &payer,
+                    &buffer_pubkey,
+                    &loaded_program_keypair,
+                    &upgrade_authority,
+                    max_data_len,
+                    priority_fee,
+                    skip_preflight,
+                )?;
+            }
+            Ok(())
+        })();
+
+        match attempt_result {
+            Ok(_) => {
+                last_err = None;
+                break;
+            }
+            Err(e) => {
+                eprintln!("Attempt {} failed: {}", attempt + 1, e);
+                last_err = Some(e);
+            }
+        }
+    }
+
+    if let Some(err) = last_err {
+        eprintln!("\nDeploy failed after {} attempts.", MAX_DEPLOY_ATTEMPTS);
+        eprintln!("Partial buffer: {}", buffer_pubkey);
+        if let Some(path) = parse_buffer_keypair_path_from_args(&solana_args) {
+            eprintln!("Buffer keypair: {}", path.display());
+            eprintln!("Resume:   re-run the same command (buffer auto-loaded)");
+            eprintln!(
+                "          or anchor program deploy ... --buffer {}",
+                buffer_pubkey
+            );
+            eprintln!("Reclaim:  solana program close {}", buffer_pubkey);
+        }
+        return Err(err);
     }
 
     // Print the program ID
@@ -1089,6 +1375,7 @@ fn program_write_buffer(
         },
         None,
         DEFAULT_MAX_SIGN_ATTEMPTS,
+        None,
     )?;
 
     println!("Buffer: {}", buffer_pubkey);
@@ -1441,6 +1728,14 @@ pub fn program_upgrade(
         binary_path
     };
 
+    // Inject persistent --buffer keypair path (per-program) so retries within
+    // a run AND across runs land on the same on-chain buffer.
+    let program_name_stem = Path::new(&program_filepath)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow!("Invalid program filepath"))?;
+    let solana_args = ensure_buffer_keypair_arg(solana_args, program_name_stem)?;
+
     let program_data = fs::read(&program_filepath).map_err(|e| {
         anyhow!(
             "Failed to read program file {}: {}",
@@ -1449,61 +1744,90 @@ pub fn program_upgrade(
         )
     })?;
 
-    // Retry loop for buffer creation and upgrade
+    // Persistent buffer keypair: reuse across retries so partial writes from a
+    // failed attempt survive on-chain and the next attempt only re-sends the
+    // chunks that didn't land. `ensure_buffer_keypair_arg` guarantees the
+    // injection above; absence here is an internal bug.
+    let buffer_keypair = read_buffer_keypair_from_args(&solana_args)?
+        .ok_or_else(|| anyhow!("internal: --buffer not injected by ensure_buffer_keypair_arg"))?;
+    let buffer_pubkey = buffer_keypair.pubkey();
+
+    let send_config = RpcSendTransactionConfig {
+        skip_preflight,
+        preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
+        encoding: None,
+        max_retries: None,
+        min_context_slot: None,
+    };
+
+    // Retry loop for buffer write + upgrade
+    let mut last_err: Option<anyhow::Error> = None;
     for retry in 0..(1 + max_retries) {
         if max_retries > 0 {
             println!("\nAttempt {}/{}", retry + 1, max_retries + 1);
         }
 
-        // Create a new buffer for each attempt
-        let buffer_keypair = Keypair::new();
+        let attempt_result: Result<()> = (|| {
+            // Fetch existing buffer state for diff-only resume
+            let existing = fetch_buffer_program_data(
+                &rpc_client,
+                &buffer_pubkey,
+                &upgrade_authority_keypair.pubkey(),
+            )?;
 
-        // Write to buffer
-        let result = write_program_buffer(
-            &rpc_client,
-            &payer,
-            &program_data,
-            &upgrade_authority_keypair.pubkey(),
-            &buffer_keypair,
-            None, // max_len
-            CommitmentConfig::confirmed(),
-            RpcSendTransactionConfig {
-                skip_preflight,
-                preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
-                encoding: None,
-                max_retries: None,
-                min_context_slot: None,
-            },
-            priority_fee,
-            max_sign_attempts,
-        );
-
-        let buffer_pubkey = match result {
-            Ok(pubkey) => pubkey,
-            Err(e) => {
-                println!("Buffer write failed: {}", e);
-                if retry < max_retries {
-                    println!("Retrying {} more time(s)...", max_retries - retry);
-                    continue;
-                } else {
-                    return Err(e);
+            // Same undersize check as program_deploy — persistent buffer keypair
+            // from an earlier run may have been created for a smaller binary.
+            // We own this keypair (injected by ensure_buffer_keypair_arg), so
+            // close it and let the next call to write_program_buffer recreate.
+            let needed_size = program_data.len();
+            let existing_data = match existing {
+                Some(buf) if buf.capacity < needed_size => {
+                    println!(
+                        "Existing buffer {} too small ({} < {} bytes); closing and recreating.",
+                        buffer_pubkey, buf.capacity, needed_size
+                    );
+                    close_undersized_buffer(
+                        &rpc_client,
+                        &payer,
+                        &buffer_pubkey,
+                        &upgrade_authority_keypair,
+                        priority_fee,
+                        skip_preflight,
+                    )?;
+                    None
                 }
-            }
-        };
+                Some(buf) => Some(buf.data),
+                None => None,
+            };
 
-        // Upgrade the program (skip verification - already done before retry loop)
-        let result = upgrade_program(
-            &rpc_client,
-            &payer,
-            &program_id,
-            &buffer_pubkey,
-            &upgrade_authority_keypair,
-            priority_fee,
-            true, // skip_program_verification
-            skip_preflight,
-        );
+            write_program_buffer(
+                &rpc_client,
+                &payer,
+                &program_data,
+                &upgrade_authority_keypair.pubkey(),
+                &buffer_keypair,
+                None, // max_len
+                CommitmentConfig::confirmed(),
+                send_config,
+                priority_fee,
+                max_sign_attempts,
+                existing_data,
+            )?;
 
-        match result {
+            upgrade_program(
+                &rpc_client,
+                &payer,
+                &program_id,
+                &buffer_pubkey,
+                &upgrade_authority_keypair,
+                priority_fee,
+                true, // skip_program_verification
+                skip_preflight,
+            )?;
+            Ok(())
+        })();
+
+        match attempt_result {
             Ok(_) => {
                 if max_retries > 0 {
                     println!("\nUpgrade success");
@@ -1511,14 +1835,28 @@ pub fn program_upgrade(
                 return Ok(());
             }
             Err(e) => {
-                println!("Upgrade failed: {}", e);
+                println!("Attempt {} failed: {}", retry + 1, e);
+                last_err = Some(e);
                 if retry < max_retries {
                     println!("Retrying {} more time(s)...", max_retries - retry);
-                } else {
-                    return Err(e);
                 }
             }
         }
+    }
+
+    if let Some(err) = last_err {
+        eprintln!("\nUpgrade failed after {} attempts.", max_retries + 1);
+        eprintln!("Partial buffer: {}", buffer_pubkey);
+        if let Some(path) = parse_buffer_keypair_path_from_args(&solana_args) {
+            eprintln!("Buffer keypair: {}", path.display());
+            eprintln!("Resume:   re-run the same command (buffer auto-loaded)");
+            eprintln!(
+                "          or anchor program upgrade {} <FILE> --buffer {}",
+                program_id, buffer_pubkey
+            );
+            eprintln!("Reclaim:  solana program close {}", buffer_pubkey);
+        }
+        return Err(err);
     }
 
     Ok(())
@@ -1929,7 +2267,9 @@ pub fn send_deploy_messages(
     Ok(None)
 }
 
-/// Complete buffer writing implementation
+/// Complete buffer writing implementation. If `existing_buffer_data` is
+/// `Some`, the on-chain buffer already exists (resume case): skip the
+/// `CreateBuffer` ix and only send writes for chunks that differ.
 #[allow(clippy::too_many_arguments)]
 pub fn write_program_buffer(
     rpc_client: &RpcClient,
@@ -1942,38 +2282,41 @@ pub fn write_program_buffer(
     send_transaction_config: RpcSendTransactionConfig,
     priority_fee: Option<u64>,
     max_sign_attempts: usize,
+    existing_buffer_data: Option<Vec<u8>>,
 ) -> Result<Pubkey> {
     let buffer_pubkey = buffer_keypair.pubkey();
 
     let program_len = program_data.len();
     let buffer_len = max_len.unwrap_or(program_len);
 
-    // Calculate required lamports for buffer
-    let buffer_data_len = UpgradeableLoaderState::size_of_buffer(buffer_len);
-    let min_balance = rpc_client
-        .get_minimum_balance_for_rent_exemption(buffer_data_len)
-        .map_err(|e| anyhow!("Failed to get rent exemption: {}", e))?;
-
     // Get blockhash for all messages
     let blockhash = rpc_client.get_latest_blockhash()?;
 
-    // Create buffer initialization message
-    let initial_instructions = loader_v3_instruction::create_buffer(
-        &payer.pubkey(),
-        &buffer_pubkey,
-        buffer_authority,
-        min_balance,
-        buffer_len,
-    )
-    .map_err(|e| anyhow!("Failed to create buffer instruction: {}", e))?;
+    // Build CreateBuffer ix only if the buffer doesn't already exist on-chain.
+    // On resume, we skip this and the loader keeps the existing account.
+    let initial_message = if existing_buffer_data.is_none() {
+        let buffer_data_len = UpgradeableLoaderState::size_of_buffer(buffer_len);
+        let min_balance = rpc_client
+            .get_minimum_balance_for_rent_exemption(buffer_data_len)
+            .map_err(|e| anyhow!("Failed to get rent exemption: {}", e))?;
+        let initial_instructions = loader_v3_instruction::create_buffer(
+            &payer.pubkey(),
+            &buffer_pubkey,
+            buffer_authority,
+            min_balance,
+            buffer_len,
+        )
+        .map_err(|e| anyhow!("Failed to create buffer instruction: {}", e))?;
+        Some(Message::new_with_blockhash(
+            &initial_instructions,
+            Some(&payer.pubkey()),
+            &blockhash,
+        ))
+    } else {
+        None
+    };
 
-    let initial_message = Some(Message::new_with_blockhash(
-        &initial_instructions,
-        Some(&payer.pubkey()),
-        &blockhash,
-    ));
-
-    // Prepare all write messages upfront
+    // Prepare write messages — skip chunks that already match on-chain bytes
     let write_messages = prepare_write_messages(
         program_data,
         &buffer_pubkey,
@@ -1981,6 +2324,7 @@ pub fn write_program_buffer(
         &payer.pubkey(),
         &blockhash,
         priority_fee,
+        existing_buffer_data.as_deref(),
     );
 
     send_deploy_messages(
@@ -1999,7 +2343,9 @@ pub fn write_program_buffer(
     Ok(buffer_pubkey)
 }
 
-/// Prepare write messages
+/// Prepare write messages. When `existing_buffer_data` is provided, skip
+/// chunks that already match on-chain bytes — letting resume after a failed
+/// deploy only re-send the chunks that didn't land.
 fn prepare_write_messages(
     program_data: &[u8],
     buffer_pubkey: &Pubkey,
@@ -2007,13 +2353,8 @@ fn prepare_write_messages(
     fee_payer: &Pubkey,
     blockhash: &Hash,
     priority_fee: Option<u64>,
+    existing_buffer_data: Option<&[u8]>,
 ) -> Vec<Message> {
-    // Tight CU limit so priority-fee-per-CU stays competitive with mainnet txs.
-    // Tx total: 2 × ComputeBudget ixs (150 each) + loader v3 Write (2,370) = 2,670.
-    // Source: agave/programs/compute-budget/src/lib.rs (DEFAULT_COMPUTE_UNITS),
-    // agave/programs/bpf_loader/src/lib.rs (UPGRADEABLE_LOADER_COMPUTE_UNITS).
-    const WRITE_COMPUTE_UNIT_LIMIT: u32 = 3_000;
-
     let create_msg = |offset: u32, bytes: Vec<u8>| {
         let mut instructions: Vec<Instruction> = Vec::with_capacity(3);
         if let Some(price) = priority_fee {
@@ -2038,7 +2379,16 @@ fn prepare_write_messages(
 
     for (chunk, i) in program_data.chunks(chunk_size).zip(0usize..) {
         let offset = i.saturating_mul(chunk_size);
-        write_messages.push(create_msg(offset as u32, chunk.to_vec()));
+        let already_written = match existing_buffer_data {
+            Some(existing) => {
+                let end = offset.saturating_add(chunk.len());
+                end <= existing.len() && &existing[offset..end] == chunk
+            }
+            None => false,
+        };
+        if !already_written {
+            write_messages.push(create_msg(offset as u32, chunk.to_vec()));
+        }
     }
 
     write_messages

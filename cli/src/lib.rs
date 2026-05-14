@@ -5055,23 +5055,11 @@ fn add_recommended_deployment_solana_args(
         augmented_args.push(DEFAULT_MAX_SIGN_ATTEMPTS.to_string());
     }
 
-    // If no buffer keypair is provided, create a temporary one to reuse across deployments.
-    // This is particularly useful for upgrading larger programs, which suffer from an increased
-    // likelihood of some write transactions failing during any single deployment.
-    if !args.contains(&"--buffer".to_owned()) {
-        let tmp_keypair_path = std::env::temp_dir().join("anchor-upgrade-buffer.json");
-        if !tmp_keypair_path.exists() {
-            if let Err(err) = Keypair::new().write_to_file(&tmp_keypair_path) {
-                return Err(anyhow!(
-                    "Error creating keypair for buffer account, {:?}",
-                    err
-                ));
-            }
-        }
-
-        augmented_args.push("--buffer".to_owned());
-        augmented_args.push(tmp_keypair_path.to_string_lossy().to_string());
-    }
+    // Note: `--buffer` injection is handled by callers (program_deploy /
+    // program_upgrade) so the path can be scoped per program
+    // (`target/deploy/{name}-upgrade-buffer.json`). Doing it here would either
+    // collide across concurrent program deploys or require threading
+    // program_name down into this fee/sign-attempts helper.
 
     Ok(augmented_args)
 }
