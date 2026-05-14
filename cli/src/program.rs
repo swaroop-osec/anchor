@@ -213,7 +213,7 @@ fn fetch_buffer_program_data(
 /// the persistent buffer keypair points at an on-chain account that is too
 /// small for the current binary — the next attempt will re-create it at the
 /// correct size.
-fn close_undersized_buffer(
+fn close_buffer_for_resize(
     rpc_client: &RpcClient,
     payer: &Keypair,
     buffer_pubkey: &Pubkey,
@@ -256,7 +256,7 @@ fn close_undersized_buffer(
                 ..RpcSendTransactionConfig::default()
             },
         )
-        .map_err(|e| anyhow!("Failed to close undersized buffer {}: {}", buffer_pubkey, e))?;
+        .map_err(|e| anyhow!("Failed to close mis-sized buffer {}: {}", buffer_pubkey, e))?;
     Ok(())
 }
 
@@ -839,12 +839,14 @@ pub fn program_deploy(
             )?;
 
             // A persistent buffer from a previous run may have been created
-            // with a smaller `max_len` than the current binary requires. The
-            // loader's Write ix rejects writes past the buffer's allocated
-            // size, so reusing it would deadlock retries. Close ours and let
-            // the next path recreate at the right size.
+            // with a different `max_len` than the current binary requires.
+            // Undersize: loader's Write ix rejects writes past the buffer's
+            // allocated size, so writes deadlock. Oversize: loader's Upgrade
+            // ix copies the full buffer into programdata, shipping stale tail
+            // bytes from the prior binary. Either way, close ours and let the
+            // next path recreate at the exact size.
             let existing_data = match existing {
-                Some(buf) if buf.capacity < max_data_len => {
+                Some(buf) if buf.capacity != max_data_len => {
                     if buffer_keypair.is_none() {
                         bail!(
                             "Existing buffer {} has capacity {} but program needs {}; \
@@ -856,10 +858,11 @@ pub fn program_deploy(
                         );
                     }
                     println!(
-                        "Existing buffer {} too small ({} < {} bytes); closing and recreating.",
+                        "Existing buffer {} size mismatch ({} != {} bytes); closing and \
+                         recreating.",
                         buffer_pubkey, buf.capacity, max_data_len
                     );
-                    close_undersized_buffer(
+                    close_buffer_for_resize(
                         &rpc_client,
                         &payer,
                         &buffer_pubkey,
@@ -1783,18 +1786,21 @@ pub fn program_upgrade(
                 &upgrade_authority_keypair.pubkey(),
             )?;
 
-            // Same undersize check as program_deploy — persistent buffer keypair
-            // from an earlier run may have been created for a smaller binary.
-            // We own this keypair (injected by ensure_buffer_keypair_arg), so
+            // Same size check as program_deploy — persistent buffer keypair
+            // from an earlier run may have been sized for a different binary.
+            // Undersize stalls writes; oversize leaves stale tail bytes that
+            // the loader's Upgrade ix copies into programdata. Either way we
+            // own this keypair (injected by ensure_buffer_keypair_arg), so
             // close it and let the next call to write_program_buffer recreate.
             let needed_size = program_data.len();
             let existing_data = match existing {
-                Some(buf) if buf.capacity < needed_size => {
+                Some(buf) if buf.capacity != needed_size => {
                     println!(
-                        "Existing buffer {} too small ({} < {} bytes); closing and recreating.",
+                        "Existing buffer {} size mismatch ({} != {} bytes); closing and \
+                         recreating.",
                         buffer_pubkey, buf.capacity, needed_size
                     );
-                    close_undersized_buffer(
+                    close_buffer_for_resize(
                         &rpc_client,
                         &payer,
                         &buffer_pubkey,
