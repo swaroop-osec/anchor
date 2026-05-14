@@ -78,7 +78,10 @@ fn ensure_buffer_keypair_arg(mut args: Vec<String>, program_name: &str) -> Resul
     let path = deploy_dir.join(format!("{program_name}-upgrade-buffer.json"));
     if !path.exists() {
         Keypair::new().write_to_file(&path).map_err(|e| {
-            anyhow!("Failed to write buffer keypair to {}: {e:?}", path.display())
+            anyhow!(
+                "Failed to write buffer keypair to {}: {e:?}",
+                path.display()
+            )
         })?;
     }
     args.push("--buffer".to_owned());
@@ -845,8 +848,7 @@ pub fn program_deploy(
                     if buffer_keypair.is_none() {
                         bail!(
                             "Existing buffer {} has capacity {} but program needs {}; \
-                             user-supplied buffer must be closed manually: \
-                             solana program close {}",
+                             user-supplied buffer must be closed manually: solana program close {}",
                             buffer_pubkey,
                             buf.capacity,
                             max_data_len,
