@@ -2313,7 +2313,7 @@ pub fn write_program_buffer(
         let min_balance = rpc_client
             .get_minimum_balance_for_rent_exemption(buffer_data_len)
             .map_err(|e| anyhow!("Failed to get rent exemption: {}", e))?;
-        let initial_instructions = loader_v3_instruction::create_buffer(
+        let create_ixs = loader_v3_instruction::create_buffer(
             &payer.pubkey(),
             &buffer_pubkey,
             buffer_authority,
@@ -2321,6 +2321,16 @@ pub fn write_program_buffer(
             buffer_len,
         )
         .map_err(|e| anyhow!("Failed to create buffer instruction: {}", e))?;
+
+        // Carry the same priority fee Write txs use.
+        let mut initial_instructions: Vec<Instruction> = Vec::with_capacity(create_ixs.len() + 1);
+        if let Some(price) = priority_fee {
+            if price > 0 {
+                initial_instructions.push(ComputeBudgetInstruction::set_compute_unit_price(price));
+            }
+        }
+        initial_instructions.extend(create_ixs);
+
         Some(Message::new_with_blockhash(
             &initial_instructions,
             Some(&payer.pubkey()),
