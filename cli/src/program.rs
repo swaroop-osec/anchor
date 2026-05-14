@@ -163,9 +163,9 @@ fn fetch_buffer_program_data(
     buffer_pubkey: &Pubkey,
     expected_authority: &Pubkey,
 ) -> Result<Option<ExistingBuffer>> {
-    let commitment = rpc_client.commitment();
+    // Match the commitment of our Write txs (`CommitmentConfig::confirmed`).
     let account = rpc_client
-        .get_account_with_commitment(buffer_pubkey, commitment)
+        .get_account_with_commitment(buffer_pubkey, CommitmentConfig::confirmed())
         .map_err(|e| anyhow!("Failed to fetch buffer account {}: {}", buffer_pubkey, e))?
         .value;
     let account = match account {
