@@ -171,7 +171,11 @@ pub fn account(
                 #[automatically_derived]
                 impl #impl_gen anchor_lang::Owner for #account_name #type_gen #where_clause {
                     fn owner() -> Pubkey {
-                        crate::ID
+                        // In a doctest the ID will be in the current scope, not the crate root
+                        #[cfg(not(doctest))]
+                        { crate::ID }
+                        #[cfg(doctest)]
+                        { ID }
                     }
                 }
             }
@@ -238,10 +242,7 @@ pub fn account(
 
                     fn try_deserialize_unchecked(buf: &mut &[u8]) -> anchor_lang::Result<Self> {
                         let data: &[u8] = &buf[#disc.len()..];
-                        // Re-interpret raw bytes into the POD data structure.
-                        let account = anchor_lang::__private::bytemuck::from_bytes(data);
-                        // Copy out the bytes into a new, owned data structure.
-                        Ok(*account)
+                        Ok(anchor_lang::__private::bytemuck::pod_read_unaligned(data))
                     }
                 }
 
