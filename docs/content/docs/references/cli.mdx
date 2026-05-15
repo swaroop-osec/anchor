@@ -205,13 +205,13 @@ anchor idl fetch <program-id> --non-canonical
 ### Idl Upgrade
 
 ```shell
-anchor idl upgrade <program-id> -f <target/idl/program.json>
+anchor idl upgrade -f <target/idl/program.json>
 ```
 
 Upgrades the IDL file on chain to the new `target/idl/program.json` idl. The
-configured wallet must be the current authority. The `program-id` argument is 
+configured wallet must be the current authority. The `program-id` argument is
 optional — when omitted, `idl.address` is used.
-  
+
 ### Idl Close
 
 ```shell
