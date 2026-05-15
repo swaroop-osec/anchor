@@ -1,21 +1,23 @@
 //! Type facilitating on demand zero copy deserialization.
 
-use crate::bpf_writer::BpfWriter;
-use crate::error::{Error, ErrorCode};
-use crate::solana_program::account_info::AccountInfo;
-use crate::solana_program::instruction::AccountMeta;
-use crate::solana_program::pubkey::Pubkey;
-use crate::{
-    Accounts, AccountsClose, AccountsExit, Key, Owner, Result, ToAccountInfo, ToAccountInfos,
-    ToAccountMetas, ZeroCopy,
+use {
+    crate::{
+        bpf_writer::BpfWriter,
+        error::{Error, ErrorCode},
+        solana_program::{account_info::AccountInfo, instruction::AccountMeta, pubkey::Pubkey},
+        Accounts, AccountsClose, AccountsExit, Key, Owner, Result, ToAccountInfos, ToAccountMetas,
+        ZeroCopy,
+    },
+    std::{
+        cell::{Ref, RefMut},
+        collections::BTreeSet,
+        fmt,
+        io::Write,
+        marker::PhantomData,
+        mem,
+        ops::DerefMut,
+    },
 };
-use std::cell::{Ref, RefMut};
-use std::collections::BTreeSet;
-use std::fmt;
-use std::io::Write;
-use std::marker::PhantomData;
-use std::mem;
-use std::ops::DerefMut;
 
 /// Type facilitating on demand zero copy deserialization.
 ///
@@ -108,14 +110,18 @@ impl<T: ZeroCopy + Owner + fmt::Debug> fmt::Debug for AccountLoader<'_, T> {
 }
 
 impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
-    fn new(acc_info: &'info AccountInfo<'info>) -> AccountLoader<'info, T> {
+    /// Constructs a new [`AccountLoader`] without performing any account validation checks.
+    ///
+    /// - [`Self::try_from`] to perform all checks, or
+    /// - [`Self::try_from_unchecked`] to check the owner but not the discriminator
+    pub fn new_unchecked(acc_info: &'info AccountInfo<'info>) -> AccountLoader<'info, T> {
         Self {
             acc_info,
             phantom: PhantomData,
         }
     }
 
-    /// Constructs a new `Loader` from a previously initialized account.
+    /// Constructs a new [`AccountLoader`] from a previously initialized account.
     #[inline(never)]
     pub fn try_from(acc_info: &'info AccountInfo<'info>) -> Result<AccountLoader<'info, T>> {
         if acc_info.owner != &T::owner() {
@@ -134,10 +140,10 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
             return Err(ErrorCode::AccountDiscriminatorMismatch.into());
         }
 
-        Ok(AccountLoader::new(acc_info))
+        Ok(AccountLoader::new_unchecked(acc_info))
     }
 
-    /// Constructs a new `Loader` from an uninitialized account.
+    /// Constructs a new [`AccountLoader`] from an uninitialized account.
     #[inline(never)]
     pub fn try_from_unchecked(
         _program_id: &Pubkey,
@@ -147,7 +153,7 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
             return Err(Error::from(ErrorCode::AccountOwnedByWrongProgram)
                 .with_pubkeys((*acc_info.owner, T::owner())));
         }
-        Ok(AccountLoader::new(acc_info))
+        Ok(AccountLoader::new_unchecked(acc_info))
     }
 
     /// Returns a Ref to the account data structure for reading.
@@ -256,7 +262,7 @@ impl<'info, T: ZeroCopy + Owner> AccountsExit<'info> for AccountLoader<'info, T>
 
 impl<'info, T: ZeroCopy + Owner> AccountsClose<'info> for AccountLoader<'info, T> {
     fn close(&self, sol_destination: AccountInfo<'info>) -> Result<()> {
-        crate::common::close(self.to_account_info(), sol_destination)
+        crate::common::close(self.as_ref(), sol_destination.as_ref())
     }
 }
 

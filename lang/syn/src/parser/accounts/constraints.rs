@@ -1,6 +1,10 @@
-use crate::*;
-use syn::parse::{Error as ParseError, Result as ParseResult};
-use syn::{Expr, Ident, Token};
+use {
+    crate::*,
+    syn::{
+        parse::{Error as ParseError, Result as ParseResult},
+        Expr, Ident, Token,
+    },
+};
 
 pub fn parse(f: &syn::Field, f_ty: Option<&Ty>) -> ParseResult<ConstraintGroup> {
     let mut constraints = ConstraintGroupBuilder::new(f_ty);
@@ -15,7 +19,7 @@ pub fn parse(f: &syn::Field, f_ty: Option<&Ty>) -> ParseResult<ConstraintGroup> 
 }
 
 pub fn is_account(attr: &&syn::Attribute) -> bool {
-    attr.path
+    attr.path()
         .get_ident()
         .is_some_and(|ident| ident == "account")
 }
@@ -50,6 +54,7 @@ pub fn parse_token(stream: ParseStream) -> ParseResult<ConstraintToken> {
         "executable" => {
             ConstraintToken::Executable(Context::new(ident.span(), ConstraintExecutable {}))
         }
+        "dup" => ConstraintToken::Dup(Context::new(ident.span(), ConstraintDup {})),
         "mint" => {
             stream.parse::<Token![:]>()?;
             stream.parse::<Token![:]>()?;
@@ -257,6 +262,27 @@ pub fn parse_token(stream: ParseStream) -> ParseResult<ConstraintToken> {
                         _ => return Err(ParseError::new(ident.span(), "Invalid attribute")),
                     }
                 }
+                "pausable" => {
+                    stream.parse::<Token![:]>()?;
+                    stream.parse::<Token![:]>()?;
+                    let kw = stream.call(Ident::parse_any)?.to_string();
+                    stream.parse::<Token![=]>()?;
+
+                    let span = ident
+                        .span()
+                        .join(stream.span())
+                        .unwrap_or_else(|| ident.span());
+
+                    match kw.as_str() {
+                        "authority" => ConstraintToken::ExtensionPausableAuthority(Context::new(
+                            span,
+                            ConstraintExtensionAuthority {
+                                authority: stream.parse()?,
+                            },
+                        )),
+                        _ => return Err(ParseError::new(ident.span(), "Invalid attribute")),
+                    }
+                }
                 _ => return Err(ParseError::new(ident.span(), "Invalid attribute")),
             }
         }
@@ -406,7 +432,13 @@ pub fn parse_token(stream: ParseStream) -> ParseResult<ConstraintToken> {
                             zero: stream.parse()?,
                         },
                     )),
-                    _ => return Err(ParseError::new(ident.span(), "Invalid attribute. realloc::payer and realloc::zero are the only valid attributes")),
+                    _ => {
+                        return Err(ParseError::new(
+                            ident.span(),
+                            "Invalid attribute. realloc::payer and realloc::zero are the only \
+                             valid attributes",
+                        ))
+                    }
                 }
             }
         }
@@ -459,7 +491,23 @@ pub fn parse_token(stream: ParseStream) -> ParseResult<ConstraintToken> {
                 "constraint" => ConstraintToken::Raw(Context::new(
                     span,
                     ConstraintRaw {
-                        raw: stream.parse()?,
+                        raw: {
+                            let expr = stream.parse()?;
+
+                            if let syn::Expr::Lit(syn::ExprLit { lit, .. }) = &expr {
+                                if !matches!(lit, syn::Lit::Bool(_)) {
+                                    return Err(ParseError::new(
+                                        expr.span(),
+                                        "constraint must be a boolean expression, not a \
+                                         literal.\nHelp: Raw constraints expect expressions that \
+                                         evaluate to boolean values.\nIf you need to compare a \
+                                         field to a value, use: constraint = my_field == <value>",
+                                    ));
+                                }
+                            }
+
+                            expr
+                        },
                         error: parse_optional_custom_error(&stream)?,
                     },
                 )),
@@ -533,11 +581,13 @@ pub struct ConstraintGroupBuilder<'ty> {
     pub extension_transfer_hook_authority: Option<Context<ConstraintExtensionAuthority>>,
     pub extension_transfer_hook_program_id: Option<Context<ConstraintExtensionTokenHookProgramId>>,
     pub extension_permanent_delegate: Option<Context<ConstraintExtensionPermanentDelegate>>,
+    pub extension_pausable_authority: Option<Context<ConstraintExtensionAuthority>>,
     pub bump: Option<Context<ConstraintTokenBump>>,
     pub program_seed: Option<Context<ConstraintProgramSeed>>,
     pub realloc: Option<Context<ConstraintRealloc>>,
     pub realloc_payer: Option<Context<ConstraintReallocPayer>>,
     pub realloc_zero: Option<Context<ConstraintReallocZero>>,
+    pub dup: Option<Context<ConstraintDup>>,
 }
 
 impl<'ty> ConstraintGroupBuilder<'ty> {
@@ -578,11 +628,13 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             extension_transfer_hook_authority: None,
             extension_transfer_hook_program_id: None,
             extension_permanent_delegate: None,
+            extension_pausable_authority: None,
             bump: None,
             program_seed: None,
             realloc: None,
             realloc_payer: None,
             realloc_zero: None,
+            dup: None,
         }
     }
 
@@ -592,11 +644,10 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             if cfg!(not(feature = "init-if-needed")) && i.if_needed {
                 return Err(ParseError::new(
                     i.span(),
-                    "init_if_needed requires that anchor-lang be imported \
-                    with the init-if-needed cargo feature enabled. \
-                    Carefully read the init_if_needed docs before using this feature \
-                    to make sure you know how to protect yourself against \
-                    re-initialization attacks.",
+                    "init_if_needed requires that anchor-lang be imported with the init-if-needed \
+                     cargo feature enabled. Carefully read the init_if_needed docs before using \
+                     this feature to make sure you know how to protect yourself against \
+                     re-initialization attacks.",
                 ));
             }
 
@@ -636,7 +687,8 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                 if b.bump.is_some() {
                     return Err(ParseError::new(
                         b.span(),
-                        "bump targets should not be provided with init. Please use bump without a target."
+                        "bump targets should not be provided with init. Please use bump without a \
+                         target.",
                     ));
                 }
             }
@@ -739,6 +791,10 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
 
             match (self.space.is_some(), initializing_token_program_acc) {
                 (true, true) => {
+                    #[allow(
+                        clippy::unwrap_used,
+                        reason = "inside (true, _) arm so space is guaranteed Some"
+                    )]
                     return Err(ParseError::new(
                         self.space.as_ref().unwrap().span(),
                         "space is not required for initializing an spl account",
@@ -790,11 +846,13 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             extension_transfer_hook_authority,
             extension_transfer_hook_program_id,
             extension_permanent_delegate,
+            extension_pausable_authority,
             bump,
             program_seed,
             realloc,
             realloc_payer,
             realloc_zero,
+            dup,
         } = self;
 
         // Converts Option<Context<T>> -> Option<T>.
@@ -814,6 +872,10 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
         }
 
         let is_init = init.is_some();
+        #[allow(
+            clippy::expect_used,
+            reason = "bump presence validated earlier in constraint parsing"
+        )]
         let seeds = seeds.map(|c| ConstraintSeedsGroup {
             is_init,
             seeds: c.seeds.clone(),
@@ -834,20 +896,24 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                     .as_ref()
                     .map(|a| a.clone().into_inner().token_program),
             }),
-            (Some(mint), None, _) => return Err(ParseError::new(
-                mint.span(),
-                "authority must be provided to specify an associated token program derived address",
-            )),
+            (Some(mint), None, _) => {
+                return Err(ParseError::new(
+                    mint.span(),
+                    "authority must be provided to specify an associated token program derived \
+                     address",
+                ))
+            }
             (None, Some(auth), _) => {
                 return Err(ParseError::new(
                     auth.span(),
                     "mint must be provided to specify an associated token program derived address",
                 ))
-            },
+            }
             (None, None, Some(token_program)) => {
                 return Err(ParseError::new(
                     token_program.span(),
-                    "mint and authority must be provided to specify an associated token program derived address",
+                    "mint and authority must be provided to specify an associated token program \
+                     derived address",
                 ))
             }
             _ => None,
@@ -889,8 +955,10 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             &extension_transfer_hook_authority,
             &extension_transfer_hook_program_id,
             &extension_permanent_delegate,
+            &extension_pausable_authority,
         ) {
             (
+                None,
                 None,
                 None,
                 None,
@@ -950,66 +1018,111 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
                 transfer_hook_program_id: extension_transfer_hook_program_id
                     .as_ref()
                     .map(|a| a.clone().into_inner().program_id),
+                pausable_authority: extension_pausable_authority
+                    .as_ref()
+                    .map(|a| a.clone().into_inner().authority),
             }),
         };
 
         Ok(ConstraintGroup {
-            init: init.as_ref().map(|i| Ok(ConstraintInitGroup {
-                if_needed: i.if_needed,
-                seeds: seeds.clone(),
-                payer: into_inner!(payer.clone()).unwrap().target,
-                space: space.clone().map(|s| s.space.clone()),
-                kind: if let Some(tm) = &token_mint {
-                    InitKind::Token {
-                        mint: tm.clone().into_inner().mint,
-                        owner: match &token_authority {
-                            Some(a) => a.clone().into_inner().auth,
-                            None => return Err(ParseError::new(
-                                tm.span(),
-                                "authority must be provided to initialize a token program derived address"
-                            )),
+            init: init
+                .as_ref()
+                .map(|i| {
+                    Ok(ConstraintInitGroup {
+                        if_needed: i.if_needed,
+                        seeds: seeds.clone(),
+                        #[allow(
+                            clippy::unwrap_used,
+                            reason = "payer is guaranteed present when init constraint exists"
+                        )]
+                        payer: into_inner!(payer.clone()).unwrap().target,
+                        space: space.clone().map(|s| s.space.clone()),
+                        kind: if let Some(tm) = &token_mint {
+                            InitKind::Token {
+                                mint: tm.clone().into_inner().mint,
+                                owner: match &token_authority {
+                                    Some(a) => a.clone().into_inner().auth,
+                                    None => {
+                                        return Err(ParseError::new(
+                                            tm.span(),
+                                            "authority must be provided to initialize a token \
+                                             program derived address",
+                                        ))
+                                    }
+                                },
+                                token_program: token_token_program
+                                    .map(|tp| tp.into_inner().token_program),
+                            }
+                        } else if let Some(at) = &associated_token {
+                            InitKind::AssociatedToken {
+                                mint: at.mint.clone(),
+                                owner: at.wallet.clone(),
+                                token_program: associated_token_token_program
+                                    .map(|tp| tp.into_inner().token_program),
+                            }
+                        } else if let Some(d) = &mint_decimals {
+                            InitKind::Mint {
+                                decimals: d.clone().into_inner().decimals,
+                                owner: match &mint_authority {
+                                    Some(a) => a.clone().into_inner().mint_auth,
+                                    None => {
+                                        return Err(ParseError::new(
+                                            d.span(),
+                                            "authority must be provided to initialize a mint \
+                                             program derived address",
+                                        ))
+                                    }
+                                },
+                                freeze_authority: mint_freeze_authority
+                                    .map(|fa| fa.into_inner().mint_freeze_auth),
+                                token_program: mint_token_program
+                                    .map(|tp| tp.into_inner().token_program),
+                                // extensions
+                                group_pointer_authority: extension_group_pointer_authority
+                                    .map(|gpa| gpa.into_inner().authority),
+                                group_pointer_group_address: extension_group_pointer_group_address
+                                    .map(|gpga| gpga.into_inner().group_address),
+                                group_member_pointer_authority:
+                                    extension_group_member_pointer_authority
+                                        .map(|gmpa| gmpa.into_inner().authority),
+                                group_member_pointer_member_address:
+                                    extension_group_member_pointer_member_address
+                                        .map(|gmpma| gmpma.into_inner().member_address),
+                                metadata_pointer_authority: extension_metadata_pointer_authority
+                                    .map(|mpa| mpa.into_inner().authority),
+                                metadata_pointer_metadata_address:
+                                    extension_metadata_pointer_metadata_address
+                                        .map(|mpma| mpma.into_inner().metadata_address),
+                                close_authority: extension_close_authority
+                                    .map(|ca| ca.into_inner().authority),
+                                permanent_delegate: extension_permanent_delegate
+                                    .map(|pd| pd.into_inner().permanent_delegate),
+                                transfer_hook_authority: extension_transfer_hook_authority
+                                    .map(|tha| tha.into_inner().authority),
+                                transfer_hook_program_id: extension_transfer_hook_program_id
+                                    .map(|thpid| thpid.into_inner().program_id),
+                                pausable_authority: extension_pausable_authority
+                                    .map(|ca| ca.into_inner().authority),
+                            }
+                        } else {
+                            InitKind::Program {
+                                owner: owner.as_ref().map(|o| o.owner_address.clone()),
+                            }
                         },
-                        token_program: token_token_program.map(|tp| tp.into_inner().token_program),
-                    }
-                } else if let Some(at) = &associated_token {
-                    InitKind::AssociatedToken {
-                        mint: at.mint.clone(),
-                        owner: at.wallet.clone(),
-                        token_program: associated_token_token_program.map(|tp| tp.into_inner().token_program),
-                    }
-                } else if let Some(d) = &mint_decimals {
-                    InitKind::Mint {
-                        decimals: d.clone().into_inner().decimals,
-                        owner: match &mint_authority {
-                            Some(a) => a.clone().into_inner().mint_auth,
-                            None => return Err(ParseError::new(
-                                d.span(),
-                                "authority must be provided to initialize a mint program derived address"
-                            ))
-                        },
-                        freeze_authority: mint_freeze_authority.map(|fa| fa.into_inner().mint_freeze_auth),
-                        token_program: mint_token_program.map(|tp| tp.into_inner().token_program),
-                        // extensions
-                        group_pointer_authority: extension_group_pointer_authority.map(|gpa| gpa.into_inner().authority),
-                        group_pointer_group_address: extension_group_pointer_group_address.map(|gpga| gpga.into_inner().group_address),
-                        group_member_pointer_authority: extension_group_member_pointer_authority.map(|gmpa| gmpa.into_inner().authority),
-                        group_member_pointer_member_address: extension_group_member_pointer_member_address.map(|gmpma| gmpma.into_inner().member_address),
-                        metadata_pointer_authority: extension_metadata_pointer_authority.map(|mpa| mpa.into_inner().authority),
-                        metadata_pointer_metadata_address: extension_metadata_pointer_metadata_address.map(|mpma| mpma.into_inner().metadata_address),
-                        close_authority: extension_close_authority.map(|ca| ca.into_inner().authority),
-                        permanent_delegate: extension_permanent_delegate.map(|pd| pd.into_inner().permanent_delegate),
-                        transfer_hook_authority: extension_transfer_hook_authority.map(|tha| tha.into_inner().authority),
-                        transfer_hook_program_id: extension_transfer_hook_program_id.map(|thpid| thpid.into_inner().program_id),
-                    }
-                } else {
-                    InitKind::Program {
-                        owner: owner.as_ref().map(|o| o.owner_address.clone()),
-                    }
-                },
-            })).transpose()?,
+                    })
+                })
+                .transpose()?,
             realloc: realloc.as_ref().map(|r| ConstraintReallocGroup {
+                #[allow(
+                    clippy::unwrap_used,
+                    reason = "realloc payer guaranteed when realloc constraint present"
+                )]
                 payer: into_inner!(realloc_payer).unwrap().target,
                 space: r.space.clone(),
+                #[allow(
+                    clippy::unwrap_used,
+                    reason = "realloc zero guaranteed when realloc constraint present"
+                )]
                 zero: into_inner!(realloc_zero).unwrap().zero,
             }),
             zeroed: into_inner!(zeroed),
@@ -1024,8 +1137,9 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             address: into_inner!(address),
             associated_token: if !is_init { associated_token } else { None },
             seeds,
-            token_account: if !is_init {token_account} else {None},
-            mint: if !is_init {mint} else {None},
+            token_account: if !is_init { token_account } else { None },
+            mint: if !is_init { mint } else { None },
+            dup: into_inner!(dup),
         })
     }
 
@@ -1087,6 +1201,10 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
             }
             ConstraintToken::ExtensionPermanentDelegate(c) => {
                 self.add_extension_permanent_delegate(c)
+            }
+            ConstraintToken::Dup(c) => self.add_dup(c),
+            ConstraintToken::ExtensionPausableAuthority(c) => {
+                self.add_extension_pausable_authority(c)
             }
         }
     }
@@ -1189,10 +1307,11 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
         if !matches!(self.f_ty, Some(Ty::Account(_)))
             && !matches!(self.f_ty, Some(Ty::LazyAccount(_)))
             && !matches!(self.f_ty, Some(Ty::AccountLoader(_)))
+            && !matches!(self.f_ty, Some(Ty::Migration(_)))
         {
             return Err(ParseError::new(
                 c.span(),
-                "realloc must be on an Account, LazyAccount or AccountLoader",
+                "realloc must be on an Account, LazyAccount, AccountLoader, or Migration",
             ));
         }
         if self.mutable.is_none() {
@@ -1669,5 +1788,71 @@ impl<'ty> ConstraintGroupBuilder<'ty> {
         }
         self.extension_permanent_delegate.replace(c);
         Ok(())
+    }
+
+    fn add_dup(&mut self, c: Context<ConstraintDup>) -> ParseResult<()> {
+        if self.dup.is_some() {
+            return Err(ParseError::new(c.span(), "dup already provided"));
+        }
+        self.dup.replace(c);
+        Ok(())
+    }
+
+    fn add_extension_pausable_authority(
+        &mut self,
+        c: Context<ConstraintExtensionAuthority>,
+    ) -> ParseResult<()> {
+        if self.extension_pausable_authority.is_some() {
+            return Err(ParseError::new(
+                c.span(),
+                "extension pausable authority already provided",
+            ));
+        }
+        self.extension_pausable_authority.replace(c);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        crate::{parser::tts_to_string, ConstraintToken},
+        syn::parse_str,
+    };
+
+    const LITERAL_ERROR: &str = "constraint must be a boolean expression, not a literal";
+    const HELP_TEXT: &str = "constraint = my_field == <value>";
+
+    fn parse_error_message(input: &str) -> Option<String> {
+        parse_str::<ConstraintToken>(input)
+            .err()
+            .map(|error| error.to_string())
+    }
+
+    fn parse_raw_expression(input: &str) -> Option<String> {
+        match parse_str::<ConstraintToken>(input) {
+            Ok(ConstraintToken::Raw(raw)) => Some(tts_to_string(&raw.raw)),
+            Ok(_) | Err(_) => None,
+        }
+    }
+
+    #[test]
+    fn rejects_string_literal_raw_constraint() {
+        let message = parse_error_message(r#"constraint = "hello""#);
+        assert!(message.is_some(), "expected parse error");
+        let message = message.unwrap_or_default();
+
+        assert!(
+            message.contains(LITERAL_ERROR),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains(HELP_TEXT), "missing help text: {message}");
+    }
+
+    #[test]
+    fn accepts_boolean_expression_that_compares_against_a_literal() {
+        let expression = parse_raw_expression("constraint = my_field == 42");
+
+        assert_eq!(expression.as_deref(), Some("my_field == 42"));
     }
 }
