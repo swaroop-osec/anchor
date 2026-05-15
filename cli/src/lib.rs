@@ -3005,7 +3005,7 @@ fn account(
 
             let program = programs
                 .iter()
-                .find(|p| p.lib_name.eq_ignore_ascii_case(program_name))
+                .find(|p| p.lib_name == *program_name)
                 .ok_or_else(|| {
                     let mut available_programs: Vec<String> =
                         programs.iter().map(|p| p.lib_name.clone()).collect();
@@ -3032,7 +3032,7 @@ fn account(
         |idl_path| {
             let idl = fs::read(idl_path)?;
             let idl = convert_idl(&idl)?;
-            if !idl.metadata.name.eq_ignore_ascii_case(program_name) {
+            if idl.metadata.name != *program_name {
                 return Err(anyhow!("IDL does not match program {program_name}."));
             }
 
@@ -3051,7 +3051,7 @@ fn account(
     let disc_len = idl
         .accounts
         .iter()
-        .find(|acc| acc.name.eq_ignore_ascii_case(account_type_name))
+        .find(|acc| acc.name == *account_type_name)
         .map(|acc| acc.discriminator.len())
         .ok_or_else(|| {
             let mut available_accounts: Vec<String> =
@@ -3093,17 +3093,9 @@ fn deserialize_idl_defined_type_to_json(
     let defined_type = &idl
         .accounts
         .iter()
-        .find(|acc| acc.name.eq_ignore_ascii_case(defined_type_name))
-        .and_then(|acc| {
-            idl.types
-                .iter()
-                .find(|ty| ty.name.eq_ignore_ascii_case(&acc.name))
-        })
-        .or_else(|| {
-            idl.types
-                .iter()
-                .find(|ty| ty.name.eq_ignore_ascii_case(defined_type_name))
-        })
+        .find(|acc| acc.name == defined_type_name)
+        .and_then(|acc| idl.types.iter().find(|ty| ty.name == acc.name))
+        .or_else(|| idl.types.iter().find(|ty| ty.name == defined_type_name))
         .ok_or_else(|| anyhow!("Type `{}` not found in IDL.", defined_type_name))?
         .ty;
 
@@ -4728,24 +4720,18 @@ fn shell(cfg_override: &ConfigOverride) -> Result<()> {
 fn run(cfg_override: &ConfigOverride, script: String, script_args: Vec<String>) -> Result<()> {
     with_workspace(cfg_override, |cfg| -> Result<()> {
         let url = cluster_url(cfg, &cfg.test_validator, &cfg.surfpool_config);
-        let script_cmd = cfg
-            .scripts
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(&script))
-            .map(|(_, cmd)| cmd)
-            .ok_or_else(|| {
-                let mut available_scripts: Vec<String> = cfg.scripts.keys().cloned().collect();
-                available_scripts.sort();
-
-                if available_scripts.is_empty() {
-                    anyhow!("Script '{script}' not found. No scripts defined in Anchor.toml.")
-                } else {
-                    anyhow!(
-                        "Script '{script}' not found.\n\nAvailable scripts:\n  {}",
-                        available_scripts.join("\n  ")
-                    )
-                }
-            })?;
+        let script_cmd = cfg.scripts.get(&script).ok_or_else(|| {
+            let mut available_scripts: Vec<String> = cfg.scripts.keys().cloned().collect();
+            available_scripts.sort();
+            if available_scripts.is_empty() {
+                anyhow!("Script '{script}' not found. No scripts defined in Anchor.toml.")
+            } else {
+                anyhow!(
+                    "Script '{script}' not found.\n\nAvailable scripts:\n  {}",
+                    available_scripts.join("\n  ")
+                )
+            }
+        })?;
         let script_with_args = format!("{script_cmd} {}", script_args.join(" "));
         let exit = std::process::Command::new("bash")
             .arg("-c")
