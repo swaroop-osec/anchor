@@ -41,6 +41,7 @@ pub use crate::{
     // Hash
     sha256,
     sol_log_data,
+    system_program,
     // Constraints
     AccountConstraint,
     // Loader & dispatch
