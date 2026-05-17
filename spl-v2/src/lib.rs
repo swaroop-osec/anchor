@@ -23,6 +23,12 @@ pub mod token_2022;
 pub mod token_2022_extensions;
 pub mod token_interface;
 
+pub mod prelude {
+    pub use crate::{
+        associated_token, mint, token, token_2022, token_2022_extensions, token_interface,
+    };
+}
+
 /// Re-export `pinocchio-token-2022` for Token-2022 extension CPI instructions.
 pub use pinocchio_token_2022 as token_2022_cpi;
 pub use {
