@@ -716,7 +716,7 @@ fn encode_pubkey_ix(disc: u8, address: &Address) -> [u8; 33] {
 
 #[cfg(feature = "guardrails")]
 #[inline]
-fn validate_token_program(program_id: &Address) -> Result<(), ProgramError> {
+pub(crate) fn validate_token_program(program_id: &Address) -> Result<(), ProgramError> {
     if anchor_lang_v2::address_eq(program_id, &Token::id())
         || anchor_lang_v2::address_eq(program_id, &anchor_lang_v2::programs::Token2022::id())
     {
@@ -728,7 +728,7 @@ fn validate_token_program(program_id: &Address) -> Result<(), ProgramError> {
 
 #[cfg(not(feature = "guardrails"))]
 #[inline]
-fn validate_token_program(_program_id: &Address) -> Result<(), ProgramError> {
+pub(crate) fn validate_token_program(_program_id: &Address) -> Result<(), ProgramError> {
     Ok(())
 }
 
