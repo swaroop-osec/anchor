@@ -211,6 +211,37 @@ pub trait Space {
     const INIT_SPACE: usize;
 }
 
+macro_rules! impl_space_for_primitives {
+    ($($ty:ty => $space:expr),* $(,)?) => {
+        $(
+            impl Space for $ty {
+                const INIT_SPACE: usize = $space;
+            }
+        )*
+    };
+}
+
+impl_space_for_primitives! {
+    bool => 1,
+    i8 => 1,
+    u8 => 1,
+    i16 => 2,
+    u16 => 2,
+    i32 => 4,
+    u32 => 4,
+    f32 => 4,
+    i64 => 8,
+    u64 => 8,
+    f64 => 8,
+    i128 => 16,
+    u128 => 16,
+    Address => 32,
+}
+
+impl<T: Space, const N: usize> Space for [T; N] {
+    const INIT_SPACE: usize = T::INIT_SPACE * N;
+}
+
 #[doc(hidden)]
 pub mod __private {
     /// Used by `#[derive(InitSpace)]` on enums to pick the largest variant size.
