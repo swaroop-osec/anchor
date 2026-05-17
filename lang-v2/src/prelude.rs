@@ -7,8 +7,8 @@ pub use crate::{
     account,
     // Account types
     accounts::{
-        Account, BorshAccount, Program, Signer, SlabSchema, SystemAccount, Sysvar, SysvarId,
-        UncheckedAccount,
+        Account, BorshAccount, Interface, InterfaceAccount, Program, Signer, SlabSchema,
+        SystemAccount, Sysvar, SysvarId, UncheckedAccount,
     },
     constant,
     create_account,
@@ -65,6 +65,7 @@ pub use crate::{
     ErrorCode,
     Event,
     Id,
+    Ids,
     InitSpace,
     InstructionData,
     // Nested

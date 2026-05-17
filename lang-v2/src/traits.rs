@@ -213,6 +213,11 @@ pub trait Id {
     const IDL_ADDRESS: &'static str = "";
 }
 
+/// Declares multiple valid on-chain addresses for an interface program marker.
+pub trait Ids {
+    fn ids() -> &'static [Address];
+}
+
 pub trait Discriminator {
     const DISCRIMINATOR: &'static [u8];
 }

@@ -1,5 +1,6 @@
 mod borsh_account;
 mod boxed;
+mod interface;
 mod program;
 mod serialized_account;
 mod signer;
@@ -12,6 +13,7 @@ mod unchecked_account;
 pub use {
     crate::AccountInitialize,
     borsh_account::{BorshAccount, BorshSerializer},
+    interface::Interface,
     program::Program,
     serialized_account::{AnchorAccountSerialize, SerializedAccount},
     signer::Signer,
@@ -39,6 +41,12 @@ pub use {
 /// `ProgramError::IllegalOwner`, not the user's `@ MyErr` code. For a
 /// custom error, use `UncheckedAccount` with derive-level `owner = X @ MyErr`.
 pub type Account<T> = slab::Slab<T, HeaderOnly>;
+
+/// Generic interface account alias.
+///
+/// Token-interface semantics are carried by the `T` type itself, for example
+/// `anchor_spl_v2::token_interface::TokenAccount`.
+pub type InterfaceAccount<T> = Account<T>;
 
 /// Generates `Deref<Target=AccountView>` + `AsRef<AccountView>` + `AsRef<Address>`
 /// for a view wrapper that stores its `AccountView` in a field named `view`.

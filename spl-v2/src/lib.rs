@@ -4,8 +4,9 @@
 //! and `Mint` types for use with `Account<T>`, plus namespaced constraint markers
 //! for `token::mint`, `token::authority`, `mint::decimals`, etc.
 //!
-//! For programs that need to accept both Token and Token-2022 accounts, use the
-//! `token_interface` module which provides `InterfaceAccount<T>`.
+//! For programs that need to accept both Token and Token-2022 accounts, use
+//! `anchor_lang_v2::prelude::InterfaceAccount` with the `token_interface`
+//! module's token account types.
 
 #![no_std]
 
@@ -25,5 +26,5 @@ pub use {
     },
     mint::{Mint, MintInitParams},
     token::{TokenAccount, TokenAccountInitParams},
-    token_interface::{Interface, InterfaceAccount},
+    token_interface::Interface,
 };

@@ -7,7 +7,8 @@
 //! # Usage
 //!
 //! ```ignore
-//! use anchor_spl_v2::token_interface::{InterfaceAccount, TokenAccount, Mint};
+//! use anchor_lang_v2::prelude::InterfaceAccount;
+//! use anchor_spl_v2::token_interface::{Mint, TokenAccount};
 //!
 //! #[derive(Accounts)]
 //! pub struct MyAccounts {
@@ -19,9 +20,9 @@
 
 use {
     anchor_lang_v2::{
-        accounts::{Account, SlabInit, SlabSchema},
+        accounts::{InterfaceAccount, SlabInit, SlabSchema},
         programs::{Token, Token2022},
-        AccountConstraint, Id,
+        AccountConstraint, Id, Ids,
     },
     bytemuck::{Pod, Zeroable},
     core::ops::Deref,
@@ -56,10 +57,25 @@ impl<T> Deref for Interface<T> {
     }
 }
 
-/// Account type alias that accepts both Token and Token-2022 programs.
-///
-/// Equivalent to v1's `InterfaceAccount<'info, T>` but without a lifetime.
-pub type InterfaceAccount<T> = Account<Interface<T>>;
+/// SPL token account data used with `InterfaceAccount<TokenAccount>`.
+pub type TokenAccount = Interface<crate::TokenAccount>;
+
+/// SPL mint account data used with `InterfaceAccount<Mint>`.
+pub type Mint = Interface<crate::Mint>;
+
+/// Program marker that accepts both Token and Token-2022 executable accounts.
+pub struct TokenInterface;
+
+impl Ids for TokenInterface {
+    #[inline(always)]
+    fn ids() -> &'static [Address] {
+        static IDS: [Address; 2] = [
+            Address::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+            Address::from_str_const("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+        ];
+        &IDS
+    }
+}
 
 // ---------------------------------------------------------------------------
 // SlabSchema — Interface<TokenAccount>
@@ -284,7 +300,7 @@ macro_rules! impl_token_account_constraints {
     };
 }
 
-impl_token_account_constraints!(InterfaceAccount<crate::TokenAccount>);
+impl_token_account_constraints!(InterfaceAccount<TokenAccount>);
 
 // ---------------------------------------------------------------------------
 // Constraint impls — mint::* on InterfaceAccount<Mint>
@@ -340,4 +356,4 @@ macro_rules! impl_mint_constraints {
     };
 }
 
-impl_mint_constraints!(InterfaceAccount<crate::Mint>);
+impl_mint_constraints!(InterfaceAccount<Mint>);

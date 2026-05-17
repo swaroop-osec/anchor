@@ -189,6 +189,14 @@ pub use {
 /// `use anchor_lang_v2::solana_program::instruction::{Instruction, AccountMeta}`
 /// without adding `solana-instruction` to their `Cargo.toml`.
 pub mod solana_program {
+    pub mod clock {
+        pub use pinocchio::sysvars::clock::*;
+    }
+
+    pub mod hash {
+        pub use solana_sha256_hasher::*;
+    }
+
     pub mod instruction {
         pub use solana_instruction::*;
     }
@@ -205,6 +213,10 @@ pub mod solana_program {
 
     pub mod rent {
         pub use solana_sysvar::rent::*;
+    }
+
+    pub mod sysvar {
+        pub use pinocchio::sysvars::Sysvar;
     }
 
     pub mod program {
