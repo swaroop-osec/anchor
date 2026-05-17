@@ -10,8 +10,10 @@ use {
     anchor_spl_v2::{
         associated_token::get_associated_token_address,
         extensions::{
-            self, MetadataPointer, MintCloseAuthority, PermanentDelegate, TransferFeeAmount,
-            TransferFeeConfig, TransferHook, TransferHookAccount,
+            self, CpiGuard, DefaultAccountState, GroupMemberPointer, GroupPointer, MetadataPointer,
+            MintCloseAuthority, NonTransferable, NonTransferableAccount, PausableAccount,
+            PausableConfig, PermanentDelegate, TransferFeeAmount, TransferFeeConfig, TransferHook,
+            TransferHookAccount,
         },
         mint::{self, Mint},
         token::{self, cpi as token_cpi, TokenAccount},
@@ -414,6 +416,84 @@ pub mod spl_test {
         }
         Ok(())
     }
+
+    /// Parse `DefaultAccountState` from a Token-2022 mint.
+    #[discrim = 34]
+    pub fn read_default_account_state(
+        ctx: &mut Context<ReadDefaultAccountState>,
+        expected_state: u8,
+    ) -> Result<()> {
+        let ext: &DefaultAccountState =
+            extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        if ext.state != expected_state {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse `GroupPointer` and assert both optional addresses match.
+    #[discrim = 35]
+    pub fn read_group_pointer(
+        ctx: &mut Context<ReadGroupPointer>,
+        expected_authority: Address,
+        expected_group: Address,
+    ) -> Result<()> {
+        let ext: &GroupPointer = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        if ext.authority != expected_authority || ext.group_address != expected_group {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse `GroupMemberPointer` and assert both optional addresses match.
+    #[discrim = 36]
+    pub fn read_group_member_pointer(
+        ctx: &mut Context<ReadGroupMemberPointer>,
+        expected_authority: Address,
+        expected_member: Address,
+    ) -> Result<()> {
+        let ext: &GroupMemberPointer = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        if ext.authority != expected_authority || ext.member_address != expected_member {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse `CpiGuard` from a Token-2022 token account.
+    #[discrim = 37]
+    pub fn read_cpi_guard(ctx: &mut Context<ReadCpiGuard>, expected_enabled: u8) -> Result<()> {
+        let ext: &CpiGuard =
+            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        if u8::from(ext.is_enabled()) != expected_enabled {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse `PausableConfig` from a Token-2022 mint.
+    #[discrim = 38]
+    pub fn read_pausable_config(
+        ctx: &mut Context<ReadPausableConfig>,
+        expected_authority: Address,
+        expected_paused: u8,
+    ) -> Result<()> {
+        let ext: &PausableConfig = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        if ext.authority != expected_authority || u8::from(ext.is_paused()) != expected_paused {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse zero-sized mint/account marker extensions.
+    #[discrim = 39]
+    pub fn read_marker_extensions(ctx: &mut Context<ReadMarkerExtensions>) -> Result<()> {
+        let _: &NonTransferable = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let _: &NonTransferableAccount =
+            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        let _: &PausableAccount =
+            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -716,5 +796,41 @@ pub struct ReadTransferFeeAmount {
 #[derive(Accounts)]
 #[instruction(expected_transferring: u8)]
 pub struct ReadTransferHookAccount {
+    pub token_account: InterfaceAccount<TokenAccount>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_state: u8)]
+pub struct ReadDefaultAccountState {
+    pub mint: InterfaceAccount<Mint>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_authority: Address, expected_group: Address)]
+pub struct ReadGroupPointer {
+    pub mint: InterfaceAccount<Mint>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_authority: Address, expected_member: Address)]
+pub struct ReadGroupMemberPointer {
+    pub mint: InterfaceAccount<Mint>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_enabled: u8)]
+pub struct ReadCpiGuard {
+    pub token_account: InterfaceAccount<TokenAccount>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_authority: Address, expected_paused: u8)]
+pub struct ReadPausableConfig {
+    pub mint: InterfaceAccount<Mint>,
+}
+
+#[derive(Accounts)]
+pub struct ReadMarkerExtensions {
+    pub mint: InterfaceAccount<Mint>,
     pub token_account: InterfaceAccount<TokenAccount>,
 }

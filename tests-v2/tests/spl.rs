@@ -1443,6 +1443,59 @@ fn tlv_transfer_hook_account(transferring: u8) -> Vec<u8> {
     out
 }
 
+fn tlv_default_account_state(state: u8) -> Vec<u8> {
+    let mut out = Vec::new();
+    push_tlv(&mut out, 6, &[state]); // DefaultAccountState
+    out
+}
+
+fn tlv_group_pointer(authority: &Pubkey, group: &Pubkey) -> Vec<u8> {
+    let mut value = Vec::with_capacity(64);
+    value.extend_from_slice(authority.as_ref());
+    value.extend_from_slice(group.as_ref());
+    let mut out = Vec::new();
+    push_tlv(&mut out, 20, &value); // GroupPointer
+    out
+}
+
+fn tlv_group_member_pointer(authority: &Pubkey, member: &Pubkey) -> Vec<u8> {
+    let mut value = Vec::with_capacity(64);
+    value.extend_from_slice(authority.as_ref());
+    value.extend_from_slice(member.as_ref());
+    let mut out = Vec::new();
+    push_tlv(&mut out, 22, &value); // GroupMemberPointer
+    out
+}
+
+fn tlv_cpi_guard(enabled: u8) -> Vec<u8> {
+    let mut out = Vec::new();
+    push_tlv(&mut out, 11, &[enabled]); // CpiGuard
+    out
+}
+
+fn tlv_pausable_config(authority: &Pubkey, paused: u8) -> Vec<u8> {
+    let mut value = Vec::with_capacity(33);
+    value.extend_from_slice(authority.as_ref());
+    value.push(paused);
+    let mut out = Vec::new();
+    push_tlv(&mut out, 25, &value); // PausableConfig
+    out
+}
+
+fn tlv_marker(ext_type: u16) -> Vec<u8> {
+    let mut out = Vec::new();
+    push_tlv(&mut out, ext_type, &[]);
+    out
+}
+
+fn concat_tlvs(tlvs: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for tlv in tlvs {
+        out.extend_from_slice(tlv);
+    }
+    out
+}
+
 #[test]
 fn transfer_fee_config_extension_round_trips() {
     let (mut svm, payer) = setup();
@@ -1868,6 +1921,176 @@ fn missing_extension_returns_invalid_account_data() {
         result.is_err(),
         "missing extension should surface InvalidAccountData",
     );
+}
+
+#[test]
+fn default_account_state_extension_round_trips() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("das-mint-auth");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_default_account_state(2),
+        ),
+    );
+
+    let data = vec![34, 2];
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("DefaultAccountState should parse and match");
+
+    let data = vec![34, 1];
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(result.is_err(), "wrong default state should reject");
+}
+
+#[test]
+fn group_pointer_extension_round_trips() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("gp-mint-auth");
+    let group_authority = keypair_for("gp-authority");
+    let group = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_group_pointer(&group_authority.pubkey(), &group),
+        ),
+    );
+
+    let mut data = vec![35];
+    data.extend_from_slice(&group_authority.pubkey().to_bytes());
+    data.extend_from_slice(&group.to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("GroupPointer should parse and match");
+}
+
+#[test]
+fn group_member_pointer_extension_round_trips() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("gmp-mint-auth");
+    let member_authority = keypair_for("gmp-authority");
+    let member = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_group_member_pointer(&member_authority.pubkey(), &member),
+        ),
+    );
+
+    let mut data = vec![36];
+    data.extend_from_slice(&member_authority.pubkey().to_bytes());
+    data.extend_from_slice(&member.to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("GroupMemberPointer should parse and match");
+}
+
+#[test]
+fn cpi_guard_extension_round_trips() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("cg-mint-auth");
+    let owner = keypair_for("cg-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &tlv_cpi_guard(1)),
+    );
+
+    let data = vec![37, 1];
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("CpiGuard should parse and match");
+
+    let data = vec![37, 0];
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(result.is_err(), "wrong CPI guard state should reject");
+}
+
+#[test]
+fn pausable_config_extension_round_trips() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("pause-mint-auth");
+    let pause_authority = keypair_for("pause-authority");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_pausable_config(&pause_authority.pubkey(), 1),
+        ),
+    );
+
+    let mut data = vec![38];
+    data.extend_from_slice(&pause_authority.pubkey().to_bytes());
+    data.push(1);
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("PausableConfig should parse and match");
+}
+
+#[test]
+fn zero_sized_marker_extensions_round_trip() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("marker-mint-auth");
+    let owner = keypair_for("marker-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv_marker(9)),
+    );
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(
+            &mint,
+            &owner.pubkey(),
+            0,
+            &concat_tlvs(&[tlv_marker(13), tlv_marker(26)]),
+        ),
+    );
+
+    let metas = vec![
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(token, false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![39], metas, &payer, &[])
+        .expect("zero-sized marker extensions should parse");
 }
 
 // ---- Unit tests for host-side helpers --------------------------------------
