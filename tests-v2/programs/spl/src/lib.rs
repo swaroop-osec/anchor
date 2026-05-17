@@ -17,8 +17,7 @@ use {
         },
         mint::{self, Mint},
         token::{self, TokenAccount},
-        token_2022 as token_2022_cpi, token_2022_extensions as token_2022_ext_cpi,
-        token_interface::InterfaceAccount,
+        token_2022 as token_2022_cpi, token_2022_extensions as token_2022_ext_cpi, token_interface,
     },
 };
 
@@ -887,12 +886,12 @@ pub struct CheckAta {
 
 #[derive(Accounts)]
 pub struct ReadInterfaceMint {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 pub struct ReadInterfaceTokenAccount {
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
 // -- InterfaceAccount init-path structs --------------------------------------
@@ -910,7 +909,7 @@ pub struct InitInterfaceMint {
         mint::authority = authority,
         mint::token_program = token_program,
     )]
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
     pub system_program: Program<System>,
 }
 
@@ -918,7 +917,7 @@ pub struct InitInterfaceMint {
 pub struct InitInterfaceTokenAccount {
     #[account(mut)]
     pub payer: Signer,
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
     pub authority: UncheckedAccount,
     pub token_program: UncheckedAccount,
     #[account(
@@ -928,7 +927,7 @@ pub struct InitInterfaceTokenAccount {
         token::authority = authority,
         token::token_program = token_program,
     )]
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
     pub system_program: Program<System>,
 }
 
@@ -936,50 +935,50 @@ pub struct InitInterfaceTokenAccount {
 
 #[derive(Accounts)]
 pub struct CheckInterfaceTokenMint {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
     #[account(mut, token::mint = mint)]
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
 #[derive(Accounts)]
 pub struct CheckInterfaceTokenAuthority {
     pub expected: UncheckedAccount,
     #[account(mut, token::authority = expected)]
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
 #[derive(Accounts)]
 pub struct CheckInterfaceTokenProgram {
     pub token_program: UncheckedAccount,
     #[account(mut, token::token_program = token_program)]
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
 #[derive(Accounts)]
 pub struct CheckInterfaceMintAuthority {
     pub expected: UncheckedAccount,
     #[account(mut, mint::authority = expected)]
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 pub struct CheckInterfaceMintFreezeAuthority {
     pub expected: UncheckedAccount,
     #[account(mut, mint::freeze_authority = expected)]
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 pub struct CheckInterfaceMintDecimals {
     #[account(mut, mint::decimals = 6)]
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 pub struct CheckInterfaceMintTokenProgram {
     pub token_program: UncheckedAccount,
     #[account(mut, mint::token_program = token_program)]
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 // -- Extension-reader structs ------------------------------------------------
@@ -995,79 +994,79 @@ pub struct CheckInterfaceMintTokenProgram {
 #[derive(Accounts)]
 #[instruction(expected_bps: u16)]
 pub struct ReadTransferFeeConfig {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_authority: Address, expected_metadata: Address)]
 pub struct ReadMetadataPointer {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_program_id: Address)]
 pub struct ReadTransferHook {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_authority: Address)]
 pub struct ReadMintCloseAuthority {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_delegate: Address)]
 pub struct ReadPermanentDelegate {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_withheld: u64)]
 pub struct ReadTransferFeeAmount {
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_transferring: u8)]
 pub struct ReadTransferHookAccount {
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_state: u8)]
 pub struct ReadDefaultAccountState {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_authority: Address, expected_group: Address)]
 pub struct ReadGroupPointer {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_authority: Address, expected_member: Address)]
 pub struct ReadGroupMemberPointer {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_enabled: u8)]
 pub struct ReadCpiGuard {
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_authority: Address, expected_paused: u8)]
 pub struct ReadPausableConfig {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 pub struct ReadMarkerExtensions {
-    pub mint: InterfaceAccount<Mint>,
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
 #[derive(Accounts)]

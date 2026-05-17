@@ -8989,6 +8989,7 @@ dependencies = [
  "spl-ata-test",
  "spl-test",
  "spl-token",
+ "token-interface-test",
 ]
 
 [[package]]
@@ -9127,6 +9128,15 @@ name = "token-2022-spy"
 version = "0.1.0"
 dependencies = [
  "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
+name = "token-interface-test"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "anchor-spl-v2",
  "wincode 0.5.2",
 ]
 

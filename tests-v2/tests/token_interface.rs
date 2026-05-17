@@ -1,0 +1,680 @@
+//! Dedicated e2e coverage for `anchor-spl-v2::token_interface`.
+
+use {
+    anchor_lang_v2::solana_program::instruction::AccountMeta,
+    litesvm::LiteSVM,
+    solana_keypair::Keypair,
+    solana_pubkey::Pubkey,
+    solana_signer::Signer,
+    spl_token::{
+        solana_program::program_pack::Pack,
+        state::{Account as SplTokenAccount, Mint as SplMint},
+    },
+    tests_v2::{build_program, keypair_for, send_instruction},
+};
+
+fn program_id() -> Pubkey {
+    "79t3uDwfPMnJEgybg7XzsLd54wDyrhskVwhgnmjkRAXj"
+        .parse()
+        .unwrap()
+}
+
+fn token_program_id() -> Pubkey {
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        .parse()
+        .unwrap()
+}
+
+fn token_2022_program_id() -> Pubkey {
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        .parse()
+        .unwrap()
+}
+
+fn setup() -> (LiteSVM, Keypair) {
+    let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let deploy_dir = test_dir.join("target/deploy");
+    build_program(
+        test_dir.join("programs/token-interface").to_str().unwrap(),
+        deploy_dir.to_str().unwrap(),
+    );
+
+    let mut svm = LiteSVM::new();
+    svm.add_program_from_file(program_id(), deploy_dir.join("token_interface_test.so"))
+        .expect("load token_interface_test program");
+
+    let payer = keypair_for("token-interface-payer");
+    svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
+    (svm, payer)
+}
+
+fn check_token_program(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    token_program: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![AccountMeta::new_readonly(token_program, false)];
+    send_instruction(svm, program_id(), vec![0], metas, payer, &[])
+}
+
+fn init_mint(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: &Keypair,
+    authority: &Pubkey,
+    token_program: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(*authority, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new(mint.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![1], metas, payer, &[mint])
+}
+
+fn init_mint_decimals_9(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: &Keypair,
+    authority: &Pubkey,
+    token_program: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(*authority, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new(mint.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![6], metas, payer, &[mint])
+}
+
+fn init_mint_with_freeze_authority(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: &Keypair,
+    authority: &Pubkey,
+    freeze_authority: &Pubkey,
+    token_program: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(*authority, false),
+        AccountMeta::new_readonly(*freeze_authority, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new(mint.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![7], metas, payer, &[mint])
+}
+
+fn init_token_account(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: &Pubkey,
+    token_account: &Keypair,
+    authority: &Pubkey,
+    token_program: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(*mint, false),
+        AccountMeta::new_readonly(*authority, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new(token_account.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![2], metas, payer, &[token_account])
+}
+
+fn check_token_constraints(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: Pubkey,
+    authority: Pubkey,
+    token_program: Pubkey,
+    token_account: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(authority, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new_readonly(token_account, false),
+    ];
+    send_instruction(svm, program_id(), vec![3], metas, payer, &[])
+}
+
+fn check_mint_constraints(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    authority: Pubkey,
+    token_program: Pubkey,
+    mint: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new_readonly(authority, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new_readonly(mint, false),
+    ];
+    send_instruction(svm, program_id(), vec![4], metas, payer, &[])
+}
+
+fn check_mint_freeze_authority(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    expected: Pubkey,
+    mint: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new_readonly(expected, false),
+        AccountMeta::new_readonly(mint, false),
+    ];
+    send_instruction(svm, program_id(), vec![8], metas, payer, &[])
+}
+
+fn mint_to(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: Pubkey,
+    token_account: Pubkey,
+    authority: &Keypair,
+    token_program: Pubkey,
+    amount: u64,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new(token_account, false),
+        AccountMeta::new_readonly(authority.pubkey(), true),
+        AccountMeta::new_readonly(token_program, false),
+    ];
+    let mut data = vec![5];
+    data.extend_from_slice(&amount.to_le_bytes());
+    send_instruction(svm, program_id(), data, metas, payer, &[authority])
+}
+
+fn init_pair(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint_authority: &Keypair,
+    token_owner: &Keypair,
+    token_program: Pubkey,
+) -> (Keypair, Keypair) {
+    let mint = Keypair::new();
+    let token_account = Keypair::new();
+
+    init_mint(svm, payer, &mint, &mint_authority.pubkey(), token_program)
+        .expect("interface mint init should succeed");
+    init_token_account(
+        svm,
+        payer,
+        &mint.pubkey(),
+        &token_account,
+        &token_owner.pubkey(),
+        token_program,
+    )
+    .expect("interface token account init should succeed");
+
+    (mint, token_account)
+}
+
+fn assert_mint_state(svm: &LiteSVM, mint: Pubkey, owner: Pubkey, expected_authority: Pubkey) {
+    let account = svm.get_account(&mint).expect("mint exists");
+    assert_eq!(account.owner, owner);
+    let state = SplMint::unpack(&account.data).expect("unpack mint");
+    assert_eq!(state.decimals, 6);
+    assert!(state.is_initialized);
+    assert_eq!(
+        state.mint_authority.unwrap().to_bytes(),
+        expected_authority.to_bytes()
+    );
+}
+
+fn assert_token_state(
+    svm: &LiteSVM,
+    token_account: Pubkey,
+    owner_program: Pubkey,
+    mint: Pubkey,
+    authority: Pubkey,
+    amount: u64,
+) {
+    let account = svm
+        .get_account(&token_account)
+        .expect("token account exists");
+    assert_eq!(account.owner, owner_program);
+    let state = SplTokenAccount::unpack(&account.data).expect("unpack token account");
+    assert_eq!(state.mint.to_bytes(), mint.to_bytes());
+    assert_eq!(state.owner.to_bytes(), authority.to_bytes());
+    assert_eq!(state.amount, amount);
+}
+
+#[test]
+fn token_interface_program_accepts_token_and_token_2022_only() {
+    let (mut svm, payer) = setup();
+
+    check_token_program(&mut svm, &payer, token_program_id()).expect("Token program should pass");
+    check_token_program(&mut svm, &payer, token_2022_program_id())
+        .expect("Token-2022 program should pass");
+
+    let result = check_token_program(&mut svm, &payer, solana_sdk_ids::system_program::ID);
+    assert!(
+        result.is_err(),
+        "System program must not pass TokenInterface"
+    );
+}
+
+#[test]
+fn interface_init_creates_legacy_mint_and_token_account() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("legacy-interface-mint-authority");
+    let token_owner = keypair_for("legacy-interface-token-owner");
+
+    let (mint, token_account) = init_pair(
+        &mut svm,
+        &payer,
+        &mint_authority,
+        &token_owner,
+        token_program_id(),
+    );
+
+    assert_mint_state(
+        &svm,
+        mint.pubkey(),
+        token_program_id(),
+        mint_authority.pubkey(),
+    );
+    assert_token_state(
+        &svm,
+        token_account.pubkey(),
+        token_program_id(),
+        mint.pubkey(),
+        token_owner.pubkey(),
+        0,
+    );
+}
+
+#[test]
+fn interface_init_creates_token_2022_mint_and_token_account() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("t22-interface-mint-authority");
+    let token_owner = keypair_for("t22-interface-token-owner");
+
+    let (mint, token_account) = init_pair(
+        &mut svm,
+        &payer,
+        &mint_authority,
+        &token_owner,
+        token_2022_program_id(),
+    );
+
+    assert_mint_state(
+        &svm,
+        mint.pubkey(),
+        token_2022_program_id(),
+        mint_authority.pubkey(),
+    );
+    assert_token_state(
+        &svm,
+        token_account.pubkey(),
+        token_2022_program_id(),
+        mint.pubkey(),
+        token_owner.pubkey(),
+        0,
+    );
+}
+
+#[test]
+fn interface_init_rejects_non_token_interface_program() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("bad-interface-mint-authority");
+    let token_owner = keypair_for("bad-interface-token-owner");
+    let mint = Keypair::new();
+
+    let result = init_mint(
+        &mut svm,
+        &payer,
+        &mint,
+        &mint_authority.pubkey(),
+        solana_sdk_ids::system_program::ID,
+    );
+    assert!(
+        result.is_err(),
+        "mint init should reject a non-token interface program"
+    );
+    assert!(svm.get_account(&mint.pubkey()).is_none());
+
+    let mint = Keypair::new();
+    let token_account = Keypair::new();
+    init_mint(
+        &mut svm,
+        &payer,
+        &mint,
+        &mint_authority.pubkey(),
+        token_program_id(),
+    )
+    .expect("seed mint");
+
+    let result = init_token_account(
+        &mut svm,
+        &payer,
+        &mint.pubkey(),
+        &token_account,
+        &token_owner.pubkey(),
+        solana_sdk_ids::system_program::ID,
+    );
+    assert!(
+        result.is_err(),
+        "token account init should reject a non-token interface program"
+    );
+    assert!(svm.get_account(&token_account.pubkey()).is_none());
+}
+
+#[test]
+fn interface_constraints_accept_matching_token_2022_accounts() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("constraint-t22-mint-authority");
+    let token_owner = keypair_for("constraint-t22-token-owner");
+    let (mint, token_account) = init_pair(
+        &mut svm,
+        &payer,
+        &mint_authority,
+        &token_owner,
+        token_2022_program_id(),
+    );
+
+    check_mint_constraints(
+        &mut svm,
+        &payer,
+        mint_authority.pubkey(),
+        token_2022_program_id(),
+        mint.pubkey(),
+    )
+    .expect("matching mint constraints should pass");
+    check_token_constraints(
+        &mut svm,
+        &payer,
+        mint.pubkey(),
+        token_owner.pubkey(),
+        token_2022_program_id(),
+        token_account.pubkey(),
+    )
+    .expect("matching token constraints should pass");
+}
+
+#[test]
+fn interface_constraints_reject_wrong_token_program_for_account_owner() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("constraint-wrong-program-mint-authority");
+    let token_owner = keypair_for("constraint-wrong-program-token-owner");
+    let (mint, token_account) = init_pair(
+        &mut svm,
+        &payer,
+        &mint_authority,
+        &token_owner,
+        token_2022_program_id(),
+    );
+
+    let result = check_mint_constraints(
+        &mut svm,
+        &payer,
+        mint_authority.pubkey(),
+        token_program_id(),
+        mint.pubkey(),
+    );
+    assert!(
+        result.is_err(),
+        "Token-2022 mint should reject legacy Token as token_program"
+    );
+
+    let result = check_token_constraints(
+        &mut svm,
+        &payer,
+        mint.pubkey(),
+        token_owner.pubkey(),
+        token_program_id(),
+        token_account.pubkey(),
+    );
+    assert!(
+        result.is_err(),
+        "Token-2022 token account should reject legacy Token as token_program"
+    );
+}
+
+#[test]
+fn interface_token_constraints_reject_mint_mismatch() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("constraint-wrong-mint-authority");
+    let token_owner = keypair_for("constraint-wrong-mint-token-owner");
+    let (mint, token_account) = init_pair(
+        &mut svm,
+        &payer,
+        &mint_authority,
+        &token_owner,
+        token_2022_program_id(),
+    );
+    let other_mint = Keypair::new();
+    init_mint(
+        &mut svm,
+        &payer,
+        &other_mint,
+        &mint_authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("seed mismatched mint");
+
+    let result = check_token_constraints(
+        &mut svm,
+        &payer,
+        other_mint.pubkey(),
+        token_owner.pubkey(),
+        token_2022_program_id(),
+        token_account.pubkey(),
+    );
+    assert!(
+        result.is_err(),
+        "token::mint must reject a token account for a different mint"
+    );
+
+    assert_token_state(
+        &svm,
+        token_account.pubkey(),
+        token_2022_program_id(),
+        mint.pubkey(),
+        token_owner.pubkey(),
+        0,
+    );
+}
+
+#[test]
+fn interface_token_constraints_reject_authority_mismatch() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("constraint-wrong-owner-mint-authority");
+    let token_owner = keypair_for("constraint-wrong-owner-token-owner");
+    let wrong_owner = keypair_for("constraint-wrong-owner-other");
+    let (mint, token_account) = init_pair(
+        &mut svm,
+        &payer,
+        &mint_authority,
+        &token_owner,
+        token_2022_program_id(),
+    );
+
+    let result = check_token_constraints(
+        &mut svm,
+        &payer,
+        mint.pubkey(),
+        wrong_owner.pubkey(),
+        token_2022_program_id(),
+        token_account.pubkey(),
+    );
+    assert!(
+        result.is_err(),
+        "token::authority must reject a token account owned by another authority"
+    );
+}
+
+#[test]
+fn interface_mint_constraints_reject_authority_mismatch() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("constraint-wrong-mint-auth");
+    let wrong_authority = keypair_for("constraint-wrong-mint-auth-other");
+    let mint = Keypair::new();
+    init_mint(
+        &mut svm,
+        &payer,
+        &mint,
+        &mint_authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("seed mint");
+
+    let result = check_mint_constraints(
+        &mut svm,
+        &payer,
+        wrong_authority.pubkey(),
+        token_2022_program_id(),
+        mint.pubkey(),
+    );
+    assert!(
+        result.is_err(),
+        "mint::authority must reject a mint with another authority"
+    );
+}
+
+#[test]
+fn interface_mint_constraints_reject_decimals_mismatch() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("constraint-wrong-decimals-mint-authority");
+    let mint = Keypair::new();
+    init_mint_decimals_9(
+        &mut svm,
+        &payer,
+        &mint,
+        &mint_authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("seed nine-decimal mint");
+
+    let result = check_mint_constraints(
+        &mut svm,
+        &payer,
+        mint_authority.pubkey(),
+        token_2022_program_id(),
+        mint.pubkey(),
+    );
+    assert!(
+        result.is_err(),
+        "mint::decimals = 6 must reject a nine-decimal mint"
+    );
+}
+
+#[test]
+fn interface_mint_freeze_authority_constraint_accepts_matching() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("constraint-freeze-match-mint-authority");
+    let freeze_authority = keypair_for("constraint-freeze-match-freeze-authority");
+    let mint = Keypair::new();
+    init_mint_with_freeze_authority(
+        &mut svm,
+        &payer,
+        &mint,
+        &mint_authority.pubkey(),
+        &freeze_authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("seed mint with freeze authority");
+
+    check_mint_freeze_authority(&mut svm, &payer, freeze_authority.pubkey(), mint.pubkey())
+        .expect("matching mint::freeze_authority should pass");
+}
+
+#[test]
+fn interface_mint_freeze_authority_constraint_rejects_mismatch() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("constraint-freeze-wrong-mint-authority");
+    let freeze_authority = keypair_for("constraint-freeze-wrong-freeze-authority");
+    let wrong_freeze_authority = keypair_for("constraint-freeze-wrong-other");
+    let mint = Keypair::new();
+    init_mint_with_freeze_authority(
+        &mut svm,
+        &payer,
+        &mint,
+        &mint_authority.pubkey(),
+        &freeze_authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("seed mint with freeze authority");
+
+    let result = check_mint_freeze_authority(
+        &mut svm,
+        &payer,
+        wrong_freeze_authority.pubkey(),
+        mint.pubkey(),
+    );
+    assert!(
+        result.is_err(),
+        "mint::freeze_authority must reject a different freeze authority"
+    );
+}
+
+#[test]
+fn interface_mint_freeze_authority_constraint_rejects_unset() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("constraint-freeze-unset-mint-authority");
+    let expected_freeze_authority = keypair_for("constraint-freeze-unset-expected");
+    let mint = Keypair::new();
+    init_mint(
+        &mut svm,
+        &payer,
+        &mint,
+        &mint_authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("seed mint without freeze authority");
+
+    let result = check_mint_freeze_authority(
+        &mut svm,
+        &payer,
+        expected_freeze_authority.pubkey(),
+        mint.pubkey(),
+    );
+    assert!(
+        result.is_err(),
+        "mint::freeze_authority must reject an unset freeze authority"
+    );
+}
+
+#[test]
+fn token_cpi_helpers_work_with_token_interface_accounts() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("cpi-interface-mint-authority");
+    let token_owner = keypair_for("cpi-interface-token-owner");
+    let (mint, token_account) = init_pair(
+        &mut svm,
+        &payer,
+        &mint_authority,
+        &token_owner,
+        token_2022_program_id(),
+    );
+
+    mint_to(
+        &mut svm,
+        &payer,
+        mint.pubkey(),
+        token_account.pubkey(),
+        &mint_authority,
+        token_2022_program_id(),
+        777,
+    )
+    .expect("mint_to should work through interface accounts");
+
+    assert_token_state(
+        &svm,
+        token_account.pubkey(),
+        token_2022_program_id(),
+        mint.pubkey(),
+        token_owner.pubkey(),
+        777,
+    );
+}

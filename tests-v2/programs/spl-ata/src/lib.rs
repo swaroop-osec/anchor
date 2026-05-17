@@ -6,7 +6,7 @@ use {
         associated_token::{self, AssociatedToken},
         mint::{self, Mint},
         token::{self, MintTo, Token, TokenAccount},
-        token_interface::InterfaceAccount,
+        token_interface,
     },
 };
 
@@ -230,7 +230,7 @@ pub struct ValidateAtaWithTokenProgram {
 pub struct InitInterfaceAtaWithTokenProgram {
     #[account(mut)]
     pub payer: Signer,
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
     pub authority: UncheckedAccount,
     #[account(
         init,
@@ -239,7 +239,7 @@ pub struct InitInterfaceAtaWithTokenProgram {
         associated_token::authority = authority,
         associated_token::token_program = token_program,
     )]
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
     pub token_program: UncheckedAccount,
     pub associated_token_program: Program<AssociatedToken>,
     pub system_program: Program<System>,
@@ -247,14 +247,14 @@ pub struct InitInterfaceAtaWithTokenProgram {
 
 #[derive(Accounts)]
 pub struct ValidateInterfaceAtaWithTokenProgram {
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
     pub authority: UncheckedAccount,
     #[account(
         associated_token::mint = mint,
         associated_token::authority = authority,
         associated_token::token_program = token_program,
     )]
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
     pub token_program: UncheckedAccount,
 }
 
@@ -286,7 +286,7 @@ pub struct InitInterfaceMintWithTokenProgram {
         mint::authority = authority,
         mint::token_program = token_program,
     )]
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
     pub system_program: Program<System>,
 }
 
@@ -294,7 +294,7 @@ pub struct InitInterfaceMintWithTokenProgram {
 pub struct InitInterfaceAtaIfNeededWithTokenProgram {
     #[account(mut)]
     pub payer: Signer,
-    pub mint: InterfaceAccount<Mint>,
+    pub mint: InterfaceAccount<token_interface::Mint>,
     pub authority: UncheckedAccount,
     #[account(
         init_if_needed,
@@ -303,7 +303,7 @@ pub struct InitInterfaceAtaIfNeededWithTokenProgram {
         associated_token::authority = authority,
         associated_token::token_program = token_program,
     )]
-    pub token_account: InterfaceAccount<TokenAccount>,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
     pub token_program: UncheckedAccount,
     pub associated_token_program: Program<AssociatedToken>,
     pub system_program: Program<System>,

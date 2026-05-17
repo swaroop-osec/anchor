@@ -23,6 +23,7 @@ optional-accounts = { path = "programs/optional-accounts" }
 seeds = { path = "programs/seeds" }
 spl-test = { path = "programs/spl", features = ["cpi"] }
 spl-ata-test = { path = "programs/spl-ata", features = ["cpi"] }
+token-interface-test = { path = "programs/token-interface", features = ["cpi"] }
 accounts-test = { path = "programs/accounts", features = ["idl-build"] }
 derives-test = { path = "programs/derives" }
 litesvm = { version = "0.11.0", features = ["register-tracing"] }
