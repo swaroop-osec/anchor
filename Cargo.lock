@@ -13,6 +13,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "account-meta-signer-overrides"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "accounts-test"
 version = "0.1.0"
 dependencies = [
@@ -1573,6 +1584,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
+name = "client-builders"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "solana-program-error 3.0.0",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2132,6 +2155,18 @@ dependencies = [
  "libc",
  "redox_users",
  "winapi",
+]
+
+[[package]]
+name = "dispatch-remaining"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "solana-program-error 3.0.0",
+ "wincode 0.5.2",
 ]
 
 [[package]]
@@ -3202,6 +3237,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "init-space-usability"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "pinocchio",
+ "pinocchio-system",
+ "solana-program-error 3.0.0",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3967,6 +4013,18 @@ name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
+
+[[package]]
+name = "optional-accounts"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "solana-program-error 3.0.0",
+ "wincode 0.5.2",
+]
 
 [[package]]
 name = "pairing"
@@ -8873,6 +8931,7 @@ dependencies = [
 name = "tests-v2"
 version = "0.1.0"
 dependencies = [
+ "account-meta-signer-overrides",
  "accounts-test",
  "anchor-lang-idl-spec",
  "anchor-lang-v2",
@@ -8882,11 +8941,15 @@ dependencies = [
  "borsh-realloc",
  "callee",
  "caller",
+ "client-builders",
  "constraints",
  "custom-constraints",
  "derives-test",
+ "dispatch-remaining",
  "dup-mut",
+ "init-space-usability",
  "litesvm",
+ "optional-accounts",
  "pinocchio",
  "seeds",
  "serde_json",
