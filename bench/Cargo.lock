@@ -365,16 +365,18 @@ name = "anchor-lang-v2"
 version = "2.0.0"
 dependencies = [
  "anchor-derive-accounts-v2",
- "borsh",
  "bytemuck",
  "pinocchio",
  "pinocchio-system",
  "sha2 0.10.9",
  "solana-address 2.6.0",
+ "solana-cpi",
  "solana-define-syscall 5.0.0",
  "solana-instruction",
  "solana-msg",
  "solana-program-error",
+ "solana-system-interface 2.0.0",
+ "solana-sysvar",
  "wincode",
 ]
 

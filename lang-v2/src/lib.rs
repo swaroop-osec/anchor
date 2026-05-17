@@ -191,9 +191,19 @@ pub mod solana_program {
         pub use solana_instruction::*;
     }
 
+    pub use solana_system_interface::instruction as system_instruction;
+
     #[cfg(feature = "compat")]
     pub mod pubkey {
         pub type Pubkey = crate::Address;
+    }
+
+    pub mod rent {
+        pub use solana_sysvar::rent::*;
+    }
+
+    pub mod program {
+        pub use solana_cpi::*;
     }
 }
 

@@ -909,8 +909,9 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             .map(|f| {
                 let n = &f.name;
                 if parse::is_nested_type(&f.ty) {
-                    let inner_ty = parse::extract_nested_inner_type(&f.ty)
-                        .expect("is_nested_type was true but extract_nested_inner_type returned None");
+                    let inner_ty = parse::extract_nested_inner_type(&f.ty).expect(
+                        "is_nested_type was true but extract_nested_inner_type returned None",
+                    );
                     let inner_name = parse::field_ty_str(inner_ty);
                     let inner_ident = syn::Ident::new(&inner_name, n.span());
                     let inner_mod = syn::Ident::new(
@@ -1265,7 +1266,7 @@ pub fn account(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let (struct_attrs, pod_impls) = if is_borsh {
         (
-            quote! { #[derive(anchor_lang_v2::wincode::SchemaWrite, anchor_lang_v2::wincode::SchemaRead, Default)] },
+            quote! { #[derive(anchor_lang_v2::wincode::SchemaWrite, anchor_lang_v2::wincode::SchemaRead)] },
             quote! {},
         )
     } else {
