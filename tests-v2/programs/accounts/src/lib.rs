@@ -26,6 +26,11 @@ pub struct Counter {
     pub value: u64,
 }
 
+#[account(borsh)]
+pub struct BorshCounter {
+    pub value: u64,
+}
+
 #[program]
 pub mod accounts_test {
     use super::*;
@@ -502,6 +507,37 @@ pub mod accounts_test {
         ctx.accounts.counter.value = 42;
         Ok(())
     }
+
+    /// Transfers lamports directly from a program-owned `Account<T>` with the
+    /// v1-compatible `Lamports` helpers.
+    #[discrim = 29]
+    pub fn transfer_from_counter_with_lamports_helpers(
+        ctx: &mut Context<TransferFromCounterWithLamportsHelpers>,
+        amount: u64,
+    ) -> Result<()> {
+        ctx.accounts.counter.sub_lamports(amount)?;
+        ctx.accounts.recipient.add_lamports(amount)?;
+        Ok(())
+    }
+
+    /// Initializes a borsh-backed counter for lamport-helper coverage.
+    #[discrim = 30]
+    pub fn initialize_borsh_counter(ctx: &mut Context<InitializeBorshCounter>) -> Result<()> {
+        ctx.accounts.counter.value = 11;
+        Ok(())
+    }
+
+    /// Transfers lamports directly from a program-owned `BorshAccount<T>` with
+    /// the v1-compatible `Lamports` helpers.
+    #[discrim = 31]
+    pub fn transfer_from_borsh_counter_with_lamports_helpers(
+        ctx: &mut Context<TransferFromBorshCounterWithLamportsHelpers>,
+        amount: u64,
+    ) -> Result<()> {
+        ctx.accounts.counter.sub_lamports(amount)?;
+        ctx.accounts.recipient.add_lamports(amount)?;
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -522,6 +558,31 @@ pub struct InitializeWithLaterSeed {
     #[account(mut)]
     pub payer: Signer,
     pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct TransferFromCounterWithLamportsHelpers {
+    #[account(mut, seeds = [b"counter"], bump)]
+    pub counter: Account<Counter>,
+    #[account(mut)]
+    pub recipient: SystemAccount,
+}
+
+#[derive(Accounts)]
+pub struct InitializeBorshCounter {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer, space = 16, seeds = [b"borsh-counter"], bump)]
+    pub counter: BorshAccount<BorshCounter>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct TransferFromBorshCounterWithLamportsHelpers {
+    #[account(mut, seeds = [b"borsh-counter"], bump)]
+    pub counter: BorshAccount<BorshCounter>,
+    #[account(mut)]
+    pub recipient: SystemAccount,
 }
 
 #[derive(Accounts)]

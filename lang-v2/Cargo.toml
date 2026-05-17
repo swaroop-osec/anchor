@@ -106,6 +106,10 @@ name = "account_wrapper_checks"
 required-features = ["testing"]
 
 [[test]]
+name = "lamports"
+required-features = ["testing"]
+
+[[test]]
 name = "cursor_and_remaining_accounts"
 required-features = ["testing"]
 

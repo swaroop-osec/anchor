@@ -182,6 +182,62 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     }
 }
 
+/// Lamports related utility methods for accounts.
+pub trait Lamports: AsRef<AccountView> {
+    /// Get the lamports of the account.
+    #[inline(always)]
+    fn get_lamports(&self) -> u64 {
+        self.as_ref().lamports()
+    }
+
+    /// Add lamports to the account.
+    ///
+    /// This method is useful for transferring lamports from a PDA.
+    ///
+    /// # Requirements
+    ///
+    /// 1. The account must be marked `mut`.
+    /// 2. The total lamports before the transaction must equal the total
+    ///    lamports after the transaction.
+    ///
+    /// See [`Lamports::sub_lamports`] for subtracting lamports.
+    #[inline(always)]
+    fn add_lamports(&self, amount: u64) -> Result<&Self, ProgramError> {
+        let mut view = *self.as_ref();
+        view.set_lamports(
+            self.get_lamports()
+                .checked_add(amount)
+                .ok_or(ProgramError::ArithmeticOverflow)?,
+        );
+        Ok(self)
+    }
+
+    /// Subtract lamports from the account.
+    ///
+    /// This method is useful for transferring lamports from a PDA.
+    ///
+    /// # Requirements
+    ///
+    /// 1. The account must be owned by the executing program.
+    /// 2. The account must be marked `mut`.
+    /// 3. The total lamports before the transaction must equal the total
+    ///    lamports after the transaction.
+    ///
+    /// See [`Lamports::add_lamports`] for adding lamports.
+    #[inline(always)]
+    fn sub_lamports(&self, amount: u64) -> Result<&Self, ProgramError> {
+        let mut view = *self.as_ref();
+        view.set_lamports(
+            self.get_lamports()
+                .checked_sub(amount)
+                .ok_or(ProgramError::ArithmeticOverflow)?,
+        );
+        Ok(self)
+    }
+}
+
+impl<T: AsRef<AccountView>> Lamports for T {}
+
 /// Declares which program owns accounts of this data type.
 ///
 /// For your own program's types, `#[account]` generates this automatically

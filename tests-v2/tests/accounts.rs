@@ -52,6 +52,10 @@ fn later_seed_counter_pda(payer: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[b"later-seed", payer.as_ref()], &program_id()).0
 }
 
+fn borsh_counter_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"borsh-counter"], &program_id()).0
+}
+
 const SYSTEM_SEED: &str = "anchor-v2-seed";
 const SYSTEM_TRANSFER_SEED: &str = "anchor-v2-transfer";
 const NONCE_ACCOUNT_LENGTH: usize = 80;
@@ -106,6 +110,15 @@ fn set_system_account(svm: &mut LiteSVM, address: Pubkey, lamports: u64, data_le
     .unwrap();
 }
 
+fn add_account_lamports(svm: &mut LiteSVM, address: Pubkey, lamports: u64) {
+    let mut account = svm.get_account(&address).expect("account exists");
+    account.lamports = account
+        .lamports
+        .checked_add(lamports)
+        .expect("lamports overflow");
+    svm.set_account(address, account).unwrap();
+}
+
 fn seeded_address(base: &Pubkey, seed: &str, owner: &Pubkey) -> Pubkey {
     Pubkey::create_with_seed(base, seed, owner).expect("valid seeded address")
 }
@@ -119,6 +132,18 @@ fn do_initialize_boxed(svm: &mut LiteSVM, payer: &Keypair) -> Pubkey {
     ];
     send_instruction(svm, program_id(), vec![3], metas, payer, &[])
         .expect("initialize_boxed should succeed");
+    counter
+}
+
+fn do_initialize_borsh_counter(svm: &mut LiteSVM, payer: &Keypair) -> Pubkey {
+    let counter = borsh_counter_pda();
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(counter, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![30], metas, payer, &[])
+        .expect("initialize_borsh_counter should succeed");
     counter
 }
 
@@ -164,6 +189,105 @@ fn initialize_later_seed_rejects_wrong_pda() {
         result.is_err(),
         "init should reject PDA derived from the wrong seeds"
     );
+}
+
+#[test]
+fn lamports_helpers_transfer_from_account_to_system_account() {
+    let (mut svm, payer) = setup();
+    let counter = do_initialize(&mut svm, &payer);
+    add_account_lamports(&mut svm, counter, 1_000_000);
+    let recipient = keypair_for("lamports-helper-account-recipient");
+    svm.airdrop(&recipient.pubkey(), 1_000_000).unwrap();
+
+    let counter_before = svm.get_account(&counter).unwrap().lamports;
+    let recipient_before = svm.get_account(&recipient.pubkey()).unwrap().lamports;
+    let amount = 123_456u64;
+
+    let metas = vec![
+        AccountMeta::new(counter, false),
+        AccountMeta::new(recipient.pubkey(), false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(29, &[amount]),
+        metas,
+        &payer,
+        &[],
+    )
+    .expect("Lamports helpers should transfer from Account<T>");
+
+    let counter_after = svm.get_account(&counter).unwrap().lamports;
+    let recipient_after = svm.get_account(&recipient.pubkey()).unwrap().lamports;
+    assert_eq!(counter_before - counter_after, amount);
+    assert_eq!(recipient_after - recipient_before, amount);
+}
+
+#[test]
+fn lamports_helpers_transfer_from_borsh_account_to_system_account() {
+    let (mut svm, payer) = setup();
+    let counter = do_initialize_borsh_counter(&mut svm, &payer);
+    add_account_lamports(&mut svm, counter, 1_000_000);
+    let recipient = keypair_for("lamports-helper-borsh-recipient");
+    svm.airdrop(&recipient.pubkey(), 1_000_000).unwrap();
+
+    let counter_before = svm.get_account(&counter).unwrap().lamports;
+    let recipient_before = svm.get_account(&recipient.pubkey()).unwrap().lamports;
+    let amount = 222_222u64;
+
+    let metas = vec![
+        AccountMeta::new(counter, false),
+        AccountMeta::new(recipient.pubkey(), false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(31, &[amount]),
+        metas,
+        &payer,
+        &[],
+    )
+    .expect("Lamports helpers should transfer from BorshAccount<T>");
+
+    let counter_after = svm.get_account(&counter).unwrap().lamports;
+    let recipient_after = svm.get_account(&recipient.pubkey()).unwrap().lamports;
+    assert_eq!(counter_before - counter_after, amount);
+    assert_eq!(recipient_after - recipient_before, amount);
+}
+
+#[test]
+fn lamports_helpers_reject_underflow_and_preserve_balances() {
+    let (mut svm, payer) = setup();
+    let counter = do_initialize_borsh_counter(&mut svm, &payer);
+    add_account_lamports(&mut svm, counter, 1_000_000);
+    let recipient = keypair_for("lamports-helper-underflow-recipient");
+    svm.airdrop(&recipient.pubkey(), 1_000_000).unwrap();
+
+    let counter_before = svm.get_account(&counter).unwrap().lamports;
+    let recipient_before = svm.get_account(&recipient.pubkey()).unwrap().lamports;
+    let amount = counter_before + 1;
+
+    let metas = vec![
+        AccountMeta::new(counter, false),
+        AccountMeta::new(recipient.pubkey(), false),
+    ];
+    let result = send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(31, &[amount]),
+        metas,
+        &payer,
+        &[],
+    );
+    assert!(
+        result.is_err(),
+        "sub_lamports should reject insufficient lamports"
+    );
+
+    let counter_after = svm.get_account(&counter).unwrap().lamports;
+    let recipient_after = svm.get_account(&recipient.pubkey()).unwrap().lamports;
+    assert_eq!(counter_after, counter_before);
+    assert_eq!(recipient_after, recipient_before);
 }
 
 #[test]
