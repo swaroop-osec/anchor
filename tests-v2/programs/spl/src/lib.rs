@@ -48,7 +48,7 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::mint_to(cpi_ctx, amount);
+        token::mint_to(cpi_ctx, amount)?;
         Ok(())
     }
 
@@ -61,7 +61,7 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::transfer(cpi_ctx, amount);
+        token::transfer(cpi_ctx, amount)?;
         Ok(())
     }
 
@@ -80,7 +80,7 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::transfer_checked(cpi_ctx, amount, decimals);
+        token::transfer_checked(cpi_ctx, amount, decimals)?;
         Ok(())
     }
 
@@ -93,7 +93,7 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::burn(cpi_ctx, amount);
+        token::burn(cpi_ctx, amount)?;
         Ok(())
     }
 
@@ -107,7 +107,7 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::approve(cpi_ctx, amount);
+        token::approve(cpi_ctx, amount)?;
         Ok(())
     }
 
@@ -119,7 +119,7 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::revoke(cpi_ctx);
+        token::revoke(cpi_ctx)?;
         Ok(())
     }
 
@@ -133,7 +133,7 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::close_account(cpi_ctx);
+        token::close_account(cpi_ctx)?;
 
         Ok(())
     }
@@ -413,6 +413,23 @@ pub mod spl_test {
         }
         Ok(())
     }
+
+    /// Burn through an unchecked token program account. This is intentionally
+    /// only used to verify `token::burn` rejects arbitrary CPI targets itself.
+    #[discrim = 34]
+    pub fn do_burn_unchecked_token_program(
+        ctx: &mut Context<DoBurnUncheckedTokenProgram>,
+        amount: u64,
+    ) -> Result<()> {
+        let accs = token::Burn {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+            from: ctx.accounts.account.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::burn(cpi_ctx, amount)?;
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -494,6 +511,16 @@ pub struct DoBurn {
     pub mint: Account<Mint>,
     pub authority: Signer,
     pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoBurnUncheckedTokenProgram {
+    #[account(mut)]
+    pub account: Account<TokenAccount>,
+    #[account(mut)]
+    pub mint: Account<Mint>,
+    pub authority: Signer,
+    pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
@@ -586,7 +613,7 @@ pub struct InitInterfaceMint {
     #[account(mut)]
     pub payer: Signer,
     pub authority: UncheckedAccount,
-    pub token_program: Program<Token>,
+    pub token_program: UncheckedAccount,
     #[account(
         init,
         payer = payer,
@@ -604,7 +631,7 @@ pub struct InitInterfaceTokenAccount {
     pub payer: Signer,
     pub mint: InterfaceAccount<Mint>,
     pub authority: UncheckedAccount,
-    pub token_program: Program<Token>,
+    pub token_program: UncheckedAccount,
     #[account(
         init,
         payer = payer,

@@ -273,12 +273,19 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             current_offset = quote::quote! { #current_offset + 1 };
         }
     }
+    let field_offsets: Vec<(String, proc_macro2::TokenStream)> = raw_field_names
+        .iter()
+        .cloned()
+        .zip(offset_exprs.iter().cloned())
+        .collect();
 
     let fields: Vec<parse::AccountField> = match named_fields
         .named
         .iter()
         .zip(offset_exprs)
-        .map(|(f, offset)| parse::parse_field(f, &raw_field_names, offset, &ix_arg_names))
+        .map(|(f, offset)| {
+            parse::parse_field(f, &raw_field_names, &field_offsets, offset, &ix_arg_names)
+        })
         .collect::<syn::Result<_>>()
     {
         Ok(fields) => fields,

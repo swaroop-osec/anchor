@@ -1,6 +1,7 @@
 use {
     proc_macro2::TokenStream as TokenStream2,
     quote::{quote, quote_spanned},
+    syn::spanned::Spanned,
     syn::{ext::IdentExt, parse::ParseStream, Attribute, Expr, Ident, Token, Type},
 };
 
@@ -79,6 +80,12 @@ pub struct AccountAttrs {
     pub realloc_zero: bool,
     /// Namespaced constraints: token::mint, mint::authority, etc.
     pub namespaced: Vec<NamespacedConstraint>,
+}
+
+struct AssociatedTokenInit {
+    mint: Ident,
+    authority: Ident,
+    token_program: Ident,
 }
 
 /// PDA metadata produced by seed classification. Each entry is a pre-built
@@ -410,6 +417,103 @@ fn has_init_params(ns: &str) -> bool {
 /// (e.g. `my_ns::min_balance = 1_000_000`) without changes to this file.
 pub fn is_runtime_only_constraint_ns(ns: &str) -> bool {
     !has_init_params(ns)
+}
+
+fn expr_as_field_ident(expr: &Expr) -> Option<Ident> {
+    let Expr::Path(path) = expr else {
+        return None;
+    };
+    if path.qself.is_some() || path.path.segments.len() != 1 {
+        return None;
+    }
+    Some(path.path.segments[0].ident.clone())
+}
+
+fn field_offset_expr(
+    field_offsets: &[(String, TokenStream2)],
+    ident: &Ident,
+) -> syn::Result<TokenStream2> {
+    let name = ident.to_string();
+    field_offsets
+        .iter()
+        .find_map(|(field, offset)| (field == &name).then(|| offset.clone()))
+        .ok_or_else(|| {
+            syn::Error::new(
+                ident.span(),
+                format!("associated_token constraint references unknown account `{name}`"),
+            )
+        })
+}
+
+fn parse_associated_token_init(
+    attrs: &AccountAttrs,
+    field_names: &[String],
+) -> syn::Result<Option<AssociatedTokenInit>> {
+    let mut mint = None;
+    let mut authority = None;
+    let mut token_program = None;
+
+    for nc in attrs
+        .namespaced
+        .iter()
+        .filter(|nc| nc.namespace == "associated_token")
+    {
+        let Some(ident) = expr_as_field_ident(&nc.value) else {
+            return Err(syn::Error::new(
+                nc.value.span(),
+                "associated_token constraints currently require sibling account field references",
+            ));
+        };
+
+        if !field_names.iter().any(|name| name == &ident.to_string()) {
+            return Err(syn::Error::new(
+                ident.span(),
+                format!(
+                    "associated_token constraint references unknown account `{}`",
+                    ident
+                ),
+            ));
+        }
+
+        match nc.raw_key.as_str() {
+            "mint" => mint = Some(ident),
+            "authority" => authority = Some(ident),
+            "token_program" => token_program = Some(ident),
+            _ => {}
+        }
+    }
+
+    if mint.is_none() && authority.is_none() && token_program.is_none() {
+        return Ok(None);
+    }
+
+    if attrs.seeds.is_some() {
+        return Err(syn::Error::new(
+            attrs.seeds.as_ref().unwrap().span(),
+            "`associated_token` constraints cannot be used with `seeds`",
+        ));
+    }
+
+    let mint = mint.ok_or_else(|| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`associated_token::mint` is required when using associated_token constraints",
+        )
+    })?;
+    let authority = authority.ok_or_else(|| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`associated_token::authority` is required when using associated_token constraints",
+        )
+    })?;
+    let token_program = token_program
+        .unwrap_or_else(|| Ident::new("token_program", proc_macro2::Span::call_site()));
+
+    Ok(Some(AssociatedTokenInit {
+        mint,
+        authority,
+        token_program,
+    }))
 }
 
 /// Wrap the `Result<Self>`-yielding `init_body` so that each runtime-only
@@ -897,22 +1001,111 @@ fn emit_init_body(
     }
 }
 
+fn emit_associated_token_init_body(
+    field_ty: &Type,
+    attrs: &AccountAttrs,
+    associated_token: &AssociatedTokenInit,
+    field_offsets: &[(String, TokenStream2)],
+    _is_optional: bool,
+) -> syn::Result<TokenStream2> {
+    let payer = attrs.payer.as_ref().expect("init requires payer");
+    let payer_offset = field_offset_expr(field_offsets, payer)?;
+    let mint_offset = field_offset_expr(field_offsets, &associated_token.mint)?;
+    let authority_offset = field_offset_expr(field_offsets, &associated_token.authority)?;
+    let token_program_offset = field_offset_expr(field_offsets, &associated_token.token_program)?;
+    let system_program = Ident::new("system_program", proc_macro2::Span::call_site());
+    let associated_token_program =
+        Ident::new("associated_token_program", proc_macro2::Span::call_site());
+    let system_program_offset = field_offset_expr(field_offsets, &system_program)?;
+    let associated_token_program_offset =
+        field_offset_expr(field_offsets, &associated_token_program)?;
+
+    Ok(quote! {
+        {
+            let mut __payer =
+                <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
+                    ::load(__views[#payer_offset], __program_id)?;
+            let mut __associated_token =
+                <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
+                    ::load(__target, __program_id)?;
+            let __authority =
+                <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
+                    ::load(__views[#authority_offset], __program_id)?;
+            let __mint =
+                <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
+                    ::load(__views[#mint_offset], __program_id)?;
+            let __system_program =
+                <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
+                    ::load(__views[#system_program_offset], __program_id)?;
+            let __token_program =
+                <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
+                    ::load(__views[#token_program_offset], __program_id)?;
+            let __associated_token_program =
+                <anchor_lang_v2::accounts::UncheckedAccount as anchor_lang_v2::AnchorAccount>
+                    ::load(__views[#associated_token_program_offset], __program_id)?;
+
+            if !anchor_lang_v2::address_eq(
+                __system_program.account().address(),
+                &<anchor_lang_v2::programs::System as anchor_lang_v2::Id>::id(),
+            ) {
+                return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
+            }
+            if !anchor_lang_v2::address_eq(
+                __associated_token_program.account().address(),
+                &<anchor_lang_v2::programs::AssociatedToken as anchor_lang_v2::Id>::id(),
+            ) {
+                return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
+            }
+            if !anchor_lang_v2::address_eq(
+                __token_program.account().address(),
+                &<anchor_lang_v2::programs::Token as anchor_lang_v2::Id>::id(),
+            ) && !anchor_lang_v2::address_eq(
+                __token_program.account().address(),
+                &<anchor_lang_v2::programs::Token2022 as anchor_lang_v2::Id>::id(),
+            ) {
+                return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
+            }
+
+            anchor_spl_v2::associated_token::create(anchor_lang_v2::CpiContext::new(
+                __associated_token_program.account().address(),
+                anchor_spl_v2::associated_token::Create {
+                    payer: __payer.cpi_handle_mut(),
+                    associated_token: __associated_token.cpi_handle_mut(),
+                    authority: __authority.cpi_handle(),
+                    mint: __mint.cpi_handle(),
+                    system_program: __system_program.cpi_handle(),
+                    token_program: __token_program.cpi_handle(),
+                },
+            ))?;
+
+            // SAFETY: this field has just been initialized by the associated
+            // token program, and duplicate mutable accounts are rejected by
+            // the generated account bitvec check.
+            unsafe { <#field_ty as anchor_lang_v2::AnchorAccount>::load_mut_after_init(__target, __program_id)? }
+        }
+    })
+}
+
 pub fn parse_field(
     field: &syn::Field,
     field_names: &[String],
+    field_offsets: &[(String, TokenStream2)],
     offset_expr: proc_macro2::TokenStream,
     ix_arg_names: &[String],
 ) -> syn::Result<AccountField> {
     let field_name = field.ident.as_ref().expect("named field");
     let field_ty = &field.ty;
     let attrs = parse_account_attrs(&field.attrs)?;
+    let associated_token = parse_associated_token_init(&attrs, field_names)?;
 
     let option_inner = extract_option_inner(field_ty);
     let is_optional = option_inner.is_some();
     // Fresh-keypair init (no seeds) — caller signs the tx. Distinct from
     // `Signer`-type fields, which the IDL picks up through
     // `IdlAccountType::__IDL_IS_SIGNER` at runtime.
-    let idl_init_signer = (attrs.is_init || attrs.is_init_if_needed) && attrs.seeds.is_none();
+    let idl_init_signer = (attrs.is_init || attrs.is_init_if_needed)
+        && attrs.seeds.is_none()
+        && associated_token.is_none();
     let idl_writable = attrs.is_mut;
     let idl_has_one: Vec<String> = attrs
         .has_one
@@ -1038,10 +1231,18 @@ pub fn parse_field(
         // `Option<T>`), and wrap the result in `Some`.
         let inner_action = if attrs.is_init {
             // Init body emitted against inner_ty so the trait call lands on T.
-            let init_body = emit_init_body(field_name, inner_ty, &attrs, field_names, true);
+            let init_body = if let Some(ref at) = associated_token {
+                emit_associated_token_init_body(inner_ty, &attrs, at, field_offsets, true)?
+            } else {
+                emit_init_body(field_name, inner_ty, &attrs, field_names, true)
+            };
             quote! { Some({ #init_body }) }
         } else if attrs.is_init_if_needed {
-            let init_body = emit_init_body(field_name, inner_ty, &attrs, field_names, true);
+            let init_body = if let Some(ref at) = associated_token {
+                emit_associated_token_init_body(inner_ty, &attrs, at, field_offsets, true)?
+            } else {
+                emit_init_body(field_name, inner_ty, &attrs, field_names, true)
+            };
             quote! {
                 if __target.data_len() > 0
                     && !__target.owned_by(&anchor_lang_v2::programs::System::id())
@@ -1111,7 +1312,11 @@ pub fn parse_field(
             };
         }
     } else if attrs.is_init {
-        let init_body = emit_init_body(field_name, field_ty, &attrs, field_names, false);
+        let init_body = if let Some(ref at) = associated_token {
+            emit_associated_token_init_body(field_ty, &attrs, at, field_offsets, false)?
+        } else {
+            emit_init_body(field_name, field_ty, &attrs, field_names, false)
+        };
         let init_body_with_constraints =
             wrap_init_body_with_constraints(field_ty, &attrs, &init_body);
         quote! {
@@ -1121,7 +1326,11 @@ pub fn parse_field(
             };
         }
     } else if attrs.is_init_if_needed {
-        let init_body = emit_init_body(field_name, field_ty, &attrs, field_names, false);
+        let init_body = if let Some(ref at) = associated_token {
+            emit_associated_token_init_body(field_ty, &attrs, at, field_offsets, false)?
+        } else {
+            emit_init_body(field_name, field_ty, &attrs, field_names, false)
+        };
         let init_body_with_constraints =
             wrap_init_body_with_constraints(field_ty, &attrs, &init_body);
         quote! {
@@ -1392,6 +1601,50 @@ pub fn parse_field(
         });
     }
 
+    if !attrs.is_init {
+        if let Some(ref at) = associated_token {
+            let mint = &at.mint;
+            let authority = &at.authority;
+            let token_program = &at.token_program;
+            constraints.push(quote! {
+                {
+                    let __associated_token_mint = #mint.account().address();
+                    let __associated_token_authority = #authority.account().address();
+                    let __associated_token_token_program = #token_program.account().address();
+
+                    if !anchor_lang_v2::address_eq(
+                        #field_name.mint(),
+                        __associated_token_mint,
+                    ) {
+                        return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
+                    }
+                    if !anchor_lang_v2::address_eq(
+                        #field_name.owner(),
+                        __associated_token_authority,
+                    ) {
+                        return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
+                    }
+                    if !#field_name.account().owned_by(__associated_token_token_program) {
+                        return Err(anchor_lang_v2::ErrorCode::ConstraintOwner.into());
+                    }
+
+                    let __expected_associated_token =
+                        anchor_spl_v2::associated_token::get_associated_token_address_with_program_id(
+                            __associated_token_authority,
+                            __associated_token_mint,
+                            __associated_token_token_program,
+                        );
+                    if !anchor_lang_v2::address_eq(
+                        #field_name.account().address(),
+                        &__expected_associated_token,
+                    ) {
+                        return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
+                    }
+                }
+            });
+        }
+    }
+
     // Namespaced constraints → `AccountConstraint` method dispatch.
     //
     //   | context                                       | method(s)              |
@@ -1413,6 +1666,9 @@ pub fn parse_field(
     // `V` is inferred from the `AccountConstraint::Value` associated
     // type. Literals / expressions pass through verbatim.
     for nc in &attrs.namespaced {
+        if nc.namespace == "associated_token" {
+            continue;
+        }
         let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
         let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
         let value = &nc.value;
@@ -1507,6 +1763,7 @@ pub fn parse_field(
     let constraint_exits: Vec<TokenStream2> = attrs
         .namespaced
         .iter()
+        .filter(|nc| nc.namespace != "associated_token")
         .map(|nc| {
             let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
             let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
@@ -1628,6 +1885,7 @@ pub fn parse_field(
             let inner_constraint_exits: Vec<TokenStream2> = attrs
                 .namespaced
                 .iter()
+                .filter(|nc| nc.namespace != "associated_token")
                 .map(|nc| {
                     let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
                     let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
@@ -1730,7 +1988,7 @@ mod tests {
                 pub my_acc: Account<MyAcc>
             })
             .unwrap();
-        let parsed = parse_field(&field, &[], quote::quote!(0usize), &[]).unwrap();
+        let parsed = parse_field(&field, &[], &[], quote::quote!(0usize), &[]).unwrap();
         let joined = parsed
             .constraints
             .iter()

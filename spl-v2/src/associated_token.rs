@@ -21,6 +21,7 @@ use {
     anchor_lang_v2::{programs::Token, CpiContext, CpiHandle, Id, ToCpiAccounts},
     pinocchio::instruction::InstructionAccount,
     solana_address::Address,
+    solana_program_error::ProgramError,
 };
 
 pub use anchor_lang_v2::programs::AssociatedToken;
@@ -78,10 +79,45 @@ impl<'a> ToCpiAccounts<'a> for Create<'a> {
 
 pub type CreateIdempotent<'a> = Create<'a>;
 
-pub fn create<'a>(ctx: CpiContext<'a, Create<'a>>) {
-    ctx.invoke(&[0]);
+#[cfg(feature = "guardrails")]
+#[inline]
+fn validate_programs<'a>(ctx: &CpiContext<'a, Create<'a>>) -> Result<(), ProgramError> {
+    if !anchor_lang_v2::address_eq(ctx.program, &AssociatedToken::id()) {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    if !anchor_lang_v2::address_eq(
+        ctx.accounts.system_program.address(),
+        &anchor_lang_v2::programs::System::id(),
+    ) {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    if !anchor_lang_v2::address_eq(ctx.accounts.token_program.address(), &Token::id())
+        && !anchor_lang_v2::address_eq(
+            ctx.accounts.token_program.address(),
+            &anchor_lang_v2::programs::Token2022::id(),
+        )
+    {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    Ok(())
 }
 
-pub fn create_idempotent<'a>(ctx: CpiContext<'a, CreateIdempotent<'a>>) {
+#[cfg(not(feature = "guardrails"))]
+#[inline]
+fn validate_programs<'a>(_ctx: &CpiContext<'a, Create<'a>>) -> Result<(), ProgramError> {
+    Ok(())
+}
+
+pub fn create<'a>(ctx: CpiContext<'a, Create<'a>>) -> Result<(), ProgramError> {
+    validate_programs(&ctx)?;
+    ctx.invoke(&[0]);
+    Ok(())
+}
+
+pub fn create_idempotent<'a>(
+    ctx: CpiContext<'a, CreateIdempotent<'a>>,
+) -> Result<(), ProgramError> {
+    validate_programs(&ctx)?;
     ctx.invoke(&[1]);
+    Ok(())
 }

@@ -714,15 +714,41 @@ fn encode_pubkey_ix(disc: u8, address: &Address) -> [u8; 33] {
     data
 }
 
-pub fn initialize_account<'a>(ctx: CpiContext<'a, accounts::InitializeAccount<'a>>) {
-    ctx.invoke(&[DISC_INITIALIZE_ACCOUNT]);
+#[cfg(feature = "guardrails")]
+#[inline]
+fn validate_token_program(program_id: &Address) -> Result<(), ProgramError> {
+    if anchor_lang_v2::address_eq(program_id, &Token::id())
+        || anchor_lang_v2::address_eq(program_id, &anchor_lang_v2::programs::Token2022::id())
+    {
+        Ok(())
+    } else {
+        Err(ProgramError::IncorrectProgramId)
+    }
 }
 
-pub fn initialize_account3<'a>(ctx: CpiContext<'a, accounts::InitializeAccount3<'a>>) {
+#[cfg(not(feature = "guardrails"))]
+#[inline]
+fn validate_token_program(_program_id: &Address) -> Result<(), ProgramError> {
+    Ok(())
+}
+
+pub fn initialize_account<'a>(
+    ctx: CpiContext<'a, accounts::InitializeAccount<'a>>,
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
+    ctx.invoke(&[DISC_INITIALIZE_ACCOUNT]);
+    Ok(())
+}
+
+pub fn initialize_account3<'a>(
+    ctx: CpiContext<'a, accounts::InitializeAccount3<'a>>,
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_pubkey_ix(
         DISC_INITIALIZE_ACCOUNT3,
         ctx.accounts.authority.address(),
     ));
+    Ok(())
 }
 
 pub fn initialize_mint<'a>(
@@ -730,13 +756,15 @@ pub fn initialize_mint<'a>(
     decimals: u8,
     authority: &Address,
     freeze_authority: Option<&Address>,
-) {
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_initialize_mint_ix(
         DISC_INITIALIZE_MINT,
         decimals,
         authority,
         freeze_authority,
     ));
+    Ok(())
 }
 
 pub fn initialize_mint2<'a>(
@@ -744,103 +772,152 @@ pub fn initialize_mint2<'a>(
     decimals: u8,
     authority: &Address,
     freeze_authority: Option<&Address>,
-) {
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_initialize_mint_ix(
         DISC_INITIALIZE_MINT2,
         decimals,
         authority,
         freeze_authority,
     ));
+    Ok(())
 }
 
-pub fn transfer<'a>(ctx: CpiContext<'a, accounts::Transfer<'a>>, amount: u64) {
+pub fn transfer<'a>(
+    ctx: CpiContext<'a, accounts::Transfer<'a>>,
+    amount: u64,
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_amount_ix(DISC_TRANSFER, amount));
+    Ok(())
 }
 
 pub fn transfer_checked<'a>(
     ctx: CpiContext<'a, accounts::TransferChecked<'a>>,
     amount: u64,
     decimals: u8,
-) {
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_amount_decimals_ix(
         DISC_TRANSFER_CHECKED,
         amount,
         decimals,
     ));
+    Ok(())
 }
 
-pub fn mint_to<'a>(ctx: CpiContext<'a, accounts::MintTo<'a>>, amount: u64) {
+pub fn mint_to<'a>(
+    ctx: CpiContext<'a, accounts::MintTo<'a>>,
+    amount: u64,
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_amount_ix(DISC_MINT_TO, amount));
+    Ok(())
 }
 
 pub fn mint_to_checked<'a>(
     ctx: CpiContext<'a, accounts::MintToChecked<'a>>,
     amount: u64,
     decimals: u8,
-) {
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_amount_decimals_ix(
         DISC_MINT_TO_CHECKED,
         amount,
         decimals,
     ));
+    Ok(())
 }
 
-pub fn burn<'a>(ctx: CpiContext<'a, accounts::Burn<'a>>, amount: u64) {
+pub fn burn<'a>(ctx: CpiContext<'a, accounts::Burn<'a>>, amount: u64) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_amount_ix(DISC_BURN, amount));
+    Ok(())
 }
 
-pub fn burn_checked<'a>(ctx: CpiContext<'a, accounts::BurnChecked<'a>>, amount: u64, decimals: u8) {
+pub fn burn_checked<'a>(
+    ctx: CpiContext<'a, accounts::BurnChecked<'a>>,
+    amount: u64,
+    decimals: u8,
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_amount_decimals_ix(
         DISC_BURN_CHECKED,
         amount,
         decimals,
     ));
+    Ok(())
 }
 
-pub fn approve<'a>(ctx: CpiContext<'a, accounts::Approve<'a>>, amount: u64) {
+pub fn approve<'a>(
+    ctx: CpiContext<'a, accounts::Approve<'a>>,
+    amount: u64,
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_amount_ix(DISC_APPROVE, amount));
+    Ok(())
 }
 
 pub fn approve_checked<'a>(
     ctx: CpiContext<'a, accounts::ApproveChecked<'a>>,
     amount: u64,
     decimals: u8,
-) {
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&encode_amount_decimals_ix(
         DISC_APPROVE_CHECKED,
         amount,
         decimals,
     ));
+    Ok(())
 }
 
-pub fn revoke<'a>(ctx: CpiContext<'a, accounts::Revoke<'a>>) {
+pub fn revoke<'a>(ctx: CpiContext<'a, accounts::Revoke<'a>>) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     ctx.invoke(&[DISC_REVOKE]);
+    Ok(())
 }
 
 pub fn set_authority<'a>(
     ctx: CpiContext<'a, accounts::SetAuthority<'a>>,
     authority_type: spl_token::instruction::AuthorityType,
     new_authority: Option<Address>,
-) {
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
     let mut data = Vec::with_capacity(35);
     data.push(DISC_SET_AUTHORITY);
     data.push(authority_type_to_u8(authority_type));
     push_pubkey_option(&mut data, new_authority.as_ref());
     ctx.invoke(&data);
+    Ok(())
 }
 
-pub fn close_account<'a>(ctx: CpiContext<'a, accounts::CloseAccount<'a>>) {
-    ctx.invoke(&[DISC_CLOSE_ACCOUNT])
+pub fn close_account<'a>(
+    ctx: CpiContext<'a, accounts::CloseAccount<'a>>,
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
+    ctx.invoke(&[DISC_CLOSE_ACCOUNT]);
+    Ok(())
 }
 
-pub fn freeze_account<'a>(ctx: CpiContext<'a, accounts::FreezeAccount<'a>>) {
-    ctx.invoke(&[DISC_FREEZE_ACCOUNT])
+pub fn freeze_account<'a>(
+    ctx: CpiContext<'a, accounts::FreezeAccount<'a>>,
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
+    ctx.invoke(&[DISC_FREEZE_ACCOUNT]);
+    Ok(())
 }
 
-pub fn thaw_account<'a>(ctx: CpiContext<'a, accounts::ThawAccount<'a>>) {
-    ctx.invoke(&[DISC_THAW_ACCOUNT])
+pub fn thaw_account<'a>(
+    ctx: CpiContext<'a, accounts::ThawAccount<'a>>,
+) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
+    ctx.invoke(&[DISC_THAW_ACCOUNT]);
+    Ok(())
 }
 
-pub fn sync_native<'a>(ctx: CpiContext<'a, accounts::SyncNative<'a>>) {
-    ctx.invoke(&[DISC_SYNC_NATIVE])
+pub fn sync_native<'a>(ctx: CpiContext<'a, accounts::SyncNative<'a>>) -> Result<(), ProgramError> {
+    validate_token_program(ctx.program)?;
+    ctx.invoke(&[DISC_SYNC_NATIVE]);
+    Ok(())
 }

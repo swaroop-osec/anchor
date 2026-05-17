@@ -1,12 +1,12 @@
 [package]
-name = "spl-test"
+name = "spl-ata-test"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "spl_test"
+name = "spl_ata_test"
 
 [features]
 default = ["no-log-ix-name"]

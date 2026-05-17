@@ -570,6 +570,37 @@ fn burn_rejects_wrong_authority() {
 }
 
 #[test]
+fn burn_rejects_wrong_token_program() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("mint-auth");
+    let owner = keypair_for("owner");
+    let (mint, token) = mint_and_fund(&mut svm, &payer, &mint_authority, &owner.pubkey(), 500);
+    let wrong_token_program = Pubkey::new_unique();
+
+    let mut data = vec![34];
+    data.extend_from_slice(&100u64.to_le_bytes());
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(owner.pubkey(), true),
+        AccountMeta::new_readonly(wrong_token_program, false),
+    ];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[&owner]);
+    assert!(result.is_err(), "wrong token program should be rejected");
+
+    let mint_state = SplMint::unpack(&svm.get_account(&mint).unwrap().data).unwrap();
+    let state = SplTokenAccount::unpack(&svm.get_account(&token).unwrap().data).unwrap();
+    assert_eq!(
+        mint_state.supply, 500,
+        "supply should be unchanged after failed burn"
+    );
+    assert_eq!(
+        state.amount, 500,
+        "balance should be unchanged after failed burn"
+    );
+}
+
+#[test]
 fn close_account_rejects_non_zero_balance() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("mint-auth");
@@ -988,11 +1019,6 @@ fn read_interface_token_account_rejects_foreign_owner() {
 }
 
 // ---- InterfaceAccount init path --------------------------------------------
-//
-// Init is hard-wired to the legacy Token program via `pinocchio_token::
-// InitializeMint2` / `InitializeAccount3`, so these tests exercise the
-// interface codegen while creating legacy-owned accounts. The Token-2022
-// init path is a known limitation of the PR.
 
 #[test]
 fn init_interface_mint_creates_legacy_mint() {
@@ -1017,6 +1043,47 @@ fn init_interface_mint_creates_legacy_mint() {
     let state = SplMint::unpack(&account.data).expect("unpack mint");
     assert_eq!(state.decimals, 6);
     assert!(state.is_initialized);
+}
+
+#[test]
+fn init_interface_mint_creates_token_2022_mint() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("iface-init-t22-mint-auth");
+    let mint = Keypair::new();
+
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(authority.pubkey(), false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+        AccountMeta::new(mint.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![18], metas, &payer, &[&mint])
+        .expect("init token-2022 interface mint should succeed");
+
+    let account = svm.get_account(&mint.pubkey()).expect("mint exists");
+    assert_eq!(account.owner, token_2022_program_id());
+    let state = SplMint::unpack(&account.data).expect("unpack mint");
+    assert_eq!(state.decimals, 6);
+    assert!(state.is_initialized);
+}
+
+#[test]
+fn init_interface_mint_rejects_wrong_token_program() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("iface-init-bad-mint-auth");
+    let mint = Keypair::new();
+    let wrong_token_program = Pubkey::new_unique();
+
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(authority.pubkey(), false),
+        AccountMeta::new_readonly(wrong_token_program, false),
+        AccountMeta::new(mint.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    assert!(send_instruction(&mut svm, program_id(), vec![18], metas, &payer, &[&mint]).is_err());
+    assert!(svm.get_account(&mint.pubkey()).is_none());
 }
 
 #[test]
@@ -1047,6 +1114,79 @@ fn init_interface_token_account_creates_legacy_token_account() {
     let account = svm.get_account(&token.pubkey()).expect("token exists");
     assert_eq!(account.owner, token_program_id());
     assert_eq!(account.data.len(), SplTokenAccount::LEN);
+    let state = SplTokenAccount::unpack(&account.data).expect("unpack token");
+    assert_eq!(state.mint.to_bytes(), mint.pubkey().to_bytes());
+    assert_eq!(state.owner.to_bytes(), owner.pubkey().to_bytes());
+}
+
+#[test]
+fn init_interface_token_account_rejects_wrong_token_program() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("iface-init-bad-token-mint-auth");
+    let owner = keypair_for("iface-init-bad-token-owner");
+    let mint = Keypair::new();
+    let token = Keypair::new();
+    let wrong_token_program = Pubkey::new_unique();
+
+    do_init_mint(&mut svm, &payer, &mint, &mint_authority.pubkey());
+
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(mint.pubkey(), false),
+        AccountMeta::new_readonly(owner.pubkey(), false),
+        AccountMeta::new_readonly(wrong_token_program, false),
+        AccountMeta::new(token.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    assert!(send_instruction(&mut svm, program_id(), vec![19], metas, &payer, &[&token]).is_err());
+    assert!(svm.get_account(&token.pubkey()).is_none());
+}
+
+#[test]
+fn init_interface_token_account_creates_token_2022_token_account() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("iface-init-t22-token-mint-auth");
+    let owner = keypair_for("iface-init-t22-token-owner");
+    let mint = Keypair::new();
+    let token = Keypair::new();
+
+    let mint_metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(mint_authority.pubkey(), false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+        AccountMeta::new(mint.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![18],
+        mint_metas,
+        &payer,
+        &[&mint],
+    )
+    .expect("init token-2022 interface mint should succeed");
+
+    let token_metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(mint.pubkey(), false),
+        AccountMeta::new_readonly(owner.pubkey(), false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+        AccountMeta::new(token.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![19],
+        token_metas,
+        &payer,
+        &[&token],
+    )
+    .expect("init token-2022 interface token account should succeed");
+
+    let account = svm.get_account(&token.pubkey()).expect("token exists");
+    assert_eq!(account.owner, token_2022_program_id());
     let state = SplTokenAccount::unpack(&account.data).expect("unpack token");
     assert_eq!(state.mint.to_bytes(), mint.pubkey().to_bytes());
     assert_eq!(state.owner.to_bytes(), owner.pubkey().to_bytes());
