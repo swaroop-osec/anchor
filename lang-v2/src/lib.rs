@@ -20,6 +20,7 @@ pub mod loader;
 pub mod pod;
 pub mod prelude;
 pub mod programs;
+pub mod system_program;
 #[cfg(feature = "testing")]
 pub mod testing;
 mod traits;
@@ -188,6 +189,11 @@ pub use {
 pub mod solana_program {
     pub mod instruction {
         pub use solana_instruction::*;
+    }
+
+    #[cfg(feature = "compat")]
+    pub mod pubkey {
+        pub type Pubkey = crate::Address;
     }
 }
 

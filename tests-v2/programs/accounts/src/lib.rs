@@ -2,15 +2,24 @@
 //! constraints/seeds/cpi suites — Sysvar, Box<Account>, SystemAccount,
 //! and bare UncheckedAccount read paths.
 
+extern crate alloc;
+
 use {
+    alloc::string::String,
     anchor_lang_v2::{
         prelude::*,
         programs::{AssociatedToken, Memo},
     },
     pinocchio::sysvars::{clock::Clock, rent::Rent},
+    solana_program_error::ProgramError,
 };
 
 declare_id!("Acc1111111111111111111111111111111111111111");
+
+const PROGRAM_OWNER: Address =
+    Address::from_str_const("Acc1111111111111111111111111111111111111111");
+const SYSTEM_SEED: &str = "anchor-v2-seed";
+const SYSTEM_TRANSFER_SEED: &str = "anchor-v2-transfer";
 
 #[account]
 pub struct Counter {
@@ -132,6 +141,359 @@ pub mod accounts_test {
         let _ = ctx.accounts.program.address();
         Ok(())
     }
+
+    /// Transfers lamports through `anchor_lang_v2::system_program::transfer`.
+    #[discrim = 14]
+    pub fn transfer_lamports(ctx: &mut Context<TransferLamports>, amount: u64) -> Result<()> {
+        let cpi_accounts = system_program::Transfer {
+            from: ctx.accounts.from.cpi_handle_mut(),
+            to: ctx.accounts.to.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::transfer(cpi_ctx, amount)?;
+        Ok(())
+    }
+
+    #[discrim = 15]
+    pub fn create_system_account(
+        ctx: &mut Context<CreateSystemAccount>,
+        lamports: u64,
+        space: u64,
+    ) -> Result<()> {
+        let cpi_accounts = system_program::CreateAccount {
+            from: ctx.accounts.from.cpi_handle_mut(),
+            to: ctx.accounts.to.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::create_account(cpi_ctx, lamports, space, &PROGRAM_OWNER)?;
+        Ok(())
+    }
+
+    #[discrim = 16]
+    pub fn create_system_account_with_seed(
+        ctx: &mut Context<CreateSystemAccountWithSeed>,
+        lamports: u64,
+        space: u64,
+    ) -> Result<()> {
+        let cpi_accounts = system_program::CreateAccountWithSeed {
+            from: ctx.accounts.from.cpi_handle_mut(),
+            to: ctx.accounts.to.cpi_handle_mut(),
+            base: ctx.accounts.base.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::create_account_with_seed(
+            cpi_ctx,
+            SYSTEM_SEED,
+            lamports,
+            space,
+            &PROGRAM_OWNER,
+        )?;
+        Ok(())
+    }
+
+    #[discrim = 17]
+    pub fn allocate_system_account(
+        ctx: &mut Context<AllocateSystemAccount>,
+        space: u64,
+    ) -> Result<()> {
+        let cpi_accounts = system_program::Allocate {
+            account_to_allocate: ctx.accounts.account_to_allocate.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::allocate(cpi_ctx, space)?;
+        Ok(())
+    }
+
+    #[discrim = 18]
+    pub fn allocate_system_account_with_seed(
+        ctx: &mut Context<AllocateSystemAccountWithSeed>,
+        space: u64,
+    ) -> Result<()> {
+        let cpi_accounts = system_program::AllocateWithSeed {
+            account_to_allocate: ctx.accounts.account_to_allocate.cpi_handle_mut(),
+            base: ctx.accounts.base.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::allocate_with_seed(cpi_ctx, SYSTEM_SEED, space, &PROGRAM_OWNER)?;
+        Ok(())
+    }
+
+    #[discrim = 19]
+    pub fn assign_system_account(ctx: &mut Context<AssignSystemAccount>) -> Result<()> {
+        let cpi_accounts = system_program::Assign {
+            account_to_assign: ctx.accounts.account_to_assign.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::assign(cpi_ctx, &PROGRAM_OWNER)?;
+        Ok(())
+    }
+
+    #[discrim = 20]
+    pub fn assign_system_account_with_seed(
+        ctx: &mut Context<AssignSystemAccountWithSeed>,
+    ) -> Result<()> {
+        let cpi_accounts = system_program::AssignWithSeed {
+            account_to_assign: ctx.accounts.account_to_assign.cpi_handle_mut(),
+            base: ctx.accounts.base.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::assign_with_seed(cpi_ctx, SYSTEM_SEED, &PROGRAM_OWNER)?;
+        Ok(())
+    }
+
+    #[discrim = 21]
+    pub fn transfer_lamports_with_seed(
+        ctx: &mut Context<TransferLamportsWithSeed>,
+        amount: u64,
+    ) -> Result<()> {
+        let cpi_accounts = system_program::TransferWithSeed {
+            from: ctx.accounts.from.cpi_handle_mut(),
+            base: ctx.accounts.base.cpi_handle(),
+            to: ctx.accounts.to.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::transfer_with_seed(
+            cpi_ctx,
+            String::from(SYSTEM_TRANSFER_SEED),
+            &system_program::ID,
+            amount,
+        )?;
+        Ok(())
+    }
+
+    #[discrim = 22]
+    pub fn create_nonce(ctx: &mut Context<CreateNonce>, lamports: u64) -> Result<()> {
+        let cpi_accounts = system_program::CreateNonceAccount {
+            from: ctx.accounts.from.cpi_handle_mut(),
+            nonce: ctx.accounts.nonce.cpi_handle_mut(),
+            recent_blockhashes: ctx.accounts.recent_blockhashes.cpi_handle(),
+            rent: ctx.accounts.rent.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::create_nonce_account(cpi_ctx, lamports, ctx.accounts.authority.address())?;
+        Ok(())
+    }
+
+    #[discrim = 23]
+    pub fn create_nonce_with_seed(
+        ctx: &mut Context<CreateNonceWithSeed>,
+        lamports: u64,
+    ) -> Result<()> {
+        let cpi_accounts = system_program::CreateNonceAccountWithSeed {
+            from: ctx.accounts.from.cpi_handle_mut(),
+            nonce: ctx.accounts.nonce.cpi_handle_mut(),
+            base: ctx.accounts.base.cpi_handle(),
+            recent_blockhashes: ctx.accounts.recent_blockhashes.cpi_handle(),
+            rent: ctx.accounts.rent.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::create_nonce_account_with_seed(
+            cpi_ctx,
+            lamports,
+            SYSTEM_SEED,
+            ctx.accounts.authority.address(),
+        )?;
+        Ok(())
+    }
+
+    #[discrim = 24]
+    pub fn advance_nonce(ctx: &mut Context<AdvanceNonce>) -> Result<()> {
+        let cpi_accounts = system_program::AdvanceNonceAccount {
+            nonce: ctx.accounts.nonce.cpi_handle_mut(),
+            authorized: ctx.accounts.authorized.cpi_handle(),
+            recent_blockhashes: ctx.accounts.recent_blockhashes.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::advance_nonce_account(cpi_ctx)?;
+        Ok(())
+    }
+
+    #[discrim = 25]
+    pub fn authorize_nonce(ctx: &mut Context<AuthorizeNonce>) -> Result<()> {
+        let cpi_accounts = system_program::AuthorizeNonceAccount {
+            nonce: ctx.accounts.nonce.cpi_handle_mut(),
+            authorized: ctx.accounts.authorized.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::authorize_nonce_account(cpi_ctx, ctx.accounts.new_authority.address())?;
+        Ok(())
+    }
+
+    #[discrim = 26]
+    pub fn withdraw_nonce(ctx: &mut Context<WithdrawNonce>, amount: u64) -> Result<()> {
+        let cpi_accounts = system_program::WithdrawNonceAccount {
+            nonce: ctx.accounts.nonce.cpi_handle_mut(),
+            to: ctx.accounts.to.cpi_handle_mut(),
+            recent_blockhashes: ctx.accounts.recent_blockhashes.cpi_handle(),
+            rent: ctx.accounts.rent.cpi_handle(),
+            authorized: ctx.accounts.authorized.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.system_program.address(), cpi_accounts);
+        system_program::withdraw_nonce_account(cpi_ctx, amount)?;
+        Ok(())
+    }
+
+    #[discrim = 27]
+    pub fn reject_wrong_system_program(
+        ctx: &mut Context<RejectWrongSystemProgram>,
+        opcode: u8,
+    ) -> Result<()> {
+        let program = ctx.accounts.program.address();
+        let authority = *ctx.accounts.a.address();
+        match opcode {
+            0 => system_program::advance_nonce_account(CpiContext::new(
+                program,
+                system_program::AdvanceNonceAccount {
+                    nonce: ctx.accounts.a.cpi_handle_mut(),
+                    authorized: ctx.accounts.b.cpi_handle(),
+                    recent_blockhashes: ctx.accounts.c.cpi_handle(),
+                },
+            )),
+            1 => system_program::allocate(
+                CpiContext::new(
+                    program,
+                    system_program::Allocate {
+                        account_to_allocate: ctx.accounts.a.cpi_handle_mut(),
+                    },
+                ),
+                8,
+            ),
+            2 => system_program::allocate_with_seed(
+                CpiContext::new(
+                    program,
+                    system_program::AllocateWithSeed {
+                        account_to_allocate: ctx.accounts.a.cpi_handle_mut(),
+                        base: ctx.accounts.b.cpi_handle(),
+                    },
+                ),
+                SYSTEM_SEED,
+                8,
+                &PROGRAM_OWNER,
+            ),
+            3 => system_program::assign(
+                CpiContext::new(
+                    program,
+                    system_program::Assign {
+                        account_to_assign: ctx.accounts.a.cpi_handle_mut(),
+                    },
+                ),
+                &PROGRAM_OWNER,
+            ),
+            4 => system_program::assign_with_seed(
+                CpiContext::new(
+                    program,
+                    system_program::AssignWithSeed {
+                        account_to_assign: ctx.accounts.a.cpi_handle_mut(),
+                        base: ctx.accounts.b.cpi_handle(),
+                    },
+                ),
+                SYSTEM_SEED,
+                &PROGRAM_OWNER,
+            ),
+            5 => system_program::authorize_nonce_account(
+                CpiContext::new(
+                    program,
+                    system_program::AuthorizeNonceAccount {
+                        nonce: ctx.accounts.a.cpi_handle_mut(),
+                        authorized: ctx.accounts.b.cpi_handle(),
+                    },
+                ),
+                ctx.accounts.c.address(),
+            ),
+            6 => system_program::create_account(
+                CpiContext::new(
+                    program,
+                    system_program::CreateAccount {
+                        from: ctx.accounts.a.cpi_handle_mut(),
+                        to: ctx.accounts.b.cpi_handle_mut(),
+                    },
+                ),
+                1,
+                0,
+                &PROGRAM_OWNER,
+            ),
+            7 => system_program::create_account_with_seed(
+                CpiContext::new(
+                    program,
+                    system_program::CreateAccountWithSeed {
+                        from: ctx.accounts.a.cpi_handle_mut(),
+                        to: ctx.accounts.b.cpi_handle_mut(),
+                        base: ctx.accounts.c.cpi_handle(),
+                    },
+                ),
+                SYSTEM_SEED,
+                1,
+                0,
+                &PROGRAM_OWNER,
+            ),
+            8 => system_program::create_nonce_account(
+                CpiContext::new(
+                    program,
+                    system_program::CreateNonceAccount {
+                        from: ctx.accounts.a.cpi_handle_mut(),
+                        nonce: ctx.accounts.b.cpi_handle_mut(),
+                        recent_blockhashes: ctx.accounts.c.cpi_handle(),
+                        rent: ctx.accounts.d.cpi_handle(),
+                    },
+                ),
+                1,
+                ctx.accounts.e.address(),
+            ),
+            9 => system_program::create_nonce_account_with_seed(
+                CpiContext::new(
+                    program,
+                    system_program::CreateNonceAccountWithSeed {
+                        from: ctx.accounts.a.cpi_handle_mut(),
+                        nonce: ctx.accounts.b.cpi_handle_mut(),
+                        base: ctx.accounts.c.cpi_handle(),
+                        recent_blockhashes: ctx.accounts.d.cpi_handle(),
+                        rent: ctx.accounts.e.cpi_handle(),
+                    },
+                ),
+                1,
+                SYSTEM_SEED,
+                &authority,
+            ),
+            10 => system_program::transfer(
+                CpiContext::new(
+                    program,
+                    system_program::Transfer {
+                        from: ctx.accounts.a.cpi_handle_mut(),
+                        to: ctx.accounts.b.cpi_handle_mut(),
+                    },
+                ),
+                1,
+            ),
+            11 => system_program::transfer_with_seed(
+                CpiContext::new(
+                    program,
+                    system_program::TransferWithSeed {
+                        from: ctx.accounts.a.cpi_handle_mut(),
+                        base: ctx.accounts.b.cpi_handle(),
+                        to: ctx.accounts.c.cpi_handle_mut(),
+                    },
+                ),
+                String::from(SYSTEM_TRANSFER_SEED),
+                &system_program::ID,
+                1,
+            ),
+            12 => system_program::withdraw_nonce_account(
+                CpiContext::new(
+                    program,
+                    system_program::WithdrawNonceAccount {
+                        nonce: ctx.accounts.a.cpi_handle_mut(),
+                        to: ctx.accounts.b.cpi_handle_mut(),
+                        recent_blockhashes: ctx.accounts.c.cpi_handle(),
+                        rent: ctx.accounts.d.cpi_handle(),
+                        authorized: ctx.accounts.e.cpi_handle(),
+                    },
+                ),
+                1,
+            ),
+            _ => Err(ProgramError::InvalidInstructionData),
+        }?;
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -217,6 +579,144 @@ pub struct CheckAssociatedTokenProgram {
 #[derive(Accounts)]
 pub struct CheckMemoProgram {
     pub program: Program<Memo>,
+}
+
+#[derive(Accounts)]
+pub struct TransferLamports {
+    #[account(mut)]
+    pub from: Signer,
+    #[account(mut)]
+    pub to: SystemAccount,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct CreateSystemAccount {
+    #[account(mut)]
+    pub from: Signer,
+    #[account(mut)]
+    pub to: Signer,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct CreateSystemAccountWithSeed {
+    #[account(mut)]
+    pub from: Signer,
+    #[account(mut)]
+    pub to: UncheckedAccount,
+    pub base: Signer,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct AllocateSystemAccount {
+    #[account(mut)]
+    pub account_to_allocate: Signer,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct AllocateSystemAccountWithSeed {
+    #[account(mut)]
+    pub account_to_allocate: UncheckedAccount,
+    pub base: Signer,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct AssignSystemAccount {
+    #[account(mut)]
+    pub account_to_assign: Signer,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct AssignSystemAccountWithSeed {
+    #[account(mut)]
+    pub account_to_assign: UncheckedAccount,
+    pub base: Signer,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct TransferLamportsWithSeed {
+    #[account(mut)]
+    pub from: UncheckedAccount,
+    pub base: Signer,
+    #[account(mut)]
+    pub to: SystemAccount,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct CreateNonce {
+    #[account(mut)]
+    pub from: Signer,
+    #[account(mut)]
+    pub nonce: Signer,
+    pub authority: UncheckedAccount,
+    pub recent_blockhashes: UncheckedAccount,
+    pub rent: UncheckedAccount,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct CreateNonceWithSeed {
+    #[account(mut)]
+    pub from: Signer,
+    #[account(mut)]
+    pub nonce: UncheckedAccount,
+    pub base: Signer,
+    pub authority: UncheckedAccount,
+    pub recent_blockhashes: UncheckedAccount,
+    pub rent: UncheckedAccount,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct AdvanceNonce {
+    #[account(mut)]
+    pub nonce: UncheckedAccount,
+    pub authorized: Signer,
+    pub recent_blockhashes: UncheckedAccount,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct AuthorizeNonce {
+    #[account(mut)]
+    pub nonce: UncheckedAccount,
+    pub authorized: Signer,
+    pub new_authority: UncheckedAccount,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawNonce {
+    #[account(mut)]
+    pub nonce: UncheckedAccount,
+    #[account(mut)]
+    pub to: SystemAccount,
+    pub recent_blockhashes: UncheckedAccount,
+    pub rent: UncheckedAccount,
+    pub authorized: Signer,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct RejectWrongSystemProgram {
+    #[account(mut)]
+    pub a: UncheckedAccount,
+    #[account(mut)]
+    pub b: UncheckedAccount,
+    #[account(mut)]
+    pub c: UncheckedAccount,
+    #[account(mut)]
+    pub d: UncheckedAccount,
+    #[account(mut)]
+    pub e: UncheckedAccount,
+    pub program: UncheckedAccount,
 }
 
 #[derive(Accounts)]

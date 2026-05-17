@@ -34,6 +34,12 @@ fn rent_sysvar_id() -> Pubkey {
         .unwrap()
 }
 
+fn recent_blockhashes_sysvar_id() -> Pubkey {
+    "SysvarRecentB1ockHashes11111111111111111111"
+        .parse()
+        .unwrap()
+}
+
 fn counter_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"counter"], &program_id()).0
 }
@@ -41,6 +47,10 @@ fn counter_pda() -> Pubkey {
 fn boxed_counter_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"boxed-counter"], &program_id()).0
 }
+
+const SYSTEM_SEED: &str = "anchor-v2-seed";
+const SYSTEM_TRANSFER_SEED: &str = "anchor-v2-transfer";
+const NONCE_ACCOUNT_LENGTH: usize = 80;
 
 fn setup() -> (LiteSVM, Keypair) {
     let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -68,6 +78,32 @@ fn do_initialize(svm: &mut LiteSVM, payer: &Keypair) -> Pubkey {
     send_instruction(svm, program_id(), vec![0], metas, payer, &[])
         .expect("initialize should succeed");
     counter
+}
+
+fn data_with_u64s(disc: u8, values: &[u64]) -> Vec<u8> {
+    let mut data = vec![disc];
+    for value in values {
+        data.extend_from_slice(&value.to_le_bytes());
+    }
+    data
+}
+
+fn set_system_account(svm: &mut LiteSVM, address: Pubkey, lamports: u64, data_len: usize) {
+    svm.set_account(
+        address,
+        solana_account::Account {
+            lamports,
+            data: vec![0u8; data_len],
+            owner: solana_sdk_ids::system_program::ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+}
+
+fn seeded_address(base: &Pubkey, seed: &str, owner: &Pubkey) -> Pubkey {
+    Pubkey::create_with_seed(base, seed, owner).expect("valid seeded address")
 }
 
 fn do_initialize_boxed(svm: &mut LiteSVM, payer: &Keypair) -> Pubkey {
@@ -531,6 +567,390 @@ fn program_memo_rejects_wrong_pubkey() {
         solana_sdk_ids::system_program::ID,
         "Memo",
     );
+}
+
+#[test]
+fn system_program_transfer_moves_lamports() {
+    let (mut svm, payer) = setup();
+    let recipient = keypair_for("system-transfer-recipient");
+    svm.airdrop(&recipient.pubkey(), 1_000_000).unwrap();
+    let before = svm
+        .get_account(&recipient.pubkey())
+        .expect("recipient exists")
+        .lamports;
+    let amount = 123_456u64;
+
+    let mut data = vec![14];
+    data.extend_from_slice(&amount.to_le_bytes());
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(recipient.pubkey(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("system_program::transfer should succeed");
+
+    let after = svm
+        .get_account(&recipient.pubkey())
+        .expect("recipient still exists")
+        .lamports;
+    assert_eq!(after - before, amount);
+}
+
+#[test]
+fn system_program_create_allocate_assign_helpers_work() {
+    let (mut svm, payer) = setup();
+
+    let created = keypair_for("system-create-account");
+    let create_space = 16u64;
+    let create_lamports = svm.minimum_balance_for_rent_exemption(create_space as usize);
+    let create_metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(created.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(15, &[create_lamports, create_space]),
+        create_metas,
+        &payer,
+        &[&created],
+    )
+    .expect("system_program::create_account should succeed");
+    let created_account = svm.get_account(&created.pubkey()).unwrap();
+    assert_eq!(created_account.owner, program_id());
+    assert_eq!(created_account.data.len(), create_space as usize);
+    assert_eq!(created_account.lamports, create_lamports);
+
+    let allocated = keypair_for("system-allocate-account");
+    let allocate_space = 24u64;
+    let allocate_lamports = svm.minimum_balance_for_rent_exemption(allocate_space as usize);
+    set_system_account(&mut svm, allocated.pubkey(), allocate_lamports, 0);
+    let allocate_metas = vec![
+        AccountMeta::new(allocated.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(17, &[allocate_space]),
+        allocate_metas,
+        &payer,
+        &[&allocated],
+    )
+    .expect("system_program::allocate should succeed");
+    let allocated_account = svm.get_account(&allocated.pubkey()).unwrap();
+    assert_eq!(allocated_account.owner, solana_sdk_ids::system_program::ID);
+    assert_eq!(allocated_account.data.len(), allocate_space as usize);
+
+    let assigned = keypair_for("system-assign-account");
+    set_system_account(&mut svm, assigned.pubkey(), 1_000_000, 0);
+    let assign_metas = vec![
+        AccountMeta::new(assigned.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![19],
+        assign_metas,
+        &payer,
+        &[&assigned],
+    )
+    .expect("system_program::assign should succeed");
+    let assigned_account = svm.get_account(&assigned.pubkey()).unwrap();
+    assert_eq!(assigned_account.owner, program_id());
+}
+
+#[test]
+fn system_program_seeded_helpers_work() {
+    let (mut svm, payer) = setup();
+
+    let create_base = keypair_for("system-create-with-seed-base");
+    svm.airdrop(&create_base.pubkey(), 1_000_000).unwrap();
+    let created = seeded_address(&create_base.pubkey(), SYSTEM_SEED, &program_id());
+    let create_space = 16u64;
+    let create_lamports = svm.minimum_balance_for_rent_exemption(create_space as usize);
+    let create_metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(created, false),
+        AccountMeta::new_readonly(create_base.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(16, &[create_lamports, create_space]),
+        create_metas,
+        &payer,
+        &[&create_base],
+    )
+    .expect("system_program::create_account_with_seed should succeed");
+    let created_account = svm.get_account(&created).unwrap();
+    assert_eq!(created_account.owner, program_id());
+    assert_eq!(created_account.data.len(), create_space as usize);
+
+    let allocate_base = keypair_for("system-allocate-with-seed-base");
+    svm.airdrop(&allocate_base.pubkey(), 1_000_000).unwrap();
+    let allocated = seeded_address(&allocate_base.pubkey(), SYSTEM_SEED, &program_id());
+    let allocate_space = 24u64;
+    let allocate_lamports = svm.minimum_balance_for_rent_exemption(allocate_space as usize);
+    set_system_account(&mut svm, allocated, allocate_lamports, 0);
+    let allocate_metas = vec![
+        AccountMeta::new(allocated, false),
+        AccountMeta::new_readonly(allocate_base.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(18, &[allocate_space]),
+        allocate_metas,
+        &payer,
+        &[&allocate_base],
+    )
+    .expect("system_program::allocate_with_seed should succeed");
+    let allocated_account = svm.get_account(&allocated).unwrap();
+    assert_eq!(allocated_account.owner, program_id());
+    assert_eq!(allocated_account.data.len(), allocate_space as usize);
+
+    let assign_base = keypair_for("system-assign-with-seed-base");
+    svm.airdrop(&assign_base.pubkey(), 1_000_000).unwrap();
+    let assigned = seeded_address(&assign_base.pubkey(), SYSTEM_SEED, &program_id());
+    set_system_account(&mut svm, assigned, 1_000_000, 0);
+    let assign_metas = vec![
+        AccountMeta::new(assigned, false),
+        AccountMeta::new_readonly(assign_base.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![20],
+        assign_metas,
+        &payer,
+        &[&assign_base],
+    )
+    .expect("system_program::assign_with_seed should succeed");
+    let assigned_account = svm.get_account(&assigned).unwrap();
+    assert_eq!(assigned_account.owner, program_id());
+
+    let transfer_base = keypair_for("system-transfer-with-seed-base");
+    svm.airdrop(&transfer_base.pubkey(), 1_000_000).unwrap();
+    let from = seeded_address(
+        &transfer_base.pubkey(),
+        SYSTEM_TRANSFER_SEED,
+        &solana_sdk_ids::system_program::ID,
+    );
+    let recipient = keypair_for("system-transfer-with-seed-recipient");
+    svm.airdrop(&recipient.pubkey(), 1_000_000).unwrap();
+    set_system_account(&mut svm, from, 2_000_000, 0);
+    let recipient_before = svm.get_account(&recipient.pubkey()).unwrap().lamports;
+    let amount = 111_222u64;
+    let transfer_metas = vec![
+        AccountMeta::new(from, false),
+        AccountMeta::new_readonly(transfer_base.pubkey(), true),
+        AccountMeta::new(recipient.pubkey(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(21, &[amount]),
+        transfer_metas,
+        &payer,
+        &[&transfer_base],
+    )
+    .expect("system_program::transfer_with_seed should succeed");
+    let recipient_after = svm.get_account(&recipient.pubkey()).unwrap().lamports;
+    let from_after = svm.get_account(&from).unwrap().lamports;
+    assert_eq!(recipient_after - recipient_before, amount);
+    assert_eq!(from_after, 2_000_000 - amount);
+}
+
+#[test]
+fn system_program_nonce_helpers_work() {
+    let (mut svm, payer) = setup();
+    let nonce_lamports = svm.minimum_balance_for_rent_exemption(NONCE_ACCOUNT_LENGTH) + 100_000;
+    let nonce_authority = keypair_for("system-nonce-authority");
+    svm.airdrop(&nonce_authority.pubkey(), 1_000_000).unwrap();
+
+    let seeded_base = keypair_for("system-create-nonce-with-seed-base");
+    svm.airdrop(&seeded_base.pubkey(), 1_000_000).unwrap();
+    let seeded_nonce = seeded_address(
+        &seeded_base.pubkey(),
+        SYSTEM_SEED,
+        &solana_sdk_ids::system_program::ID,
+    );
+    let seeded_nonce_metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(seeded_nonce, false),
+        AccountMeta::new_readonly(seeded_base.pubkey(), true),
+        AccountMeta::new_readonly(nonce_authority.pubkey(), true),
+        AccountMeta::new_readonly(recent_blockhashes_sysvar_id(), false),
+        AccountMeta::new_readonly(rent_sysvar_id(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(23, &[nonce_lamports]),
+        seeded_nonce_metas,
+        &payer,
+        &[&seeded_base, &nonce_authority],
+    )
+    .expect("system_program::create_nonce_account_with_seed should succeed");
+    let seeded_nonce_account = svm.get_account(&seeded_nonce).unwrap();
+    assert_eq!(
+        seeded_nonce_account.owner,
+        solana_sdk_ids::system_program::ID
+    );
+    assert_eq!(seeded_nonce_account.data.len(), NONCE_ACCOUNT_LENGTH);
+
+    let nonce = keypair_for("system-create-nonce");
+    let nonce_metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(nonce.pubkey(), true),
+        AccountMeta::new_readonly(nonce_authority.pubkey(), true),
+        AccountMeta::new_readonly(recent_blockhashes_sysvar_id(), false),
+        AccountMeta::new_readonly(rent_sysvar_id(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(22, &[nonce_lamports]),
+        nonce_metas,
+        &payer,
+        &[&nonce, &nonce_authority],
+    )
+    .expect("system_program::create_nonce_account should succeed");
+    let nonce_account = svm.get_account(&nonce.pubkey()).unwrap();
+    assert_eq!(nonce_account.owner, solana_sdk_ids::system_program::ID);
+    assert_eq!(nonce_account.data.len(), NONCE_ACCOUNT_LENGTH);
+
+    svm.expire_blockhash();
+    let nonce_before_advance = svm.get_account(&nonce.pubkey()).unwrap().data;
+    let advance_metas = vec![
+        AccountMeta::new(nonce.pubkey(), false),
+        AccountMeta::new_readonly(nonce_authority.pubkey(), true),
+        AccountMeta::new_readonly(recent_blockhashes_sysvar_id(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![24],
+        advance_metas,
+        &payer,
+        &[&nonce_authority],
+    )
+    .expect("system_program::advance_nonce_account should succeed");
+    let nonce_after_advance = svm.get_account(&nonce.pubkey()).unwrap().data;
+    assert_ne!(
+        nonce_after_advance, nonce_before_advance,
+        "advance_nonce_account should update nonce state"
+    );
+
+    let new_authority = keypair_for("system-nonce-new-authority");
+    let authorize_metas = vec![
+        AccountMeta::new(nonce.pubkey(), false),
+        AccountMeta::new_readonly(nonce_authority.pubkey(), true),
+        AccountMeta::new_readonly(new_authority.pubkey(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![25],
+        authorize_metas,
+        &payer,
+        &[&nonce_authority],
+    )
+    .expect("system_program::authorize_nonce_account should succeed");
+
+    let recipient = keypair_for("system-withdraw-nonce-recipient");
+    svm.airdrop(&recipient.pubkey(), 1_000_000).unwrap();
+    let recipient_before = svm.get_account(&recipient.pubkey()).unwrap().lamports;
+    let withdraw_amount = 12_345u64;
+    let withdraw_metas = vec![
+        AccountMeta::new(nonce.pubkey(), false),
+        AccountMeta::new(recipient.pubkey(), false),
+        AccountMeta::new_readonly(recent_blockhashes_sysvar_id(), false),
+        AccountMeta::new_readonly(rent_sysvar_id(), false),
+        AccountMeta::new_readonly(new_authority.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_u64s(26, &[withdraw_amount]),
+        withdraw_metas,
+        &payer,
+        &[&new_authority],
+    )
+    .expect("system_program::withdraw_nonce_account should succeed");
+    let recipient_after = svm.get_account(&recipient.pubkey()).unwrap().lamports;
+    assert_eq!(recipient_after - recipient_before, withdraw_amount);
+}
+
+#[test]
+fn system_program_helpers_reject_wrong_program_id() {
+    let (mut svm, payer) = setup();
+    let dummies = [
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+        Pubkey::new_unique(),
+    ];
+    for address in dummies {
+        set_system_account(&mut svm, address, 1_000_000, 0);
+    }
+
+    let helper_names = [
+        "advance_nonce_account",
+        "allocate",
+        "allocate_with_seed",
+        "assign",
+        "assign_with_seed",
+        "authorize_nonce_account",
+        "create_account",
+        "create_account_with_seed",
+        "create_nonce_account",
+        "create_nonce_account_with_seed",
+        "transfer",
+        "transfer_with_seed",
+        "withdraw_nonce_account",
+    ];
+
+    for (opcode, name) in helper_names.iter().enumerate() {
+        let metas = vec![
+            AccountMeta::new(dummies[0], false),
+            AccountMeta::new(dummies[1], false),
+            AccountMeta::new(dummies[2], false),
+            AccountMeta::new(dummies[3], false),
+            AccountMeta::new(dummies[4], false),
+            AccountMeta::new_readonly(program_id(), false),
+        ];
+        let result = send_instruction(
+            &mut svm,
+            program_id(),
+            vec![27, opcode as u8],
+            metas,
+            &payer,
+            &[],
+        );
+        let err = result
+            .expect_err("wrong system program id should be rejected")
+            .to_string();
+        assert!(
+            err.contains("IncorrectProgramId"),
+            "{name} should reject a non-system program id, got: {err}"
+        );
+        svm.expire_blockhash();
+    }
 }
 
 // ---- Counter init ----------------------------------------------------------

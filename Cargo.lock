@@ -8481,6 +8481,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "spl-ata-test"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "anchor-spl-v2",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "solana-program-error 3.0.0",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "spl-discriminator"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8969,6 +8982,7 @@ dependencies = [
  "solana-sdk-ids 3.1.0",
  "solana-signer",
  "solana-transaction",
+ "spl-ata-test",
  "spl-test",
  "spl-token",
 ]

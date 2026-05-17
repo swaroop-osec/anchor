@@ -16,7 +16,7 @@ use {
             TransferHookAccount,
         },
         mint::{self, Mint},
-        token::{self, cpi as token_cpi, TokenAccount},
+        token::{self, TokenAccount},
         token_2022 as token_2022_cpi, token_2022_extensions as token_2022_ext_cpi,
         token_interface::InterfaceAccount,
     },
@@ -42,101 +42,101 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Mint `amount` tokens into `to`. Hits `token_cpi::mint_to`.
+    /// Mint `amount` tokens into `to`. Hits `token::mint_to`.
     #[discrim = 2]
     pub fn do_mint_to(ctx: &mut Context<DoMintTo>, amount: u64) -> Result<()> {
-        let accs = token_cpi::accounts::MintTo {
+        let accs = token::MintTo {
             mint: ctx.accounts.mint.cpi_handle_mut(),
             to: ctx.accounts.to.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_cpi::mint_to(cpi_ctx, amount);
+        token::mint_to(cpi_ctx, amount)?;
         Ok(())
     }
 
-    /// Transfer `amount` tokens from `from` to `to`. Hits `token_cpi::transfer`.
+    /// Transfer `amount` tokens from `from` to `to`. Hits `token::transfer`.
     #[discrim = 3]
     pub fn do_transfer(ctx: &mut Context<DoTransfer>, amount: u64) -> Result<()> {
-        let accs = token_cpi::accounts::Transfer {
+        let accs = token::Transfer {
             from: ctx.accounts.from.cpi_handle_mut(),
             to: ctx.accounts.to.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_cpi::transfer(cpi_ctx, amount);
+        token::transfer(cpi_ctx, amount)?;
         Ok(())
     }
 
     /// TransferChecked (also verifies decimals match mint). Hits
-    /// `token_cpi::transfer_checked`.
+    /// `token::transfer_checked`.
     #[discrim = 4]
     pub fn do_transfer_checked(
         ctx: &mut Context<DoTransferChecked>,
         amount: u64,
         decimals: u8,
     ) -> Result<()> {
-        let accs = token_cpi::accounts::TransferChecked {
+        let accs = token::TransferChecked {
             from: ctx.accounts.from.cpi_handle_mut(),
             mint: ctx.accounts.mint.cpi_handle(),
             to: ctx.accounts.to.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_cpi::transfer_checked(cpi_ctx, amount, decimals);
+        token::transfer_checked(cpi_ctx, amount, decimals)?;
         Ok(())
     }
 
-    /// Burn `amount` tokens from `account`. Hits `token_cpi::burn`.
+    /// Burn `amount` tokens from `account`. Hits `token::burn`.
     #[discrim = 5]
     pub fn do_burn(ctx: &mut Context<DoBurn>, amount: u64) -> Result<()> {
-        let accs = token_cpi::accounts::Burn {
-            account: ctx.accounts.account.cpi_handle_mut(),
+        let accs = token::Burn {
             mint: ctx.accounts.mint.cpi_handle_mut(),
+            from: ctx.accounts.account.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_cpi::burn(cpi_ctx, amount);
+        token::burn(cpi_ctx, amount)?;
         Ok(())
     }
 
     /// Approve `delegate` to spend `amount` from `source`. Hits
-    /// `token_cpi::approve`.
+    /// `token::approve`.
     #[discrim = 6]
     pub fn do_approve(ctx: &mut Context<DoApprove>, amount: u64) -> Result<()> {
-        let accs = token_cpi::accounts::Approve {
-            source: ctx.accounts.source.cpi_handle_mut(),
+        let accs = token::Approve {
+            to: ctx.accounts.source.cpi_handle_mut(),
             delegate: ctx.accounts.delegate.cpi_handle(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_cpi::approve(cpi_ctx, amount);
+        token::approve(cpi_ctx, amount)?;
         Ok(())
     }
 
-    /// Revoke delegation. Hits `token_cpi::revoke`.
+    /// Revoke delegation. Hits `token::revoke`.
     #[discrim = 7]
     pub fn do_revoke(ctx: &mut Context<DoRevoke>) -> Result<()> {
-        let accs = token_cpi::accounts::Revoke {
+        let accs = token::Revoke {
             source: ctx.accounts.source.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_cpi::revoke(cpi_ctx);
+        token::revoke(cpi_ctx)?;
         Ok(())
     }
 
     /// Close `account`, reclaiming lamports to `destination`. Hits
-    /// `token_cpi::close_account`.
+    /// `token::close_account`.
     #[discrim = 8]
     pub fn do_close_account(ctx: &mut Context<DoCloseAccount>) -> Result<()> {
-        let accs = token_cpi::accounts::CloseAccount {
+        let accs = token::CloseAccount {
             account: ctx.accounts.account.cpi_handle_mut(),
             destination: ctx.accounts.destination.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_cpi::close_account(cpi_ctx);
+        token::close_account(cpi_ctx)?;
 
         Ok(())
     }
@@ -210,7 +210,6 @@ pub mod spl_test {
         let expected = get_associated_token_address(
             ctx.accounts.authority.account().address(),
             ctx.accounts.mint.account().address(),
-            &anchor_lang_v2::programs::Token::id(),
         );
         if *ctx.accounts.vault.account().address() != expected {
             return Err(ProgramError::InvalidAccountData.into());
@@ -550,6 +549,24 @@ pub mod spl_test {
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         token_2022_cpi::reallocate(cpi_ctx, &[token_2022_cpi::ExtensionType::GroupPointer]);
+
+        Ok(())
+    }
+
+    /// Burn through an unchecked token program account. This is intentionally
+    /// only used to verify `token::burn` rejects arbitrary CPI targets itself.
+    #[discrim = 44]
+    pub fn do_burn_unchecked_token_program(
+        ctx: &mut Context<DoBurnUncheckedTokenProgram>,
+        amount: u64,
+    ) -> Result<()> {
+        let accs = token::Burn {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+            from: ctx.accounts.account.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::burn(cpi_ctx, amount)?;
         Ok(())
     }
 }
@@ -633,6 +650,16 @@ pub struct DoBurn {
     pub mint: Account<Mint>,
     pub authority: Signer,
     pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoBurnUncheckedTokenProgram {
+    #[account(mut)]
+    pub account: Account<TokenAccount>,
+    #[account(mut)]
+    pub mint: Account<Mint>,
+    pub authority: Signer,
+    pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
@@ -725,7 +752,7 @@ pub struct InitInterfaceMint {
     #[account(mut)]
     pub payer: Signer,
     pub authority: UncheckedAccount,
-    pub token_program: Program<Token>,
+    pub token_program: UncheckedAccount,
     #[account(
         init,
         payer = payer,
@@ -743,7 +770,7 @@ pub struct InitInterfaceTokenAccount {
     pub payer: Signer,
     pub mint: InterfaceAccount<Mint>,
     pub authority: UncheckedAccount,
-    pub token_program: Program<Token>,
+    pub token_program: UncheckedAccount,
     #[account(
         init,
         payer = payer,

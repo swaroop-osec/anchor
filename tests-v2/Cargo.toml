@@ -22,6 +22,7 @@ init-space-usability = { path = "programs/init-space-usability" }
 optional-accounts = { path = "programs/optional-accounts" }
 seeds = { path = "programs/seeds" }
 spl-test = { path = "programs/spl", features = ["cpi"] }
+spl-ata-test = { path = "programs/spl-ata", features = ["cpi"] }
 accounts-test = { path = "programs/accounts", features = ["idl-build"] }
 derives-test = { path = "programs/derives" }
 litesvm = { version = "0.11.0", features = ["register-tracing"] }

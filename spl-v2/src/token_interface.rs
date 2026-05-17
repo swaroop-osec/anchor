@@ -131,6 +131,16 @@ impl anchor_lang_v2::IdlAccountType for Interface<crate::TokenAccount> {}
 #[doc(hidden)]
 impl anchor_lang_v2::IdlAccountType for Interface<crate::Mint> {}
 
+#[inline(always)]
+fn validate_token_program(program_id: &Address) -> Result<(), ProgramError> {
+    if !anchor_lang_v2::address_eq(program_id, &Token::id())
+        && !anchor_lang_v2::address_eq(program_id, &Token2022::id())
+    {
+        return Err(ProgramError::IncorrectProgramId);
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // SlabInit — Interface<TokenAccount>
 // ---------------------------------------------------------------------------
@@ -160,6 +170,7 @@ impl SlabInit for Interface<crate::TokenAccount> {
         let authority = params.authority.ok_or(ProgramError::InvalidArgument)?;
         let token_program = params.token_program.ok_or(ProgramError::InvalidArgument)?;
         let program_id = token_program.address();
+        validate_token_program(program_id)?;
 
         let space = core::mem::size_of::<crate::TokenAccount>();
         match signer_seeds {
@@ -169,10 +180,11 @@ impl SlabInit for Interface<crate::TokenAccount> {
             None => anchor_lang_v2::create_account(payer, account, space, program_id),
         }?;
 
-        pinocchio_token::instructions::InitializeAccount3 {
+        pinocchio_token_2022::instructions::InitializeAccount3 {
             account,
             mint,
             owner: authority.address(),
+            token_program: program_id,
         }
         .invoke()
     }
@@ -207,6 +219,7 @@ impl SlabInit for Interface<crate::Mint> {
         let authority = params.authority.ok_or(ProgramError::InvalidArgument)?;
         let token_program = params.token_program.ok_or(ProgramError::InvalidArgument)?;
         let program_id = token_program.address();
+        validate_token_program(program_id)?;
 
         let space = core::mem::size_of::<crate::Mint>();
         match signer_seeds {
@@ -216,11 +229,12 @@ impl SlabInit for Interface<crate::Mint> {
             None => anchor_lang_v2::create_account(payer, account, space, program_id),
         }?;
 
-        pinocchio_token::instructions::InitializeMint2 {
+        pinocchio_token_2022::instructions::InitializeMint2 {
             mint: account,
             decimals,
             mint_authority: authority.address(),
             freeze_authority: params.freeze_authority.map(|v| v.address()),
+            token_program: program_id,
         }
         .invoke()
     }

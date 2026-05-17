@@ -1,5 +1,7 @@
 //! Prelude: import everything you need with `use anchor_lang_v2::prelude::*;`
 
+#[cfg(feature = "compat")]
+pub use crate::solana_program::pubkey::Pubkey;
 pub use crate::{
     access_control,
     account,
@@ -39,6 +41,7 @@ pub use crate::{
     // Hash
     sha256,
     sol_log_data,
+    system_program,
     // Constraints
     AccountConstraint,
     // Loader & dispatch

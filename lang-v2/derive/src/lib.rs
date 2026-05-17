@@ -273,12 +273,19 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             current_offset = quote::quote! { #current_offset + 1 };
         }
     }
+    let field_offsets: Vec<(String, proc_macro2::TokenStream)> = raw_field_names
+        .iter()
+        .cloned()
+        .zip(offset_exprs.iter().cloned())
+        .collect();
 
     let fields: Vec<parse::AccountField> = match named_fields
         .named
         .iter()
         .zip(offset_exprs)
-        .map(|(f, offset)| parse::parse_field(f, &raw_field_names, offset, &ix_arg_names))
+        .map(|(f, offset)| {
+            parse::parse_field(f, &raw_field_names, &field_offsets, offset, &ix_arg_names)
+        })
         .collect::<syn::Result<_>>()
     {
         Ok(fields) => fields,
@@ -1539,6 +1546,7 @@ pub fn program(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 struct HandlerCodegen {
+    error: Option<TokenStream2>,
     dispatch_arm: TokenStream2,
     wrapper: TokenStream2,
     instruction_struct: TokenStream2,
@@ -1574,6 +1582,7 @@ impl HandlerCodegen {
         let err_tokens = err.to_compile_error();
         let fn_name = &handler.sig.ident;
         Self {
+            error: Some(err_tokens.clone()),
             dispatch_arm: quote! {},
             wrapper: quote! {
                 #[allow(non_snake_case)]
@@ -1642,7 +1651,10 @@ fn process_handler(
             )
         }
     };
-    let accounts_type = extract_context_inner_type(first_arg);
+    let accounts_type = match extract_context_accounts_ident(first_arg) {
+        Ok(accounts_type) => accounts_type,
+        Err(err) => return HandlerCodegen::error(handler, err),
+    };
 
     let extra_args: Vec<(&Ident, &Type)> = args_iter
         .filter_map(|arg| {
@@ -1849,6 +1861,7 @@ fn process_handler(
 
     HandlerCodegen {
         dispatch_arm,
+        error: None,
         wrapper,
         instruction_struct,
         accounts_reexport,
@@ -1859,7 +1872,7 @@ fn process_handler(
         idl_disc: idl::disc_json(&disc_bytes_for_idl),
         idl_args: idl::build_args_json(&extra_args),
         idl_docs_json,
-        idl_accounts_type: accounts_type,
+        idl_accounts_type: quote! { #accounts_type },
         arg_types: extra_args.iter().map(|(_, t)| (*t).clone()).collect(),
     }
 }
@@ -1945,6 +1958,12 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
         .enumerate()
         .map(|(i, h)| process_handler(h, mod_name, use_byte_disc, discrim_attrs[i]))
         .collect();
+    let handler_errors: Vec<_> = codegen.iter().filter_map(|c| c.error.as_ref()).collect();
+    if !handler_errors.is_empty() {
+        return quote! {
+            #(#handler_errors)*
+        };
+    }
 
     let dispatch_arms: Vec<_> = codegen.iter().map(|c| &c.dispatch_arm).collect();
     let handler_wrappers: Vec<_> = codegen.iter().map(|c| &c.wrapper).collect();
@@ -2994,37 +3013,103 @@ fn parse_discrim_attr(handler: &syn::ItemFn) -> syn::Result<Option<(u8, proc_mac
     Ok(None)
 }
 
-fn extract_context_inner_type(arg: &FnArg) -> TokenStream2 {
+fn extract_context_accounts_ident(arg: &FnArg) -> syn::Result<Ident> {
     let ty = match arg {
         FnArg::Typed(pt) => &*pt.ty,
         _ => {
-            return syn::Error::new(arg.span(), "first parameter must be `ctx: &mut Context<T>`")
-                .to_compile_error()
+            return Err(syn::Error::new(
+                arg.span(),
+                "first parameter must be `ctx: &mut Context<T>`",
+            ))
         }
     };
-    if let Type::Reference(r) = ty {
-        return extract_generic_arg(&r.elem);
-    }
-    extract_generic_arg(ty)
-}
 
-fn extract_generic_arg(ty: &Type) -> TokenStream2 {
-    if let Type::Path(tp) = ty {
-        if let Some(seg) = tp.path.segments.last() {
-            if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
-                for arg in &args.args {
-                    if let syn::GenericArgument::Type(inner) = arg {
-                        return quote! { #inner };
+    let Type::Reference(reference) = ty else {
+        if let Type::Path(context_path) = ty {
+            if let Some(context_segment) = context_path.path.segments.last() {
+                if context_segment.ident == "Context" {
+                    if let syn::PathArguments::AngleBracketed(args) = &context_segment.arguments {
+                        if args.args.len() != 1 {
+                            return Err(syn::Error::new(
+                                args.span(),
+                                "Anchor v2 handlers take `ctx: &mut Context<Accounts>`. The v1 multi-lifetime form `Context<'_, '_, 'info, 'info, Accounts<'info>>` is not supported; use `ctx: &mut Context<Buy>`.",
+                            ));
+                        }
                     }
+                    return Err(syn::Error::new(
+                        ty.span(),
+                        "handler context must be passed by mutable reference: use `ctx: &mut Context<T>`",
+                    ));
                 }
             }
         }
+        return Err(syn::Error::new(
+            ty.span(),
+            "first parameter must be `ctx: &mut Context<T>`",
+        ));
+    };
+    if reference.mutability.is_none() {
+        return Err(syn::Error::new(
+            reference.span(),
+            "handler context must be mutable: use `ctx: &mut Context<T>`",
+        ));
     }
-    syn::Error::new(
-        ty.span(),
-        "could not extract generic type from `Context<T>` - expected `Context<YourAccountsStruct>`",
-    )
-    .to_compile_error()
+
+    let Type::Path(context_path) = reference.elem.as_ref() else {
+        return Err(syn::Error::new(
+            reference.elem.span(),
+            "could not parse handler context - expected `Context<YourAccountsStruct>`",
+        ));
+    };
+    let Some(context_segment) = context_path.path.segments.last() else {
+        return Err(syn::Error::new(
+            context_path.span(),
+            "could not parse handler context - expected `Context<YourAccountsStruct>`",
+        ));
+    };
+    if context_segment.ident != "Context" {
+        return Err(syn::Error::new(
+            context_segment.ident.span(),
+            "first parameter must be `ctx: &mut Context<T>`",
+        ));
+    }
+
+    let syn::PathArguments::AngleBracketed(args) = &context_segment.arguments else {
+        return Err(syn::Error::new(
+            context_segment.span(),
+            "missing accounts type: expected `Context<YourAccountsStruct>`",
+        ));
+    };
+    if args.args.len() != 1 {
+        return Err(syn::Error::new(
+            args.span(),
+            "Anchor v2 `Context` takes exactly one accounts type. Use `ctx: &mut Context<Buy>` instead of the v1 form `Context<'_, '_, 'info, 'info, Buy<'info>>`.",
+        ));
+    }
+
+    let Some(syn::GenericArgument::Type(Type::Path(accounts_path))) = args.args.first() else {
+        return Err(syn::Error::new(
+            args.args
+                .first()
+                .map(Spanned::span)
+                .unwrap_or_else(|| args.span()),
+            "Context generic must be an accounts struct type, for example `Context<Buy>`",
+        ));
+    };
+    let Some(accounts_segment) = accounts_path.path.segments.last() else {
+        return Err(syn::Error::new(
+            accounts_path.span(),
+            "Context generic must be an accounts struct type, for example `Context<Buy>`",
+        ));
+    };
+    if !matches!(accounts_segment.arguments, syn::PathArguments::None) {
+        return Err(syn::Error::new(
+            accounts_segment.arguments.span(),
+            "Anchor v2 account structs in handler contexts do not take `'info`; use `Context<Buy>` instead of `Context<Buy<'info>>`.",
+        ));
+    }
+
+    Ok(accounts_segment.ident.clone())
 }
 
 /// Converts `snake_case` to `CamelCase` (e.g. `execute_transfer` → `ExecuteTransfer`).

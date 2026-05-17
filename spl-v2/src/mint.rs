@@ -107,6 +107,8 @@ impl SlabInit for Mint {
 }
 
 impl Mint {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+
     /// Total supply of tokens.
     pub fn supply(&self) -> u64 {
         u64::from_le_bytes(self.supply)
