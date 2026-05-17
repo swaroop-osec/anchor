@@ -81,6 +81,8 @@ pub use crate::{
     ToCpiAccounts,
     TryAccounts,
 };
+#[cfg(feature = "compat")]
+pub use crate::{err, error, pubkey};
 // Re-export pinocchio sysvar types and trait for use with Sysvar<T>
 pub use pinocchio::sysvars::Sysvar as PinocchioSysvar;
 pub use {

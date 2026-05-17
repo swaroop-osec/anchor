@@ -7,7 +7,7 @@
 extern crate alloc;
 
 pub mod accounts;
-mod context;
+pub mod context;
 mod context_cpi;
 pub mod cpi;
 pub mod cursor;
@@ -31,6 +31,8 @@ pub use cpi::realloc_account;
 /// Chunked 4×u64 equality compare for `Address`. Preferred over `==`
 /// on `&Address`. See <https://github.com/anza-xyz/solana-sdk/issues/345>.
 pub use pinocchio::address::address_eq;
+#[cfg(feature = "compat")]
+pub use solana_address::address as pubkey;
 /// Re-export declare_id from solana-address.
 pub use solana_address::declare_id;
 /// Implementation detail of [`solana_msg`] - re-exported for macro access only.
@@ -192,6 +194,9 @@ pub mod solana_program {
     }
 
     pub use solana_system_interface::instruction as system_instruction;
+
+    #[cfg(feature = "compat")]
+    pub use crate::pubkey;
 
     #[cfg(feature = "compat")]
     pub mod pubkey {
@@ -359,6 +364,32 @@ pub fn check_program_id(
 // ---------------------------------------------------------------------------
 // require! macros — no_std compatible
 // ---------------------------------------------------------------------------
+
+/// Creates a [`ProgramError`](crate::Error) from an Anchor-style error code.
+///
+/// This is a v1 syntax compatibility shim. Unlike v1's `error!` proc macro,
+/// it does not allocate a rich `AnchorError` with source, name, message, or
+/// compared-value metadata; v2 keeps runtime errors as `ProgramError` and
+/// routes error text through the IDL.
+#[cfg(feature = "compat")]
+#[macro_export]
+macro_rules! error {
+    ($error:expr $(,)?) => {{
+        ::core::convert::Into::<$crate::Error>::into($error)
+    }};
+}
+
+/// Returns `Err(error!(...))`.
+///
+/// This is the expression-only v1 compatibility form for v2's `ProgramError`
+/// error model.
+#[cfg(feature = "compat")]
+#[macro_export]
+macro_rules! err {
+    ($error:expr $(,)?) => {{
+        Err($crate::error!($error))
+    }};
+}
 
 /// Ensures a condition is true, otherwise returns an error.
 ///
