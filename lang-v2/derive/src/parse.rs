@@ -277,6 +277,7 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
                             let content;
                             syn::parenthesized!(content in input);
                             let expr: Expr = content.parse()?;
+                            reject_obvious_non_bool_constraint(&expr)?;
                             let err = if content.peek(Token![@]) {
                                 content.parse::<Token![@]>()?;
                                 Some(content.parse()?)
@@ -293,6 +294,7 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
                         } else {
                             input.parse::<Token![=]>()?;
                             let expr: Expr = input.parse()?;
+                            reject_obvious_non_bool_constraint(&expr)?;
                             let err = if input.peek(Token![@]) {
                                 input.parse::<Token![@]>()?;
                                 Some(input.parse()?)
@@ -366,6 +368,19 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
     }
 
     Ok(result)
+}
+
+fn reject_obvious_non_bool_constraint(expr: &Expr) -> syn::Result<()> {
+    if let Expr::Lit(expr_lit) = expr {
+        if !matches!(expr_lit.lit, syn::Lit::Bool(_)) {
+            return Err(syn::Error::new_spanned(
+                expr,
+                "`constraint` expects a boolean expression; non-boolean literals like strings \
+                 and numbers are rejected",
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub fn field_ty_str(ty: &Type) -> String {
