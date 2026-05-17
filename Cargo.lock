@@ -519,7 +519,9 @@ name = "anchor-spl-v2"
 version = "2.0.0"
 dependencies = [
  "anchor-lang-v2",
+ "borsh 1.6.1",
  "bytemuck",
+ "mpl-token-metadata",
  "pinocchio",
  "pinocchio-token",
  "pinocchio-token-2022",
@@ -529,6 +531,8 @@ dependencies = [
  "solana-program-error 3.0.0",
  "solana-program-pack 3.1.0",
  "solana-pubkey 3.0.0",
+ "solana-sysvar 3.1.1",
+ "spl-associated-token-account-interface",
  "spl-pod",
  "spl-token-2022-interface",
  "spl-token-group-interface",

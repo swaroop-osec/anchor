@@ -12,6 +12,8 @@
 
 pub mod associated_token;
 pub mod extensions;
+#[cfg(feature = "metadata")]
+pub mod metadata;
 pub mod mint;
 pub mod token;
 pub mod token_2022;
