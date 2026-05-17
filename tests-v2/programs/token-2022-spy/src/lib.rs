@@ -55,6 +55,32 @@ pub mod token_2022_spy {
         );
         Ok(())
     }
+
+    #[discrim = 29]
+    pub fn reallocate(ctx: &mut Context<Reallocate>, extension_type: u16) -> Result<()> {
+        require_eq!(extension_type, 20u16, ProgramError::InvalidInstructionData);
+        require!(
+            ctx.accounts.account.account().is_writable(),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            ctx.accounts.payer.account().is_writable(),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            ctx.accounts.payer.account().is_signer(),
+            ProgramError::MissingRequiredSignature
+        );
+        require!(
+            !ctx.accounts.system_program.account().is_writable(),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            ctx.accounts.authority.account().is_signer(),
+            ProgramError::MissingRequiredSignature
+        );
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -75,5 +101,15 @@ pub struct GroupPointerUpdate {
 pub struct GroupMemberPointerUpdate {
     #[account(mut)]
     pub mint: UncheckedAccount,
+    pub authority: Signer,
+}
+
+#[derive(Accounts)]
+pub struct Reallocate {
+    #[account(mut)]
+    pub account: UncheckedAccount,
+    #[account(mut)]
+    pub payer: Signer,
+    pub system_program: UncheckedAccount,
     pub authority: Signer,
 }

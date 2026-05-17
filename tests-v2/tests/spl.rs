@@ -1490,7 +1490,7 @@ fn tlv_pausable_config(authority: &Pubkey, paused: u8) -> Vec<u8> {
     value.extend_from_slice(authority.as_ref());
     value.push(paused);
     let mut out = Vec::new();
-    push_tlv(&mut out, 25, &value); // PausableConfig
+    push_tlv(&mut out, 26, &value); // PausableConfig
     out
 }
 
@@ -2267,7 +2267,7 @@ fn zero_sized_marker_extensions_round_trip() {
             &mint,
             &owner.pubkey(),
             0,
-            &concat_tlvs(&[tlv_marker(13), tlv_marker(26)]),
+            &concat_tlvs(&[tlv_marker(13), tlv_marker(27)]),
         ),
     );
 
@@ -2299,7 +2299,7 @@ fn zero_sized_marker_extensions_reject_when_marker_missing() {
             &mint,
             &owner.pubkey(),
             0,
-            &concat_tlvs(&[tlv_marker(13), tlv_marker(26)]),
+            &concat_tlvs(&[tlv_marker(13), tlv_marker(27)]),
         ),
     );
 
@@ -2397,4 +2397,36 @@ fn group_member_pointer_update_helper_includes_authority_account() {
     ];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[&authority])
         .expect("group member pointer update helper should pass the authority signer account");
+}
+
+#[test]
+fn reallocate_helper_encodes_account_extension_type() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("spy-realloc-mint-auth");
+    let owner = keypair_for("spy-realloc-owner");
+    let token = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &[]),
+    );
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        AccountMeta::new_readonly(mint_authority.pubkey(), true),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![43],
+        metas,
+        &payer,
+        &[&mint_authority],
+    )
+    .expect("reallocate helper should encode GroupPointer as account extension type 20");
 }

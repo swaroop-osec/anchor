@@ -372,7 +372,7 @@ impl ExtensionType for GroupMemberPointer {
 }
 
 // ---------------------------------------------------------------------------
-// PausableConfig (ExtensionType = 25, mint extension)
+// PausableConfig (ExtensionType = 26, mint extension)
 // ---------------------------------------------------------------------------
 
 /// Pausable mint configuration.
@@ -391,11 +391,11 @@ impl PausableConfig {
 }
 
 impl ExtensionType for PausableConfig {
-    const TYPE_DISCRIMINANT: u16 = 25;
+    const TYPE_DISCRIMINANT: u16 = 26;
 }
 
 // ---------------------------------------------------------------------------
-// PausableAccount (ExtensionType = 26, account extension)
+// PausableAccount (ExtensionType = 27, account extension)
 // ---------------------------------------------------------------------------
 
 /// Marker extension for accounts that belong to a pausable mint.
@@ -407,5 +407,5 @@ unsafe impl Pod for PausableAccount {}
 unsafe impl Zeroable for PausableAccount {}
 
 impl ExtensionType for PausableAccount {
-    const TYPE_DISCRIMINANT: u16 = 26;
+    const TYPE_DISCRIMINANT: u16 = 27;
 }

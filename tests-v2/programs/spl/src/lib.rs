@@ -17,7 +17,7 @@ use {
         },
         mint::{self, Mint},
         token::{self, cpi as token_cpi, TokenAccount},
-        token_2022_extensions as token_2022_ext_cpi,
+        token_2022 as token_2022_cpi, token_2022_extensions as token_2022_ext_cpi,
         token_interface::InterfaceAccount,
     },
 };
@@ -538,6 +538,20 @@ pub mod spl_test {
         token_2022_ext_cpi::group_member_pointer_update(cpi_ctx, Some(&member_address));
         Ok(())
     }
+
+    /// Invoke the Token-2022 reallocate helper against the spy program.
+    #[discrim = 43]
+    pub fn spy_reallocate_group_pointer(ctx: &mut Context<SpyReallocate>) -> Result<()> {
+        let accs = token_2022_cpi::Reallocate {
+            account: ctx.accounts.account.cpi_handle_mut(),
+            payer: ctx.accounts.payer.cpi_handle_mut(),
+            system_program: ctx.accounts.system_program.cpi_handle(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_cpi::reallocate(cpi_ctx, &[token_2022_cpi::ExtensionType::GroupPointer]);
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -899,6 +913,17 @@ pub struct SpyGroupPointerUpdate {
 pub struct SpyGroupMemberPointerUpdate {
     #[account(mut)]
     pub mint: UncheckedAccount,
+    pub authority: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyReallocate {
+    #[account(mut)]
+    pub account: UncheckedAccount,
+    #[account(mut)]
+    pub payer: Signer,
+    pub system_program: UncheckedAccount,
     pub authority: Signer,
     pub token_program: UncheckedAccount,
 }

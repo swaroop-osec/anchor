@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use {
-    alloc::{vec, vec::Vec},
+    alloc::{string::String, vec, vec::Vec},
     anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
     pinocchio::instruction::InstructionAccount,
     solana_address::Address,
@@ -279,8 +279,36 @@ pub fn pausable_resume<'a>(ctx: CpiContext<'a, PausableToggle<'a>>) {
 
 pub fn token_metadata_remove_key<'a>(
     ctx: CpiContext<'a, TokenMetadataRemoveKey<'a>>,
-    key: &str,
+    key: String,
     idempotent: bool,
 ) {
-    ctx.invoke(&encode_token_metadata_remove_key(key, idempotent));
+    ctx.invoke(&encode_token_metadata_remove_key(&key, idempotent));
+}
+
+#[allow(deprecated)]
+pub mod cpi_guard {
+    pub use super::{cpi_guard_disable, cpi_guard_enable, CpiGuard};
+}
+
+pub mod group_pointer {
+    pub use super::{
+        group_pointer_initialize, group_pointer_update, GroupPointerInitialize, GroupPointerUpdate,
+    };
+}
+
+pub mod group_member_pointer {
+    pub use super::{
+        group_member_pointer_initialize, group_member_pointer_update, GroupMemberPointerInitialize,
+        GroupMemberPointerUpdate,
+    };
+}
+
+pub mod pausable {
+    pub use super::{
+        pausable_initialize, pausable_pause, pausable_resume, PausableInitialize, PausableToggle,
+    };
+}
+
+pub mod token_metadata {
+    pub use super::{token_metadata_remove_key, TokenMetadataRemoveKey};
 }
