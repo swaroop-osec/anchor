@@ -35,6 +35,8 @@ use {
     },
 };
 
+pub use crate::token::{close_account, CloseAccount};
+
 // ---------------------------------------------------------------------------
 // Interface<T> — transparent wrapper that changes validation to accept both
 // Token and Token-2022 program ownership.
