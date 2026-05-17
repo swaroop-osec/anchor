@@ -189,6 +189,11 @@ pub mod solana_program {
     pub mod instruction {
         pub use solana_instruction::*;
     }
+
+    #[cfg(feature = "compat")]
+    pub mod pubkey {
+        pub type Pubkey = crate::Address;
+    }
 }
 
 /// Converts a struct of account addresses into a list of [`AccountMeta`]s.

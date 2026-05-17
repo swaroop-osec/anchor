@@ -1,5 +1,7 @@
 //! Prelude: import everything you need with `use anchor_lang_v2::prelude::*;`
 
+#[cfg(feature = "compat")]
+pub use crate::solana_program::pubkey::Pubkey;
 pub use crate::{
     access_control,
     account,

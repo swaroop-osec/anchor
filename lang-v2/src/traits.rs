@@ -127,6 +127,13 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
         Ok(())
     }
 
+    /// v1-compatible alias for the account address.
+    #[cfg(feature = "compat")]
+    #[inline(always)]
+    fn key(&self) -> crate::solana_program::pubkey::Pubkey {
+        *self.account().address()
+    }
+
     fn close(&mut self, mut destination: AccountView) -> ProgramResult {
         let mut self_view = *self.account();
         let dest_lamports = destination
