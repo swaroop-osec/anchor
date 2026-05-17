@@ -619,6 +619,7 @@ pub struct AccountField {
     /// `<Inner as TryAccounts>::HEADER_SIZE` per `Nested<Inner>`).
     pub ty: Type,
     pub load: TokenStream2,
+    pub deferred_load: Option<TokenStream2>,
     pub constraints: Vec<TokenStream2>,
     /// Duplicate-mutable-account check. Collected separately from
     /// `constraints` so all mut-field dup checks can share a single outer
@@ -744,13 +745,13 @@ fn address_v1_relation_source(
 
 /// Rewrite a single seed expression so that a bare field-name identifier
 /// (like `wallet` in `seeds = [b"vault", wallet]`) is replaced with the
-/// explicit byte-slice derivation chain `wallet.address().as_ref()`.
+/// explicit address accessor `wallet.address()`.
 ///
 /// Strict: only rewrites simple single-segment `Expr::Path` expressions
 /// whose identifier matches a known field name. Everything else
 /// (literals, method calls, array refs, complex expressions) passes
 /// through unchanged so users can still write explicit seed expressions.
-fn rewrite_seed_expr(expr: &Expr, field_names: &[String]) -> proc_macro2::TokenStream {
+fn rewrite_seed_value_expr(expr: &Expr, field_names: &[String]) -> proc_macro2::TokenStream {
     use quote::quote;
     if let Expr::Path(ep) = expr {
         if ep.qself.is_none() && ep.path.segments.len() == 1 && ep.path.leading_colon.is_none() {
@@ -758,12 +759,47 @@ fn rewrite_seed_expr(expr: &Expr, field_names: &[String]) -> proc_macro2::TokenS
             if seg.arguments.is_empty() {
                 let ident = &seg.ident;
                 if field_names.contains(&ident.to_string()) {
-                    return quote! { #ident.address().as_ref() };
+                    return quote! { #ident.address() };
                 }
             }
         }
     }
+    if let Expr::MethodCall(method_call) = expr {
+        if method_call.method == "as_ref"
+            && method_call.args.is_empty()
+            && method_call.turbofish.is_none()
+            && !matches!(method_call.receiver.as_ref(), Expr::Path(_))
+        {
+            let receiver = &method_call.receiver;
+            return quote! { #receiver };
+        }
+    }
     quote! { #expr }
+}
+
+fn materialize_seed_refs(
+    seeds: &[&Expr],
+    field_names: &[String],
+) -> (Vec<TokenStream2>, Vec<TokenStream2>) {
+    let mut bindings = Vec::with_capacity(seeds.len());
+    let mut refs = Vec::with_capacity(seeds.len());
+    for (idx, seed) in seeds.iter().enumerate() {
+        let value = rewrite_seed_value_expr(seed, field_names);
+        let value_ident = Ident::new(
+            &format!("__seed_{}_value", idx),
+            proc_macro2::Span::call_site(),
+        );
+        let ref_ident = Ident::new(
+            &format!("__seed_{}_ref", idx),
+            proc_macro2::Span::call_site(),
+        );
+        bindings.push(quote! {
+            let #value_ident = #value;
+            let #ref_ident: &[u8] = #value_ident.as_ref();
+        });
+        refs.push(quote! { #ref_ident });
+    }
+    (bindings, refs)
 }
 
 /// Build the seed-check codegen for a `#[account(seeds = [..], bump)]`
@@ -793,7 +829,7 @@ fn rewrite_seed_expr(expr: &Expr, field_names: &[String]) -> proc_macro2::TokenS
 #[allow(clippy::too_many_arguments)]
 fn emit_seeds_check(
     seeds: &[&Expr],
-    seed_exprs: &[TokenStream2],
+    field_names: &[String],
     pda_program: &TokenStream2,
     target_addr_ref: &TokenStream2,
     field_name: &Ident,
@@ -802,6 +838,7 @@ fn emit_seeds_check(
     using_our_program_id: bool,
     is_optional: bool,
 ) -> TokenStream2 {
+    let (seed_bindings, seed_refs) = materialize_seed_refs(seeds, field_names);
     // For optional fields the bumps struct field is `Option<u8>`, so the
     // assignment wraps in `Some(...)`. Non-optional fields assign the bump
     // directly.
@@ -841,8 +878,10 @@ fn emit_seeds_check(
                     return if for_init {
                         quote! {
                             #check
+                            #(#seed_bindings)*
+                            let __bump_seed = [#bump_const];
                             let __seeds: Option<&[&[u8]]> =
-                                Some(&[#(#seed_exprs),* , &[#bump_const]]);
+                                Some(&[#(#seed_refs),* , __bump_seed.as_ref()]);
                         }
                     } else {
                         // Wrap non-init in a block so the consts are
@@ -876,13 +915,14 @@ fn emit_seeds_check(
     };
     let bump_assign = wrap_bump(quote! { __bump });
     let find = quote! {
+        #(#seed_bindings)*
         let __bump = if #skip_curve {
             anchor_lang_v2::find_and_verify_program_address_skip_curve(
-                &[#(#seed_exprs),*], #pda_program, #target_addr_ref,
+                &[#(#seed_refs),*], #pda_program, #target_addr_ref,
             ).map_err(|_| anchor_lang_v2::ErrorCode::ConstraintSeeds)?
         } else {
             anchor_lang_v2::find_and_verify_program_address(
-                &[#(#seed_exprs),*], #pda_program, #target_addr_ref,
+                &[#(#seed_refs),*], #pda_program, #target_addr_ref,
             ).map_err(|_| anchor_lang_v2::ErrorCode::ConstraintSeeds)?
         };
         __bumps.#field_name = #bump_assign;
@@ -890,7 +930,9 @@ fn emit_seeds_check(
     if for_init {
         quote! {
             #find
-            let __seeds: Option<&[&[u8]]> = Some(&[#(#seed_exprs),* , &[__bump]]);
+            let __bump_seed = [__bump];
+            let __seeds: Option<&[&[u8]]> =
+                Some(&[#(#seed_refs),* , __bump_seed.as_ref()]);
         }
     } else {
         find
@@ -945,13 +987,9 @@ fn emit_init_body(
         };
         if let Expr::Array(arr) = seeds_expr {
             let seed_elems: Vec<&Expr> = arr.elems.iter().collect();
-            let rewritten: Vec<_> = seed_elems
-                .iter()
-                .map(|s| rewrite_seed_expr(s, field_names))
-                .collect();
             emit_seeds_check(
                 &seed_elems,
-                &rewritten,
+                field_names,
                 &pda_program,
                 &quote! { __target.address() },
                 field_name,
@@ -1201,6 +1239,7 @@ pub fn parse_field(
             name: field_name.clone(),
             ty: field.ty.clone(),
             load,
+            deferred_load: None,
             constraints: vec![],
             dup_check: None,
             exit,
@@ -1222,6 +1261,7 @@ pub fn parse_field(
         });
     }
 
+    let mut deferred_load = None;
     let load = if let Some(inner_ty) = option_inner {
         // `Option<T>` field: client-side sentinel of "account address ==
         // program_id" is interpreted as `None`. Otherwise we run the same
@@ -1301,7 +1341,7 @@ pub fn parse_field(
                 )?)
             }
         };
-        quote! {
+        let load = quote! {
             let mut #field_name: #field_ty = {
                 let __target = __views[#offset_expr];
                 if anchor_lang_v2::address_eq(__target.address(), __program_id) {
@@ -1310,6 +1350,12 @@ pub fn parse_field(
                     #inner_action
                 }
             };
+        };
+        if attrs.is_init || attrs.is_init_if_needed {
+            deferred_load = Some(load);
+            quote! {}
+        } else {
+            load
         }
     } else if attrs.is_init {
         let init_body = if let Some(ref at) = associated_token {
@@ -1319,12 +1365,13 @@ pub fn parse_field(
         };
         let init_body_with_constraints =
             wrap_init_body_with_constraints(field_ty, &attrs, &init_body);
-        quote! {
+        deferred_load = Some(quote! {
             let mut #field_name: #field_ty = {
                 let __target = __views[#offset_expr];
                 #init_body_with_constraints
             };
-        }
+        });
+        quote! {}
     } else if attrs.is_init_if_needed {
         let init_body = if let Some(ref at) = associated_token {
             emit_associated_token_init_body(field_ty, &attrs, at, field_offsets, false)?
@@ -1333,7 +1380,7 @@ pub fn parse_field(
         };
         let init_body_with_constraints =
             wrap_init_body_with_constraints(field_ty, &attrs, &init_body);
-        quote! {
+        deferred_load = Some(quote! {
             let mut #field_name: #field_ty = {
                 let __target = __views[#offset_expr];
                 if __target.data_len() > 0 && !__target.owned_by(&anchor_lang_v2::programs::System::id()) {
@@ -1348,7 +1395,8 @@ pub fn parse_field(
                     #init_body_with_constraints
                 }
             };
-        }
+        });
+        quote! {}
     } else if attrs.is_zeroed {
         // zeroed: account exists but discriminator must be all zeros. Verify,
         // stamp the real discriminator, then load mutably.
@@ -1429,21 +1477,20 @@ pub fn parse_field(
             if let Expr::Array(arr) = seeds_expr {
                 // Array-literal seeds: `seeds = [b"vault", user.address().as_ref()]`
                 let seed_elems: Vec<&Expr> = arr.elems.iter().collect();
-                let rewritten: Vec<_> = seed_elems
-                    .iter()
-                    .map(|s| rewrite_seed_expr(s, field_names))
-                    .collect();
                 if let Some(Some(ref bump_expr)) = attrs.bump {
                     let bump_assign = if is_optional {
                         quote! { Some(__bump_val) }
                     } else {
                         quote! { __bump_val }
                     };
+                    let (seed_bindings, seed_refs) =
+                        materialize_seed_refs(&seed_elems, field_names);
                     constraints.push(quote! {
                         {
+                            #(#seed_bindings)*
                             let __bump_val: u8 = #bump_expr;
                             anchor_lang_v2::verify_program_address(
-                                &[#(#rewritten),* , &[__bump_val]],
+                                &[#(#seed_refs),* , &[__bump_val]],
                                 #pda_program,
                                 #field_name.account().address(),
                             )?;
@@ -1454,7 +1501,7 @@ pub fn parse_field(
                     let target_addr_ref = quote! { #field_name.account().address() };
                     constraints.push(emit_seeds_check(
                         &seed_elems,
-                        &rewritten,
+                        field_names,
                         &pda_program,
                         &target_addr_ref,
                         field_name,
@@ -1939,6 +1986,7 @@ pub fn parse_field(
         name: field_name.clone(),
         ty: field.ty.clone(),
         load,
+        deferred_load,
         constraints,
         dup_check,
         exit,

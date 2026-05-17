@@ -494,6 +494,14 @@ pub mod accounts_test {
         }?;
         Ok(())
     }
+
+    /// Initializes an account whose init constraint references accounts that
+    /// appear later in the account struct.
+    #[discrim = 28]
+    pub fn initialize_with_later_seed(ctx: &mut Context<InitializeWithLaterSeed>) -> Result<()> {
+        ctx.accounts.counter.value = 42;
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -504,6 +512,15 @@ pub struct Initialize {
     pub payer: Signer,
     #[account(init, payer = payer, seeds = [b"counter"], bump)]
     pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeWithLaterSeed {
+    #[account(init, payer = payer, seeds = [b"later-seed", payer.address().as_ref()], bump)]
+    pub counter: Account<Counter>,
+    #[account(mut)]
+    pub payer: Signer,
     pub system_program: Program<System>,
 }
 

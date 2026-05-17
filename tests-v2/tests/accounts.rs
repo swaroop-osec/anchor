@@ -48,6 +48,10 @@ fn boxed_counter_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"boxed-counter"], &program_id()).0
 }
 
+fn later_seed_counter_pda(payer: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[b"later-seed", payer.as_ref()], &program_id()).0
+}
+
 const SYSTEM_SEED: &str = "anchor-v2-seed";
 const SYSTEM_TRANSFER_SEED: &str = "anchor-v2-transfer";
 const NONCE_ACCOUNT_LENGTH: usize = 80;
@@ -126,6 +130,40 @@ fn initialize_creates_counter_with_value_one() {
     // 8-byte disc + u64 value. disc prefix = 8 bytes.
     let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
     assert_eq!(value, 1);
+}
+
+#[test]
+fn initialize_can_reference_later_seed_account() {
+    let (mut svm, payer) = setup();
+    let counter = later_seed_counter_pda(&payer.pubkey());
+    let metas = vec![
+        AccountMeta::new(counter, false),
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+
+    call_raw(&mut svm, &payer, 28, metas).expect("init should see later payer seed");
+
+    let account = svm.get_account(&counter).expect("counter exists");
+    let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
+    assert_eq!(value, 42);
+}
+
+#[test]
+fn initialize_later_seed_rejects_wrong_pda() {
+    let (mut svm, payer) = setup();
+    let wrong_counter = counter_pda();
+    let metas = vec![
+        AccountMeta::new(wrong_counter, false),
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+
+    let result = call_raw(&mut svm, &payer, 28, metas);
+    assert!(
+        result.is_err(),
+        "init should reject PDA derived from the wrong seeds"
+    );
 }
 
 #[test]

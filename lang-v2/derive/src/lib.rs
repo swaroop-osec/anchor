@@ -294,6 +294,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
 
     let field_names: Vec<_> = fields.iter().map(|f| &f.name).collect();
     let loads: Vec<_> = fields.iter().map(|f| &f.load).collect();
+    let deferred_loads: Vec<_> = fields
+        .iter()
+        .filter_map(|f| f.deferred_load.as_ref())
+        .collect();
     let constraints: Vec<_> = fields.iter().flat_map(|f| &f.constraints).collect();
     let exits: Vec<_> = fields.iter().filter_map(|f| f.exit.as_ref()).collect();
     // Collect per-field dup checks under a single outer `if let Some(__dups)`
@@ -1084,6 +1088,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 #ix_deser
                 #bumps_init
                 #(#loads)*
+                #(#deferred_loads)*
                 #dup_check_block
                 #(#constraints)*
                 Ok((Self { #(#field_names),* }, __bumps, #ix_args_return))
