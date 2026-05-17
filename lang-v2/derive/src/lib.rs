@@ -102,6 +102,22 @@ fn with_ix_lifetime(ty: &Type, ix: &syn::Lifetime) -> Type {
     }
 }
 
+fn nested_client_accounts_type(ty: &Type) -> Option<TokenStream2> {
+    let inner = parse::extract_nested_inner_type(ty)?;
+    let Type::Path(inner_path) = inner else {
+        return None;
+    };
+    let inner_ident = &inner_path.path.segments.last()?.ident;
+    let module_ident = Ident::new(
+        &format!(
+            "__client_accounts_{}",
+            inner_ident.to_string().to_lowercase()
+        ),
+        inner_ident.span(),
+    );
+    Some(quote! { crate::#module_ident::#inner_ident })
+}
+
 struct ArgsDeser {
     deser: TokenStream2,
     arg_types: Vec<Type>,
@@ -576,7 +592,9 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .filter(|(_, kind)| matches!(kind, FieldKind::Required))
         .map(|(f, _)| {
             let fname = &f.name;
-            if f.is_optional {
+            if let Some(nested_ty) = nested_client_accounts_type(&f.ty) {
+                quote! { pub #fname: #nested_ty }
+            } else if f.is_optional {
                 quote! { pub #fname: Option<anchor_lang_v2::Address> }
             } else {
                 quote! { pub #fname: anchor_lang_v2::Address }
@@ -623,7 +641,11 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .filter(|(_, kind)| matches!(kind, FieldKind::Required))
         .map(|(f, _)| {
             let fname = &f.name;
-            quote! { let #fname = self.#fname; }
+            if nested_client_accounts_type(&f.ty).is_some() {
+                quote! { let #fname = &self.#fname; }
+            } else {
+                quote! { let #fname = self.#fname; }
+            }
         })
         .collect();
 
@@ -670,7 +692,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Build AccountMeta entries in original field order, using bare idents.
-    let client_meta_entries: Vec<_> = field_kinds
+    let client_meta_steps: Vec<_> = field_kinds
         .iter()
         .map(|(field, _kind)| {
             let writable = field.idl_writable;
@@ -679,29 +701,41 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 None => &field.ty,
             }) == "Signer";
             let signer = is_signer_ty || field.idl_init_signer;
+            let signer_expr = if signer {
+                quote! { _is_signer.unwrap_or(true) }
+            } else {
+                quote! { false }
+            };
             let field_ident = &field.name;
-            if field.is_optional {
+            if nested_client_accounts_type(&field.ty).is_some() {
+                quote! {
+                    __metas.extend(anchor_lang_v2::ToAccountMetas::to_account_metas(
+                        #field_ident,
+                        _is_signer,
+                    ));
+                }
+            } else if field.is_optional {
                 quote! {
                     match #field_ident {
-                        Some(__addr) => anchor_lang_v2::AccountMeta {
+                        Some(__addr) => __metas.push(anchor_lang_v2::AccountMeta {
                             pubkey: __addr,
                             is_writable: #writable,
-                            is_signer: #signer,
-                        },
-                        None => anchor_lang_v2::AccountMeta {
+                            is_signer: #signer_expr,
+                        }),
+                        None => __metas.push(anchor_lang_v2::AccountMeta {
                             pubkey: crate::ID,
                             is_writable: false,
                             is_signer: false,
-                        },
+                        }),
                     }
                 }
             } else {
                 quote! {
-                    anchor_lang_v2::AccountMeta {
+                    __metas.push(anchor_lang_v2::AccountMeta {
                         pubkey: #field_ident,
                         is_writable: #writable,
-                        is_signer: #signer,
-                    }
+                        is_signer: #signer_expr,
+                    });
                 }
             }
         })
@@ -781,7 +815,9 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .iter()
         .map(|f| {
             let fname = &f.name;
-            if f.is_optional {
+            if let Some(nested_ty) = nested_client_accounts_type(&f.ty) {
+                quote! { pub #fname: #nested_ty }
+            } else if f.is_optional {
                 quote! { pub #fname: Option<anchor_lang_v2::Address> }
             } else {
                 quote! { pub #fname: anchor_lang_v2::Address }
@@ -790,7 +826,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .collect();
 
     // Full struct to_account_metas: straightforward self.field access.
-    let full_meta_entries: Vec<_> = fields
+    let full_meta_steps: Vec<_> = fields
         .iter()
         .map(|field| {
             let writable = field.idl_writable;
@@ -799,29 +835,41 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 None => &field.ty,
             }) == "Signer";
             let signer = is_signer_ty || field.idl_init_signer;
+            let signer_expr = if signer {
+                quote! { _is_signer.unwrap_or(true) }
+            } else {
+                quote! { false }
+            };
             let field_ident = &field.name;
-            if field.is_optional {
+            if nested_client_accounts_type(&field.ty).is_some() {
+                quote! {
+                    __metas.extend(anchor_lang_v2::ToAccountMetas::to_account_metas(
+                        &self.#field_ident,
+                        _is_signer,
+                    ));
+                }
+            } else if field.is_optional {
                 quote! {
                     match self.#field_ident {
-                        Some(__addr) => anchor_lang_v2::AccountMeta {
+                        Some(__addr) => __metas.push(anchor_lang_v2::AccountMeta {
                             pubkey: __addr,
                             is_writable: #writable,
-                            is_signer: #signer,
-                        },
-                        None => anchor_lang_v2::AccountMeta {
+                            is_signer: #signer_expr,
+                        }),
+                        None => __metas.push(anchor_lang_v2::AccountMeta {
                             pubkey: crate::ID,
                             is_writable: false,
                             is_signer: false,
-                        },
+                        }),
                     }
                 }
             } else {
                 quote! {
-                    anchor_lang_v2::AccountMeta {
+                    __metas.push(anchor_lang_v2::AccountMeta {
                         pubkey: self.#field_ident,
                         is_writable: #writable,
-                        is_signer: #signer,
-                    }
+                        is_signer: #signer_expr,
+                    });
                 }
             }
         })
@@ -945,7 +993,9 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             fn to_account_metas(&self, _is_signer: Option<bool>) -> alloc::vec::Vec<anchor_lang_v2::AccountMeta> {
                 #(#required_locals)*
                 #(#derive_stmts)*
-                alloc::vec![#(#client_meta_entries),*]
+                let mut __metas = alloc::vec::Vec::new();
+                #(#client_meta_steps)*
+                __metas
             }
         }
     };
@@ -959,7 +1009,9 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             }
             impl anchor_lang_v2::ToAccountMetas for #name {
                 fn to_account_metas(&self, _is_signer: Option<bool>) -> alloc::vec::Vec<anchor_lang_v2::AccountMeta> {
-                    alloc::vec![#(#full_meta_entries),*]
+                    let mut __metas = alloc::vec::Vec::new();
+                    #(#full_meta_steps)*
+                    __metas
                 }
             }
             #resolved_struct
