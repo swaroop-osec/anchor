@@ -223,6 +223,44 @@ impl ExtensionType for DefaultAccountState {
 }
 
 // ---------------------------------------------------------------------------
+// NonTransferable (ExtensionType = 9, mint extension)
+// ---------------------------------------------------------------------------
+
+/// Marker extension for non-transferable mints.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct NonTransferable;
+
+unsafe impl Pod for NonTransferable {}
+unsafe impl Zeroable for NonTransferable {}
+
+impl ExtensionType for NonTransferable {
+    const TYPE_DISCRIMINANT: u16 = 9;
+}
+
+// ---------------------------------------------------------------------------
+// CpiGuard (ExtensionType = 11, account extension)
+// ---------------------------------------------------------------------------
+
+/// CPI guard state on a token account.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct CpiGuard {
+    /// Non-zero when privileged token operations are blocked through CPI.
+    pub lock_cpi: u8,
+}
+
+impl CpiGuard {
+    pub fn is_enabled(&self) -> bool {
+        self.lock_cpi != 0
+    }
+}
+
+impl ExtensionType for CpiGuard {
+    const TYPE_DISCRIMINANT: u16 = 11;
+}
+
+// ---------------------------------------------------------------------------
 // PermanentDelegate (ExtensionType = 12)
 // ---------------------------------------------------------------------------
 
@@ -267,6 +305,22 @@ pub struct TransferHookAccount {
 
 impl ExtensionType for TransferHookAccount {
     const TYPE_DISCRIMINANT: u16 = 15;
+}
+
+// ---------------------------------------------------------------------------
+// NonTransferableAccount (ExtensionType = 13, account extension)
+// ---------------------------------------------------------------------------
+
+/// Marker extension for accounts that belong to a non-transferable mint.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct NonTransferableAccount;
+
+unsafe impl Pod for NonTransferableAccount {}
+unsafe impl Zeroable for NonTransferableAccount {}
+
+impl ExtensionType for NonTransferableAccount {
+    const TYPE_DISCRIMINANT: u16 = 13;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,4 +369,43 @@ pub struct GroupMemberPointer {
 
 impl ExtensionType for GroupMemberPointer {
     const TYPE_DISCRIMINANT: u16 = 22;
+}
+
+// ---------------------------------------------------------------------------
+// PausableConfig (ExtensionType = 26, mint extension)
+// ---------------------------------------------------------------------------
+
+/// Pausable mint configuration.
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct PausableConfig {
+    pub authority: OptionalAddress,
+    /// Non-zero when minting, burning, and transfers are paused.
+    pub paused: u8,
+}
+
+impl PausableConfig {
+    pub fn is_paused(&self) -> bool {
+        self.paused != 0
+    }
+}
+
+impl ExtensionType for PausableConfig {
+    const TYPE_DISCRIMINANT: u16 = 26;
+}
+
+// ---------------------------------------------------------------------------
+// PausableAccount (ExtensionType = 27, account extension)
+// ---------------------------------------------------------------------------
+
+/// Marker extension for accounts that belong to a pausable mint.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct PausableAccount;
+
+unsafe impl Pod for PausableAccount {}
+unsafe impl Zeroable for PausableAccount {}
+
+impl ExtensionType for PausableAccount {
+    const TYPE_DISCRIMINANT: u16 = 27;
 }

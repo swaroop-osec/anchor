@@ -13,6 +13,8 @@ pub mod associated_token;
 pub mod extensions;
 pub mod mint;
 pub mod token;
+pub mod token_2022;
+pub mod token_2022_extensions;
 pub mod token_interface;
 
 /// Re-export `pinocchio-token-2022` for Token-2022 extension CPI instructions.

@@ -10,11 +10,14 @@ use {
     anchor_spl_v2::{
         associated_token::get_associated_token_address,
         extensions::{
-            self, MetadataPointer, MintCloseAuthority, PermanentDelegate, TransferFeeAmount,
-            TransferFeeConfig, TransferHook, TransferHookAccount,
+            self, CpiGuard, DefaultAccountState, GroupMemberPointer, GroupPointer, MetadataPointer,
+            MintCloseAuthority, NonTransferable, NonTransferableAccount, PausableAccount,
+            PausableConfig, PermanentDelegate, TransferFeeAmount, TransferFeeConfig, TransferHook,
+            TransferHookAccount,
         },
         mint::{self, Mint},
         token::{self, TokenAccount},
+        token_2022 as token_2022_cpi, token_2022_extensions as token_2022_ext_cpi,
         token_interface::InterfaceAccount,
     },
 };
@@ -414,9 +417,145 @@ pub mod spl_test {
         Ok(())
     }
 
+    /// Parse `DefaultAccountState` from a Token-2022 mint.
+    #[discrim = 34]
+    pub fn read_default_account_state(
+        ctx: &mut Context<ReadDefaultAccountState>,
+        expected_state: u8,
+    ) -> Result<()> {
+        let ext: &DefaultAccountState =
+            extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        if ext.state != expected_state {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse `GroupPointer` and assert both optional addresses match.
+    #[discrim = 35]
+    pub fn read_group_pointer(
+        ctx: &mut Context<ReadGroupPointer>,
+        expected_authority: Address,
+        expected_group: Address,
+    ) -> Result<()> {
+        let ext: &GroupPointer = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        if ext.authority != expected_authority || ext.group_address != expected_group {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse `GroupMemberPointer` and assert both optional addresses match.
+    #[discrim = 36]
+    pub fn read_group_member_pointer(
+        ctx: &mut Context<ReadGroupMemberPointer>,
+        expected_authority: Address,
+        expected_member: Address,
+    ) -> Result<()> {
+        let ext: &GroupMemberPointer = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        if ext.authority != expected_authority || ext.member_address != expected_member {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse `CpiGuard` from a Token-2022 token account.
+    #[discrim = 37]
+    pub fn read_cpi_guard(ctx: &mut Context<ReadCpiGuard>, expected_enabled: u8) -> Result<()> {
+        let ext: &CpiGuard =
+            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        if u8::from(ext.is_enabled()) != expected_enabled {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse `PausableConfig` from a Token-2022 mint.
+    #[discrim = 38]
+    pub fn read_pausable_config(
+        ctx: &mut Context<ReadPausableConfig>,
+        expected_authority: Address,
+        expected_paused: u8,
+    ) -> Result<()> {
+        let ext: &PausableConfig = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        if ext.authority != expected_authority || u8::from(ext.is_paused()) != expected_paused {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse zero-sized mint/account marker extensions.
+    #[discrim = 39]
+    pub fn read_marker_extensions(ctx: &mut Context<ReadMarkerExtensions>) -> Result<()> {
+        let _: &NonTransferable = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let _: &NonTransferableAccount =
+            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        let _: &PausableAccount =
+            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        Ok(())
+    }
+
+    /// Invoke the Token-2022 CPI Guard helper against the spy program.
+    #[discrim = 40]
+    pub fn spy_cpi_guard_enable(ctx: &mut Context<SpyCpiGuard>) -> Result<()> {
+        let accs = token_2022_ext_cpi::CpiGuard {
+            account: ctx.accounts.account.cpi_handle_mut(),
+            owner: ctx.accounts.owner.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        #[allow(deprecated)]
+        token_2022_ext_cpi::cpi_guard_enable(cpi_ctx);
+        Ok(())
+    }
+
+    /// Invoke the Token-2022 group pointer update helper against the spy program.
+    #[discrim = 41]
+    pub fn spy_group_pointer_update(
+        ctx: &mut Context<SpyGroupPointerUpdate>,
+        group_address: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::GroupPointerUpdate {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::group_pointer_update(cpi_ctx, Some(&group_address));
+        Ok(())
+    }
+
+    /// Invoke the Token-2022 group member pointer update helper against the spy program.
+    #[discrim = 42]
+    pub fn spy_group_member_pointer_update(
+        ctx: &mut Context<SpyGroupMemberPointerUpdate>,
+        member_address: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::GroupMemberPointerUpdate {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::group_member_pointer_update(cpi_ctx, Some(&member_address));
+        Ok(())
+    }
+
+    /// Invoke the Token-2022 reallocate helper against the spy program.
+    #[discrim = 43]
+    pub fn spy_reallocate_group_pointer(ctx: &mut Context<SpyReallocate>) -> Result<()> {
+        let accs = token_2022_cpi::Reallocate {
+            account: ctx.accounts.account.cpi_handle_mut(),
+            payer: ctx.accounts.payer.cpi_handle_mut(),
+            system_program: ctx.accounts.system_program.cpi_handle(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_cpi::reallocate(cpi_ctx, &[token_2022_cpi::ExtensionType::GroupPointer]);
+
+        Ok(())
+    }
+
     /// Burn through an unchecked token program account. This is intentionally
     /// only used to verify `token::burn` rejects arbitrary CPI targets itself.
-    #[discrim = 34]
+    #[discrim = 44]
     pub fn do_burn_unchecked_token_program(
         ctx: &mut Context<DoBurnUncheckedTokenProgram>,
         amount: u64,
@@ -743,4 +882,75 @@ pub struct ReadTransferFeeAmount {
 #[instruction(expected_transferring: u8)]
 pub struct ReadTransferHookAccount {
     pub token_account: InterfaceAccount<TokenAccount>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_state: u8)]
+pub struct ReadDefaultAccountState {
+    pub mint: InterfaceAccount<Mint>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_authority: Address, expected_group: Address)]
+pub struct ReadGroupPointer {
+    pub mint: InterfaceAccount<Mint>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_authority: Address, expected_member: Address)]
+pub struct ReadGroupMemberPointer {
+    pub mint: InterfaceAccount<Mint>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_enabled: u8)]
+pub struct ReadCpiGuard {
+    pub token_account: InterfaceAccount<TokenAccount>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_authority: Address, expected_paused: u8)]
+pub struct ReadPausableConfig {
+    pub mint: InterfaceAccount<Mint>,
+}
+
+#[derive(Accounts)]
+pub struct ReadMarkerExtensions {
+    pub mint: InterfaceAccount<Mint>,
+    pub token_account: InterfaceAccount<TokenAccount>,
+}
+
+#[derive(Accounts)]
+pub struct SpyCpiGuard {
+    #[account(mut)]
+    pub account: UncheckedAccount,
+    pub owner: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyGroupPointerUpdate {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub authority: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyGroupMemberPointerUpdate {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub authority: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyReallocate {
+    #[account(mut)]
+    pub account: UncheckedAccount,
+    #[account(mut)]
+    pub payer: Signer,
+    pub system_program: UncheckedAccount,
+    pub authority: Signer,
+    pub token_program: UncheckedAccount,
 }
