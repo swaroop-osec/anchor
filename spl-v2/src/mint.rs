@@ -4,7 +4,7 @@
 //! zerocopy mapping from the account data buffer.
 
 use {
-    crate::token::create_token_account,
+    crate::token::{coption_is_some, create_token_account, validate_coption_tag},
     anchor_lang_v2::{
         accounts::{Account, SlabInit, SlabSchema},
         programs::Token,
@@ -18,6 +18,11 @@ use {
 
 pub(crate) fn validate_mint_initialized(data: &[u8]) -> Result<(), ProgramError> {
     const MINT_INITIALIZED_OFFSET: usize = 36 + 8 + 1;
+    const MINT_AUTHORITY_TAG_OFFSET: usize = 0;
+    const MINT_FREEZE_AUTHORITY_TAG_OFFSET: usize = MINT_INITIALIZED_OFFSET + 1;
+
+    validate_coption_tag(data, MINT_AUTHORITY_TAG_OFFSET)?;
+    validate_coption_tag(data, MINT_FREEZE_AUTHORITY_TAG_OFFSET)?;
 
     match data.get(MINT_INITIALIZED_OFFSET).copied() {
         Some(1) => Ok(()),
@@ -133,7 +138,7 @@ impl Mint {
 
     /// Whether a mint authority is currently set.
     pub fn has_mint_authority(&self) -> bool {
-        self.mint_authority_flag[0] == 1
+        coption_is_some(&self.mint_authority_flag)
     }
 
     /// The mint authority, if any.
@@ -152,7 +157,7 @@ impl Mint {
 
     /// Whether a freeze authority is currently set.
     pub fn has_freeze_authority(&self) -> bool {
-        self.freeze_authority_flag[0] == 1
+        coption_is_some(&self.freeze_authority_flag)
     }
 
     /// The freeze authority, if any.
@@ -219,5 +224,41 @@ impl AccountConstraint<Account<Mint>> for TokenProgramConstraint {
         } else {
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mint_validation_rejects_non_canonical_coption_tags() {
+        let mut data = [0u8; Mint::LEN];
+        data[36 + 8 + 1] = 1;
+
+        assert_eq!(validate_mint_initialized(&data), Ok(()));
+
+        data[0] = 1;
+        data[1] = 2;
+        assert!(matches!(
+            validate_mint_initialized(&data),
+            Err(ProgramError::InvalidAccountData)
+        ));
+    }
+
+    #[test]
+    fn mint_accessors_require_canonical_some_tags() {
+        let mint = Mint {
+            mint_authority_flag: [1, 2, 0, 0],
+            mint_authority: Address::new_from_array([1; 32]),
+            supply: [0; 8],
+            decimals: 6,
+            is_initialized: 1,
+            freeze_authority_flag: [1, 0, 0, 1],
+            freeze_authority: Address::new_from_array([2; 32]),
+        };
+
+        assert!(!mint.has_mint_authority());
+        assert!(!mint.has_freeze_authority());
     }
 }

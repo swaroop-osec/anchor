@@ -100,6 +100,7 @@ impl SlabSchema for Interface<crate::TokenAccount> {
             return Err(ProgramError::IllegalOwner);
         }
         PodStateWithExtensions::<PodAccount>::unpack(data)?;
+        crate::token::validate_token_account_initialized(data)?;
         Ok(())
     }
 }
@@ -121,6 +122,7 @@ impl SlabSchema for Interface<crate::Mint> {
             return Err(ProgramError::IllegalOwner);
         }
         PodStateWithExtensions::<PodMint>::unpack(data)?;
+        crate::mint::validate_mint_initialized(data)?;
         Ok(())
     }
 }

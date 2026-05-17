@@ -4,7 +4,10 @@
 //! and `Mint` types for use with `Account<T>`, plus namespaced constraint markers
 //! for `token::mint`, `token::authority`, `mint::decimals`, etc.
 //!
-//! For programs that need to accept both Token and Token-2022 accounts, use
+//! The `token` CPI helpers intentionally accept either the Token Program or
+//! Token-2022 for base token instructions. The `token` account types themselves
+//! remain strict Token Program account layouts. For account validation that must
+//! accept both Token and Token-2022 owners, use
 //! `anchor_lang_v2::prelude::InterfaceAccount` with the `token_interface`
 //! module's token account types.
 

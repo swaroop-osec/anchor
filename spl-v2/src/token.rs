@@ -23,8 +23,33 @@ pub use {
     spl_token_interface::{self as spl_token, ID},
 };
 
+pub(crate) const COPTION_NONE: [u8; 4] = [0, 0, 0, 0];
+pub(crate) const COPTION_SOME: [u8; 4] = [1, 0, 0, 0];
+
+#[inline(always)]
+pub(crate) fn coption_is_some(tag: &[u8; 4]) -> bool {
+    *tag == COPTION_SOME
+}
+
+#[inline(always)]
+pub(crate) fn validate_coption_tag(data: &[u8], offset: usize) -> Result<(), ProgramError> {
+    match data.get(offset..offset + 4) {
+        Some(tag) if tag == COPTION_NONE.as_slice() || tag == COPTION_SOME.as_slice() => Ok(()),
+        Some(_) => Err(ProgramError::InvalidAccountData),
+        None => Err(ProgramError::InvalidAccountData),
+    }
+}
+
 pub(crate) fn validate_token_account_initialized(data: &[u8]) -> Result<(), ProgramError> {
+    const TOKEN_ACCOUNT_DELEGATE_TAG_OFFSET: usize = 32 + 32 + 8;
     const TOKEN_ACCOUNT_STATE_OFFSET: usize = 32 + 32 + 8 + 4 + 32;
+    const TOKEN_ACCOUNT_IS_NATIVE_TAG_OFFSET: usize = TOKEN_ACCOUNT_STATE_OFFSET + 1;
+    const TOKEN_ACCOUNT_CLOSE_AUTHORITY_TAG_OFFSET: usize =
+        TOKEN_ACCOUNT_IS_NATIVE_TAG_OFFSET + 4 + 8 + 8;
+
+    validate_coption_tag(data, TOKEN_ACCOUNT_DELEGATE_TAG_OFFSET)?;
+    validate_coption_tag(data, TOKEN_ACCOUNT_IS_NATIVE_TAG_OFFSET)?;
+    validate_coption_tag(data, TOKEN_ACCOUNT_CLOSE_AUTHORITY_TAG_OFFSET)?;
 
     match data.get(TOKEN_ACCOUNT_STATE_OFFSET).copied() {
         Some(1) | Some(2) => Ok(()),
@@ -169,7 +194,7 @@ impl TokenAccount {
 
     /// Whether a delegate is currently approved.
     pub fn has_delegate(&self) -> bool {
-        self.delegate_flag[0] == 1
+        coption_is_some(&self.delegate_flag)
     }
 
     /// The approved delegate, if any.
@@ -188,7 +213,7 @@ impl TokenAccount {
 
     /// Whether this is a wrapped SOL account.
     pub fn is_native(&self) -> bool {
-        self.is_native_flag[0] == 1
+        coption_is_some(&self.is_native_flag)
     }
 
     /// The rent-exempt reserve for native SOL accounts, if this is a native
@@ -203,7 +228,7 @@ impl TokenAccount {
 
     /// Whether a close authority is set.
     pub fn has_close_authority(&self) -> bool {
-        self.close_authority_flag[0] == 1
+        coption_is_some(&self.close_authority_flag)
     }
 
     /// The close authority, if any.
@@ -272,10 +297,11 @@ impl AccountConstraint<Account<TokenAccount>> for TokenProgramConstraint {
 }
 
 // ---------------------------------------------------------------------------
-// CPI helpers for SPL Token program invocations (`anchor_spl_v2::token`)
+// CPI helpers for base token-program invocations (`anchor_spl_v2::token`)
 // ---------------------------------------------------------------------------
 //
-// Mirrors v1's `anchor_spl::token` path. Each helper routes through
+// The v2 helpers accept either the Token Program or Token-2022 program for
+// instructions shared by both programs. Each helper routes through
 // `CpiContext::invoke` (pinocchio `invoke_signed_unchecked`), bypassing the
 // borrow-state check that rejects direct pinocchio-token invoke on Slab-loaded
 // accounts.
@@ -729,6 +755,8 @@ fn encode_pubkey_ix(disc: u8, address: &Address) -> [u8; 33] {
 #[cfg(feature = "guardrails")]
 #[inline]
 pub(crate) fn validate_token_program(program_id: &Address) -> Result<(), ProgramError> {
+    // Base token instructions are shared by Token and Token-2022. Keep this
+    // broad so callers can use `anchor_spl_v2::token::*` with either program.
     if anchor_lang_v2::address_eq(program_id, &Token::id())
         || anchor_lang_v2::address_eq(program_id, &anchor_lang_v2::programs::Token2022::id())
     {
@@ -932,4 +960,45 @@ pub fn sync_native<'a>(ctx: CpiContext<'a, accounts::SyncNative<'a>>) -> Result<
     validate_token_program(ctx.program)?;
     ctx.invoke(&[DISC_SYNC_NATIVE]);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_account_validation_rejects_non_canonical_coption_tags() {
+        let mut data = [0u8; TokenAccount::LEN];
+        data[32 + 32 + 8 + 4 + 32] = 1;
+
+        assert_eq!(validate_token_account_initialized(&data), Ok(()));
+
+        data[32 + 32 + 8] = 1;
+        data[32 + 32 + 8 + 1] = 2;
+        assert!(matches!(
+            validate_token_account_initialized(&data),
+            Err(ProgramError::InvalidAccountData)
+        ));
+    }
+
+    #[test]
+    fn token_account_accessors_require_canonical_some_tags() {
+        let account = TokenAccount {
+            mint: Address::new_from_array([0; 32]),
+            owner: Address::new_from_array([0; 32]),
+            amount: [0; 8],
+            delegate_flag: [1, 2, 0, 0],
+            delegate: Address::new_from_array([1; 32]),
+            state: 1,
+            is_native_flag: [1, 0, 1, 0],
+            native_amount: [0; 8],
+            delegated_amount: [0; 8],
+            close_authority_flag: [1, 0, 0, 1],
+            close_authority: Address::new_from_array([2; 32]),
+        };
+
+        assert!(!account.has_delegate());
+        assert!(!account.is_native());
+        assert!(!account.has_close_authority());
+    }
 }
