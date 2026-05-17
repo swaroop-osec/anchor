@@ -16,6 +16,17 @@ use {
     solana_program_error::ProgramError,
 };
 
+pub(crate) fn validate_mint_initialized(data: &[u8]) -> Result<(), ProgramError> {
+    const MINT_INITIALIZED_OFFSET: usize = 36 + 8 + 1;
+
+    match data.get(MINT_INITIALIZED_OFFSET).copied() {
+        Some(1) => Ok(()),
+        Some(0) => Err(ProgramError::UninitializedAccount),
+        Some(_) => Err(ProgramError::InvalidAccountData),
+        None => Err(ProgramError::InvalidAccountData),
+    }
+}
+
 /// SPL Token mint data, zerocopy-mapped (82 bytes).
 ///
 /// All fields are private — use the accessor methods to read data. Mint state
@@ -67,6 +78,7 @@ impl SlabSchema for Mint {
         if data.len() != core::mem::size_of::<Self>() {
             return Err(ProgramError::InvalidAccountData);
         }
+        validate_mint_initialized(data)?;
         Ok(())
     }
 }

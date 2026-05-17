@@ -1,8 +1,9 @@
 //! Token-2022 extension data types and TLV parsing.
 //!
 //! Provides zero-copy access to extension data stored in Token-2022 accounts.
-//! The TLV (Type-Length-Value) format is parsed inline — no dependency on
-//! `spl-token-2022-interface`.
+//! The TLV (Type-Length-Value) format is parsed by `spl-token-2022-interface`
+//! so Anchor v2 keeps the same account-type and extension-length semantics as
+//! SPL Token-2022.
 //!
 //! # Usage
 //!
@@ -15,82 +16,72 @@
 //! ```
 
 use {
-    bytemuck::{self, Pod, Zeroable},
+    anchor_lang_v2::{programs::Token2022, Id},
+    bytemuck::{Pod, Zeroable},
     pinocchio::account::AccountView,
     solana_address::Address,
     solana_program_error::ProgramError,
+    spl_token_2022_interface::{
+        extension::{
+            BaseStateWithExtensions, Extension as SplExtension, ExtensionType as SplExtensionType,
+            PodStateWithExtensions,
+        },
+        pod::{PodAccount, PodMint},
+    },
 };
 
 // ---------------------------------------------------------------------------
-// TLV parser
+// TLV parser adapter
 // ---------------------------------------------------------------------------
 
-/// TLV data starts at `Account::LEN + 1` (166) for ALL extensible accounts
-/// (both Mint and TokenAccount). SPL pads mints to 165 bytes before the
-/// AccountType marker so that mints and token accounts share the same layout
-/// boundary. See spl-token-2022 extension/mod.rs for details.
-const TLV_START: usize = 166;
+/// Trait for fixed-size Token-2022 extension types.
+pub trait ExtensionType: Pod + SplExtension {}
 
-/// Trait for extension types. Each extension has a u16 discriminant.
-pub trait ExtensionType: Pod {
-    const TYPE_DISCRIMINANT: u16;
-}
+impl<T> ExtensionType for T where T: Pod + SplExtension {}
 
 /// Parse a fixed-size extension from a Token-2022 mint or token account.
 ///
 /// Both mint and token account extensions share the same TLV start offset
 /// (166 bytes from the beginning of account data).
 pub fn get_mint_extension<T: ExtensionType>(account: &AccountView) -> Result<&T, ProgramError> {
-    get_extension::<T>(account)
+    let data = unsafe { account.borrow_unchecked() };
+    validate_token_2022_owner(account)?;
+
+    let state = PodStateWithExtensions::<PodMint>::unpack(data)?;
+    let extension = state.get_extension::<T>()?;
+    let extension_ptr = extension as *const T;
+
+    // SAFETY: `PodStateWithExtensions` stores only references into `data`, and
+    // `extension_ptr` points into that account data, not into the temporary
+    // wrapper value. `data` is borrowed from `account`, which outlives the
+    // returned reference.
+    Ok(unsafe { &*extension_ptr })
 }
 
 /// Parse a fixed-size extension from a Token-2022 token account.
 pub fn get_token_account_extension<T: ExtensionType>(
     account: &AccountView,
 ) -> Result<&T, ProgramError> {
-    get_extension::<T>(account)
-}
-
-fn get_extension<T: ExtensionType>(account: &AccountView) -> Result<&T, ProgramError> {
     let data = unsafe { account.borrow_unchecked() };
-    if data.len() < TLV_START {
-        return Err(ProgramError::InvalidAccountData);
-    }
-    get_extension_from_tlv::<T>(&data[TLV_START..])
+    validate_token_2022_owner(account)?;
+
+    let state = PodStateWithExtensions::<PodAccount>::unpack(data)?;
+    let extension = state.get_extension::<T>()?;
+    let extension_ptr = extension as *const T;
+
+    // SAFETY: `PodStateWithExtensions` stores only references into `data`, and
+    // `extension_ptr` points into that account data, not into the temporary
+    // wrapper value. `data` is borrowed from `account`, which outlives the
+    // returned reference.
+    Ok(unsafe { &*extension_ptr })
 }
 
-/// Walk TLV entries and return a Pod reference to the matching extension.
-fn get_extension_from_tlv<T: ExtensionType>(tlv_data: &[u8]) -> Result<&T, ProgramError> {
-    let target = T::TYPE_DISCRIMINANT;
-    let mut offset = 0;
-
-    while offset + 4 <= tlv_data.len() {
-        let ext_type = u16::from_le_bytes([tlv_data[offset], tlv_data[offset + 1]]);
-        let length = u16::from_le_bytes([tlv_data[offset + 2], tlv_data[offset + 3]]) as usize;
-        let value_end = offset + 4 + length;
-
-        if ext_type == 0 {
-            break;
-        }
-        if value_end > tlv_data.len() {
-            return Err(ProgramError::InvalidAccountData);
-        }
-
-        if ext_type == target {
-            let ext_size = core::mem::size_of::<T>();
-            if length < ext_size {
-                return Err(ProgramError::InvalidAccountData);
-            }
-            let value_start = offset + 4;
-            return Ok(bytemuck::from_bytes(
-                &tlv_data[value_start..value_start + ext_size],
-            ));
-        }
-
-        offset = value_end;
+fn validate_token_2022_owner(account: &AccountView) -> Result<(), ProgramError> {
+    if account.owned_by(&Token2022::id()) {
+        Ok(())
+    } else {
+        Err(ProgramError::IllegalOwner)
     }
-
-    Err(ProgramError::InvalidAccountData)
 }
 
 // ---------------------------------------------------------------------------
@@ -107,8 +98,16 @@ pub type OptionalAddress = Address;
 /// Check if an optional address is set (non-zero).
 #[inline(always)]
 pub fn is_some_address(addr: &Address) -> bool {
-    let ptr = addr.as_ref().as_ptr() as *const u64;
-    unsafe { *ptr | *ptr.add(1) | *ptr.add(2) | *ptr.add(3) != 0 }
+    let ptr = addr.as_ref().as_ptr();
+    // SAFETY: Address is exactly 32 initialized bytes. `read_unaligned`
+    // permits reading u64 words from the byte-aligned address buffer.
+    unsafe {
+        (ptr as *const u64).read_unaligned()
+            | (ptr.add(8) as *const u64).read_unaligned()
+            | (ptr.add(16) as *const u64).read_unaligned()
+            | (ptr.add(24) as *const u64).read_unaligned()
+            != 0
+    }
 }
 
 /// Return the address as an Option — None if all zeros.
@@ -166,8 +165,8 @@ impl TransferFeeConfig {
     }
 }
 
-impl ExtensionType for TransferFeeConfig {
-    const TYPE_DISCRIMINANT: u16 = 1;
+impl SplExtension for TransferFeeConfig {
+    const TYPE: SplExtensionType = SplExtensionType::TransferFeeConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -187,8 +186,8 @@ impl TransferFeeAmount {
     }
 }
 
-impl ExtensionType for TransferFeeAmount {
-    const TYPE_DISCRIMINANT: u16 = 2;
+impl SplExtension for TransferFeeAmount {
+    const TYPE: SplExtensionType = SplExtensionType::TransferFeeAmount;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,8 +201,8 @@ pub struct MintCloseAuthority {
     pub close_authority: OptionalAddress,
 }
 
-impl ExtensionType for MintCloseAuthority {
-    const TYPE_DISCRIMINANT: u16 = 3;
+impl SplExtension for MintCloseAuthority {
+    const TYPE: SplExtensionType = SplExtensionType::MintCloseAuthority;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,8 +217,8 @@ pub struct DefaultAccountState {
     pub state: u8,
 }
 
-impl ExtensionType for DefaultAccountState {
-    const TYPE_DISCRIMINANT: u16 = 6;
+impl SplExtension for DefaultAccountState {
+    const TYPE: SplExtensionType = SplExtensionType::DefaultAccountState;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,8 +233,8 @@ pub struct NonTransferable;
 unsafe impl Pod for NonTransferable {}
 unsafe impl Zeroable for NonTransferable {}
 
-impl ExtensionType for NonTransferable {
-    const TYPE_DISCRIMINANT: u16 = 9;
+impl SplExtension for NonTransferable {
+    const TYPE: SplExtensionType = SplExtensionType::NonTransferable;
 }
 
 // ---------------------------------------------------------------------------
@@ -256,8 +255,8 @@ impl CpiGuard {
     }
 }
 
-impl ExtensionType for CpiGuard {
-    const TYPE_DISCRIMINANT: u16 = 11;
+impl SplExtension for CpiGuard {
+    const TYPE: SplExtensionType = SplExtensionType::CpiGuard;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,8 +270,8 @@ pub struct PermanentDelegate {
     pub delegate: OptionalAddress,
 }
 
-impl ExtensionType for PermanentDelegate {
-    const TYPE_DISCRIMINANT: u16 = 12;
+impl SplExtension for PermanentDelegate {
+    const TYPE: SplExtensionType = SplExtensionType::PermanentDelegate;
 }
 
 // ---------------------------------------------------------------------------
@@ -287,8 +286,8 @@ pub struct TransferHook {
     pub program_id: OptionalAddress,
 }
 
-impl ExtensionType for TransferHook {
-    const TYPE_DISCRIMINANT: u16 = 14;
+impl SplExtension for TransferHook {
+    const TYPE: SplExtensionType = SplExtensionType::TransferHook;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,8 +302,8 @@ pub struct TransferHookAccount {
     pub transferring: u8,
 }
 
-impl ExtensionType for TransferHookAccount {
-    const TYPE_DISCRIMINANT: u16 = 15;
+impl SplExtension for TransferHookAccount {
+    const TYPE: SplExtensionType = SplExtensionType::TransferHookAccount;
 }
 
 // ---------------------------------------------------------------------------
@@ -319,8 +318,8 @@ pub struct NonTransferableAccount;
 unsafe impl Pod for NonTransferableAccount {}
 unsafe impl Zeroable for NonTransferableAccount {}
 
-impl ExtensionType for NonTransferableAccount {
-    const TYPE_DISCRIMINANT: u16 = 13;
+impl SplExtension for NonTransferableAccount {
+    const TYPE: SplExtensionType = SplExtensionType::NonTransferableAccount;
 }
 
 // ---------------------------------------------------------------------------
@@ -335,8 +334,8 @@ pub struct MetadataPointer {
     pub metadata_address: OptionalAddress,
 }
 
-impl ExtensionType for MetadataPointer {
-    const TYPE_DISCRIMINANT: u16 = 18;
+impl SplExtension for MetadataPointer {
+    const TYPE: SplExtensionType = SplExtensionType::MetadataPointer;
 }
 
 // ---------------------------------------------------------------------------
@@ -351,8 +350,8 @@ pub struct GroupPointer {
     pub group_address: OptionalAddress,
 }
 
-impl ExtensionType for GroupPointer {
-    const TYPE_DISCRIMINANT: u16 = 20;
+impl SplExtension for GroupPointer {
+    const TYPE: SplExtensionType = SplExtensionType::GroupPointer;
 }
 
 // ---------------------------------------------------------------------------
@@ -367,8 +366,8 @@ pub struct GroupMemberPointer {
     pub member_address: OptionalAddress,
 }
 
-impl ExtensionType for GroupMemberPointer {
-    const TYPE_DISCRIMINANT: u16 = 22;
+impl SplExtension for GroupMemberPointer {
+    const TYPE: SplExtensionType = SplExtensionType::GroupMemberPointer;
 }
 
 // ---------------------------------------------------------------------------
@@ -390,8 +389,8 @@ impl PausableConfig {
     }
 }
 
-impl ExtensionType for PausableConfig {
-    const TYPE_DISCRIMINANT: u16 = 26;
+impl SplExtension for PausableConfig {
+    const TYPE: SplExtensionType = SplExtensionType::Pausable;
 }
 
 // ---------------------------------------------------------------------------
@@ -406,6 +405,6 @@ pub struct PausableAccount;
 unsafe impl Pod for PausableAccount {}
 unsafe impl Zeroable for PausableAccount {}
 
-impl ExtensionType for PausableAccount {
-    const TYPE_DISCRIMINANT: u16 = 27;
+impl SplExtension for PausableAccount {
+    const TYPE: SplExtensionType = SplExtensionType::PausableAccount;
 }

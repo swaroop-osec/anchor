@@ -495,6 +495,57 @@ pub mod spl_test {
         Ok(())
     }
 
+    /// Parse a mint extension from an unchecked account. Used to assert that
+    /// `extensions::get_mint_extension` performs its own validation.
+    #[discrim = 45]
+    pub fn read_unchecked_transfer_fee_config(
+        ctx: &mut Context<ReadUncheckedMintExtension>,
+        expected_bps: u16,
+    ) -> Result<()> {
+        let ext: &TransferFeeConfig = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        if ext.newer_transfer_fee.basis_points() != expected_bps {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse a token account extension from an unchecked account. Used to
+    /// assert that `extensions::get_token_account_extension` validates base
+    /// Token-2022 account shape before walking TLV.
+    #[discrim = 46]
+    pub fn read_unchecked_transfer_fee_amount(
+        ctx: &mut Context<ReadUncheckedTokenAccountExtension>,
+        expected_withheld: u64,
+    ) -> Result<()> {
+        let ext: &TransferFeeAmount =
+            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        if ext.withheld_amount() != expected_withheld {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Attempt to parse an account extension from a mint-shaped unchecked
+    /// account. This must fail through SPL Token-2022's extension-family check.
+    #[discrim = 53]
+    pub fn read_unchecked_mint_transfer_fee_amount(
+        ctx: &mut Context<ReadUncheckedMintTransferFeeAmount>,
+    ) -> Result<()> {
+        let _: &TransferFeeAmount = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        Ok(())
+    }
+
+    /// Attempt to parse a mint extension from a token-account-shaped unchecked
+    /// account. This must fail through SPL Token-2022's extension-family check.
+    #[discrim = 54]
+    pub fn read_unchecked_token_account_transfer_fee_config(
+        ctx: &mut Context<ReadUncheckedTokenAccountTransferFeeConfig>,
+    ) -> Result<()> {
+        let _: &TransferFeeConfig =
+            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        Ok(())
+    }
+
     /// Invoke the Token-2022 CPI Guard helper against the spy program.
     #[discrim = 40]
     pub fn spy_cpi_guard_enable(ctx: &mut Context<SpyCpiGuard>) -> Result<()> {
@@ -550,6 +601,105 @@ pub mod spl_test {
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         token_2022_cpi::reallocate(cpi_ctx, &[token_2022_cpi::ExtensionType::GroupPointer]);
 
+        Ok(())
+    }
+
+    /// Invoke Token Metadata remove_key against the spy program.
+    #[discrim = 47]
+    pub fn spy_token_metadata_remove_key(
+        ctx: &mut Context<SpyTokenMetadataRemoveKey>,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::TokenMetadataRemoveKey {
+            metadata: ctx.accounts.metadata.cpi_handle_mut(),
+            update_authority: ctx.accounts.update_authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::token_metadata_remove_key(cpi_ctx, "field".into(), true);
+        Ok(())
+    }
+
+    /// Invoke Token Metadata initialize against the spy program.
+    #[discrim = 48]
+    pub fn spy_token_metadata_initialize(
+        ctx: &mut Context<SpyTokenMetadataInitialize>,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::TokenMetadataInitialize {
+            metadata: ctx.accounts.metadata.cpi_handle_mut(),
+            update_authority: ctx.accounts.update_authority.cpi_handle(),
+            mint_authority: ctx.accounts.mint_authority.cpi_handle(),
+            mint: ctx.accounts.mint.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::token_metadata_initialize(
+            cpi_ctx,
+            "name".into(),
+            "SYM".into(),
+            "https://example.invalid".into(),
+        );
+        Ok(())
+    }
+
+    /// Invoke Token Metadata update_authority against the spy program.
+    #[discrim = 49]
+    pub fn spy_token_metadata_update_authority(
+        ctx: &mut Context<SpyTokenMetadataUpdateAuthority>,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::TokenMetadataUpdateAuthority {
+            metadata: ctx.accounts.metadata.cpi_handle_mut(),
+            current_authority: ctx.accounts.current_authority.cpi_handle(),
+            new_authority: ctx.accounts.new_authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::token_metadata_update_authority(
+            cpi_ctx,
+            Some(ctx.accounts.new_authority.address()),
+        );
+        Ok(())
+    }
+
+    /// Invoke Token Metadata update_field against the spy program.
+    #[discrim = 50]
+    pub fn spy_token_metadata_update_field(
+        ctx: &mut Context<SpyTokenMetadataUpdateField>,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::TokenMetadataUpdateField {
+            metadata: ctx.accounts.metadata.cpi_handle_mut(),
+            update_authority: ctx.accounts.update_authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::token_metadata_update_field(
+            cpi_ctx,
+            token_2022_ext_cpi::token_metadata::Field::Name,
+            "name".into(),
+        );
+        Ok(())
+    }
+
+    /// Invoke Token Group initialize against the spy program.
+    #[discrim = 51]
+    pub fn spy_token_group_initialize(ctx: &mut Context<SpyTokenGroupInitialize>) -> Result<()> {
+        let accs = token_2022_ext_cpi::TokenGroupInitialize {
+            group: ctx.accounts.group.cpi_handle_mut(),
+            mint: ctx.accounts.mint.cpi_handle(),
+            mint_authority: ctx.accounts.mint_authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::token_group_initialize(cpi_ctx, None, 10);
+        Ok(())
+    }
+
+    /// Invoke Token Group member initialize against the spy program.
+    #[discrim = 52]
+    pub fn spy_token_member_initialize(ctx: &mut Context<SpyTokenMemberInitialize>) -> Result<()> {
+        let accs = token_2022_ext_cpi::TokenMemberInitialize {
+            member: ctx.accounts.member.cpi_handle_mut(),
+            member_mint: ctx.accounts.member_mint.cpi_handle(),
+            member_mint_authority: ctx.accounts.member_mint_authority.cpi_handle(),
+            group: ctx.accounts.group.cpi_handle_mut(),
+            group_update_authority: ctx.accounts.group_update_authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::token_member_initialize(cpi_ctx);
         Ok(())
     }
 
@@ -921,6 +1071,28 @@ pub struct ReadMarkerExtensions {
 }
 
 #[derive(Accounts)]
+#[instruction(expected_bps: u16)]
+pub struct ReadUncheckedMintExtension {
+    pub mint: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_withheld: u64)]
+pub struct ReadUncheckedTokenAccountExtension {
+    pub token_account: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct ReadUncheckedMintTransferFeeAmount {
+    pub mint: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct ReadUncheckedTokenAccountTransferFeeConfig {
+    pub token_account: UncheckedAccount,
+}
+
+#[derive(Accounts)]
 pub struct SpyCpiGuard {
     #[account(mut)]
     pub account: UncheckedAccount,
@@ -952,5 +1124,61 @@ pub struct SpyReallocate {
     pub payer: Signer,
     pub system_program: UncheckedAccount,
     pub authority: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyTokenMetadataRemoveKey {
+    #[account(mut)]
+    pub metadata: UncheckedAccount,
+    pub update_authority: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyTokenMetadataInitialize {
+    #[account(mut)]
+    pub metadata: UncheckedAccount,
+    pub update_authority: UncheckedAccount,
+    pub mint_authority: Signer,
+    pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyTokenMetadataUpdateAuthority {
+    #[account(mut)]
+    pub metadata: UncheckedAccount,
+    pub current_authority: Signer,
+    pub new_authority: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyTokenMetadataUpdateField {
+    #[account(mut)]
+    pub metadata: UncheckedAccount,
+    pub update_authority: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyTokenGroupInitialize {
+    #[account(mut)]
+    pub group: UncheckedAccount,
+    pub mint: UncheckedAccount,
+    pub mint_authority: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyTokenMemberInitialize {
+    #[account(mut)]
+    pub member: UncheckedAccount,
+    pub member_mint: UncheckedAccount,
+    pub member_mint_authority: Signer,
+    #[account(mut)]
+    pub group: UncheckedAccount,
+    pub group_update_authority: Signer,
     pub token_program: UncheckedAccount,
 }

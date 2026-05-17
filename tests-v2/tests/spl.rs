@@ -378,6 +378,20 @@ fn read_mint_touches_all_accessors() {
 }
 
 #[test]
+fn read_mint_rejects_uninitialized_token_owned_mint() {
+    let (mut svm, payer) = setup();
+    let mint = Pubkey::new_unique();
+
+    seed_token_owned_account(&mut svm, mint, token_program_id(), vec![0; SplMint::LEN]);
+
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    assert_uninitialized_account_error(
+        send_instruction(&mut svm, program_id(), vec![9], metas, &payer, &[]),
+        "uninitialized Token-owned mint should not load as Account<Mint>",
+    );
+}
+
+#[test]
 fn read_token_account_touches_all_accessors() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("mint-auth");
@@ -388,6 +402,25 @@ fn read_token_account_touches_all_accessors() {
     let metas = vec![AccountMeta::new_readonly(token, false)];
     send_instruction(&mut svm, program_id(), vec![10], metas, &payer, &[])
         .expect("read_token_account should succeed");
+}
+
+#[test]
+fn read_token_account_rejects_uninitialized_token_owned_account() {
+    let (mut svm, payer) = setup();
+    let token = Pubkey::new_unique();
+
+    seed_token_owned_account(
+        &mut svm,
+        token,
+        token_program_id(),
+        vec![0; SplTokenAccount::LEN],
+    );
+
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    assert_uninitialized_account_error(
+        send_instruction(&mut svm, program_id(), vec![10], metas, &payer, &[]),
+        "uninitialized Token-owned token account should not load as Account<TokenAccount>",
+    );
 }
 
 // ---- Namespaced constraints ------------------------------------------------
@@ -901,17 +934,72 @@ fn build_token_account_data(mint: &Pubkey, owner: &Pubkey, amount: u64, tlv: &[u
 
 /// Seed a Token-2022-owned account at `address` with the given raw bytes.
 fn seed_token_2022_account(svm: &mut LiteSVM, address: Pubkey, data: Vec<u8>) {
+    seed_token_owned_account(svm, address, token_2022_program_id(), data);
+}
+
+/// Seed a Token or Token-2022-owned account at `address` with the given bytes.
+fn seed_token_owned_account(svm: &mut LiteSVM, address: Pubkey, owner: Pubkey, data: Vec<u8>) {
     svm.set_account(
         address,
         Account {
             lamports: 10_000_000,
             data,
-            owner: token_2022_program_id(),
+            owner,
             executable: false,
             rent_epoch: 0,
         },
     )
-    .expect("seed token-2022 account");
+    .expect("seed token-owned account");
+}
+
+fn assert_uninitialized_account_error<T, E: std::fmt::Display>(
+    result: Result<T, E>,
+    context: &str,
+) {
+    let Err(error) = result else {
+        panic!("{context}");
+    };
+    let error = error.to_string();
+    assert!(
+        error.contains("UninitializedAccount") || error.contains("uninitialized"),
+        "{context}: expected UninitializedAccount, got:\n{error}"
+    );
+}
+
+fn assert_invalid_account_data_error<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) {
+    let Err(error) = result else {
+        panic!("{context}");
+    };
+    let error = error.to_string();
+    assert!(
+        error.contains("InvalidAccountData") || error.contains("invalid account data"),
+        "{context}: expected InvalidAccountData, got:\n{error}"
+    );
+}
+
+fn assert_invalid_argument_error<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) {
+    let Err(error) = result else {
+        panic!("{context}");
+    };
+    let error = error.to_string();
+    assert!(
+        error.contains("InvalidArgument") || error.contains("invalid program argument"),
+        "{context}: expected InvalidArgument, got:\n{error}"
+    );
+}
+
+fn assert_incorrect_token_2022_program_error<T, E: std::fmt::Display>(
+    result: Result<T, E>,
+    context: &str,
+) {
+    let Err(error) = result else {
+        panic!("{context}");
+    };
+    let error = error.to_string();
+    assert!(
+        error.contains("PANICKED") && error.contains("spl-v2/src/token_2022_extensions.rs"),
+        "{context}: expected canonical Token-2022 program assertion panic, got:\n{error}"
+    );
 }
 
 // ---- InterfaceAccount read path --------------------------------------------
@@ -941,6 +1029,72 @@ fn read_interface_mint_accepts_token_2022_owned() {
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[])
         .expect("token-2022-owned mint should pass interface load");
+}
+
+#[test]
+fn read_interface_mint_rejects_uninitialized_legacy_and_token_2022_owned() {
+    let (mut svm, payer) = setup();
+    let legacy_mint = Pubkey::new_unique();
+    let token_2022_mint = Pubkey::new_unique();
+
+    seed_token_owned_account(
+        &mut svm,
+        legacy_mint,
+        token_program_id(),
+        vec![0; SplMint::LEN],
+    );
+    seed_token_owned_account(
+        &mut svm,
+        token_2022_mint,
+        token_2022_program_id(),
+        vec![0; SplMint::LEN],
+    );
+
+    let metas = vec![AccountMeta::new_readonly(legacy_mint, false)];
+    assert_uninitialized_account_error(
+        send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
+        "uninitialized legacy mint should not load as InterfaceAccount<Mint>",
+    );
+
+    let metas = vec![AccountMeta::new_readonly(token_2022_mint, false)];
+    assert_uninitialized_account_error(
+        send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
+        "uninitialized Token-2022 mint should not load as InterfaceAccount<Mint>",
+    );
+}
+
+#[test]
+fn read_interface_mint_rejects_token_2022_account_type_mismatch() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("iface-mint-type-auth");
+    let mint = Pubkey::new_unique();
+
+    let mut data = build_mint_data(&authority.pubkey(), 6, 0, &[]);
+    data[165] = 2; // AccountType::Account
+    seed_token_2022_account(&mut svm, mint, data);
+
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
+        "Token-2022 account type marker must match InterfaceAccount<Mint>",
+    );
+}
+
+#[test]
+fn read_interface_mint_rejects_nonzero_token_2022_mint_padding() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("iface-mint-pad-auth");
+    let mint = Pubkey::new_unique();
+
+    let mut data = build_mint_data(&authority.pubkey(), 6, 0, &[]);
+    data[82] = 1; // Mint extension padding before the AccountType marker.
+    seed_token_2022_account(&mut svm, mint, data);
+
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
+        "Token-2022 mint padding must be zero before the account type marker",
+    );
 }
 
 #[test]
@@ -1001,6 +1155,56 @@ fn read_interface_token_account_accepts_legacy_and_token_2022() {
     let metas = vec![AccountMeta::new_readonly(t22_token, false)];
     send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[])
         .expect("token-2022-owned token account should pass interface load");
+}
+
+#[test]
+fn read_interface_token_account_rejects_uninitialized_legacy_and_token_2022_owned() {
+    let (mut svm, payer) = setup();
+    let legacy_token = Pubkey::new_unique();
+    let token_2022_token = Pubkey::new_unique();
+
+    seed_token_owned_account(
+        &mut svm,
+        legacy_token,
+        token_program_id(),
+        vec![0; SplTokenAccount::LEN],
+    );
+    seed_token_owned_account(
+        &mut svm,
+        token_2022_token,
+        token_2022_program_id(),
+        vec![0; SplTokenAccount::LEN],
+    );
+
+    let metas = vec![AccountMeta::new_readonly(legacy_token, false)];
+    assert_uninitialized_account_error(
+        send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[]),
+        "uninitialized legacy token account should not load as InterfaceAccount<TokenAccount>",
+    );
+
+    let metas = vec![AccountMeta::new_readonly(token_2022_token, false)];
+    assert_uninitialized_account_error(
+        send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[]),
+        "uninitialized Token-2022 token account should not load as InterfaceAccount<TokenAccount>",
+    );
+}
+
+#[test]
+fn read_interface_token_account_rejects_token_2022_account_type_mismatch() {
+    let (mut svm, payer) = setup();
+    let mint = Pubkey::new_unique();
+    let owner = keypair_for("iface-token-type-owner");
+    let token = Pubkey::new_unique();
+
+    let mut data = build_token_account_data(&mint, &owner.pubkey(), 42, &[]);
+    data[165] = 1; // AccountType::Mint
+    seed_token_2022_account(&mut svm, token, data);
+
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[]),
+        "Token-2022 account type marker must match InterfaceAccount<TokenAccount>",
+    );
 }
 
 #[test]
@@ -1589,6 +1793,15 @@ fn tlv_transfer_fee_amount(withheld: u64) -> Vec<u8> {
     out
 }
 
+fn tlv_transfer_fee_amount_overlong(withheld: u64) -> Vec<u8> {
+    let mut value = Vec::with_capacity(9);
+    value.extend_from_slice(&withheld.to_le_bytes());
+    value.push(0);
+    let mut out = Vec::new();
+    push_tlv(&mut out, 2, &value); // TransferFeeAmount with invalid length
+    out
+}
+
 fn tlv_transfer_hook_account(transferring: u8) -> Vec<u8> {
     let mut out = Vec::new();
     push_tlv(&mut out, 15, &[transferring]); // TransferHookAccount
@@ -1682,6 +1895,89 @@ fn transfer_fee_config_extension_round_trips() {
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
     assert!(result.is_err(), "wrong bps should reject");
+}
+
+#[test]
+fn unchecked_mint_extension_rejects_legacy_token_owner() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("unchecked-tfc-legacy-mint-auth");
+    let fee_authority = keypair_for("unchecked-tfc-legacy-fee-auth");
+    let withdraw_authority = keypair_for("unchecked-tfc-legacy-withdraw-auth");
+    let mint = Pubkey::new_unique();
+
+    let tlv = tlv_transfer_fee_config(
+        &fee_authority.pubkey(),
+        &withdraw_authority.pubkey(),
+        250,
+        4,
+        1_000_000,
+    );
+    seed_token_owned_account(
+        &mut svm,
+        mint,
+        token_program_id(),
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv),
+    );
+
+    // read_unchecked_transfer_fee_config (discrim = 45), expected bps = 250.
+    // The TLV bytes are valid, but extension helpers must only accept Token-2022.
+    let mut data = vec![45];
+    data.extend_from_slice(&250u16.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "unchecked mint extension should reject legacy Token-owned accounts",
+    );
+}
+
+#[test]
+fn unchecked_mint_extension_rejects_token_account_type_marker() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("unchecked-tfc-type-mint-auth");
+    let fee_authority = keypair_for("unchecked-tfc-type-fee-auth");
+    let withdraw_authority = keypair_for("unchecked-tfc-type-withdraw-auth");
+    let mint = Pubkey::new_unique();
+
+    let tlv = tlv_transfer_fee_config(
+        &fee_authority.pubkey(),
+        &withdraw_authority.pubkey(),
+        250,
+        4,
+        1_000_000,
+    );
+    let mut account_data = build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv);
+    account_data[165] = 2; // AccountType::Account
+    seed_token_2022_account(&mut svm, mint, account_data);
+
+    let mut data = vec![45];
+    data.extend_from_slice(&250u16.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "unchecked mint extension should reject token-account type marker",
+    );
+}
+
+#[test]
+fn unchecked_mint_extension_rejects_account_extension_family() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("unchecked-mint-account-family-auth");
+    let mint = Pubkey::new_unique();
+
+    let tlv = tlv_transfer_fee_amount(777);
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv),
+    );
+
+    let data = vec![53]; // read_unchecked_mint_transfer_fee_amount
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "unchecked mint extension should reject account extension family",
+    );
 }
 
 #[test]
@@ -1968,6 +2264,118 @@ fn transfer_fee_amount_extension_round_trips() {
     let metas = vec![AccountMeta::new_readonly(token, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("TransferFeeAmount withheld should match");
+}
+
+#[test]
+fn unchecked_token_extension_rejects_mint_account_type_marker() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("unchecked-tfa-type-mint-auth");
+    let owner = keypair_for("unchecked-tfa-type-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+    let tlv = tlv_transfer_fee_amount(777);
+    let mut account_data = build_token_account_data(&mint, &owner.pubkey(), 0, &tlv);
+    account_data[165] = 1; // AccountType::Mint
+    seed_token_2022_account(&mut svm, token, account_data);
+
+    // read_unchecked_transfer_fee_amount (discrim = 46), expected withheld = 777.
+    let mut data = vec![46];
+    data.extend_from_slice(&777u64.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "unchecked token extension should reject mint type marker",
+    );
+}
+
+#[test]
+fn unchecked_token_extension_rejects_uninitialized_base_account() {
+    let (mut svm, payer) = setup();
+    let token = Pubkey::new_unique();
+    let tlv = tlv_transfer_fee_amount(777);
+    let mut account_data = vec![0; 166];
+    account_data[165] = 2; // AccountType::Account
+    account_data.extend_from_slice(&tlv);
+    seed_token_2022_account(&mut svm, token, account_data);
+
+    let mut data = vec![46];
+    data.extend_from_slice(&777u64.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    assert_uninitialized_account_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "unchecked token extension should reject uninitialized token base account",
+    );
+}
+
+#[test]
+fn unchecked_token_extension_rejects_overlong_fixed_extension_value() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("unchecked-tfa-overlong-mint-auth");
+    let owner = keypair_for("unchecked-tfa-overlong-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+    let tlv = tlv_transfer_fee_amount_overlong(777);
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &tlv),
+    );
+
+    let mut data = vec![46]; // read_unchecked_transfer_fee_amount
+    data.extend_from_slice(&777u64.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    assert_invalid_argument_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "unchecked token extension should reject overlong fixed-size TLV values",
+    );
+}
+
+#[test]
+fn unchecked_token_extension_rejects_mint_extension_family() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("unchecked-token-mint-family-mint-auth");
+    let fee_authority = keypair_for("unchecked-token-mint-family-fee-auth");
+    let withdraw_authority = keypair_for("unchecked-token-mint-family-withdraw-auth");
+    let owner = keypair_for("unchecked-token-mint-family-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+    let tlv = tlv_transfer_fee_config(
+        &fee_authority.pubkey(),
+        &withdraw_authority.pubkey(),
+        250,
+        4,
+        1_000_000,
+    );
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &tlv),
+    );
+
+    let data = vec![54]; // read_unchecked_token_account_transfer_fee_config
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "unchecked token extension should reject mint extension family",
+    );
 }
 
 #[test]
@@ -2580,5 +2988,186 @@ fn reallocate_helper_rejects_non_token_2022_program() {
     assert!(
         result.is_err(),
         "reallocate helper should reject non-Token-2022 program ids before CPI"
+    );
+}
+
+#[test]
+fn token_metadata_remove_key_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let metadata = Pubkey::new_unique();
+    let update_authority = keypair_for("spy-meta-remove-authority");
+
+    seed_token_owned_account(&mut svm, metadata, token_2022_program_id(), vec![0; 8]);
+
+    let metas = vec![
+        AccountMeta::new(metadata, false),
+        AccountMeta::new_readonly(update_authority.pubkey(), true),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(
+            &mut svm,
+            program_id(),
+            vec![47],
+            metas,
+            &payer,
+            &[&update_authority],
+        ),
+        "token metadata remove_key helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn token_metadata_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let metadata = Pubkey::new_unique();
+    let update_authority = Pubkey::new_unique();
+    let mint_authority = keypair_for("spy-meta-init-mint-authority");
+    let mint = Pubkey::new_unique();
+
+    seed_token_owned_account(&mut svm, metadata, token_2022_program_id(), vec![0; 8]);
+    seed_token_owned_account(
+        &mut svm,
+        update_authority,
+        token_2022_program_id(),
+        vec![0; 8],
+    );
+    seed_token_owned_account(&mut svm, mint, token_2022_program_id(), vec![0; 8]);
+
+    let metas = vec![
+        AccountMeta::new(metadata, false),
+        AccountMeta::new_readonly(update_authority, false),
+        AccountMeta::new_readonly(mint_authority.pubkey(), true),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(
+            &mut svm,
+            program_id(),
+            vec![48],
+            metas,
+            &payer,
+            &[&mint_authority],
+        ),
+        "token metadata initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn token_metadata_update_authority_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let metadata = Pubkey::new_unique();
+    let current_authority = keypair_for("spy-meta-update-current-authority");
+    let new_authority = Pubkey::new_unique();
+
+    seed_token_owned_account(&mut svm, metadata, token_2022_program_id(), vec![0; 8]);
+    seed_token_owned_account(&mut svm, new_authority, token_2022_program_id(), vec![0; 8]);
+
+    let metas = vec![
+        AccountMeta::new(metadata, false),
+        AccountMeta::new_readonly(current_authority.pubkey(), true),
+        AccountMeta::new_readonly(new_authority, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(
+            &mut svm,
+            program_id(),
+            vec![49],
+            metas,
+            &payer,
+            &[&current_authority],
+        ),
+        "token metadata update_authority helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn token_metadata_update_field_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let metadata = Pubkey::new_unique();
+    let update_authority = keypair_for("spy-meta-update-field-authority");
+
+    seed_token_owned_account(&mut svm, metadata, token_2022_program_id(), vec![0; 8]);
+
+    let metas = vec![
+        AccountMeta::new(metadata, false),
+        AccountMeta::new_readonly(update_authority.pubkey(), true),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(
+            &mut svm,
+            program_id(),
+            vec![50],
+            metas,
+            &payer,
+            &[&update_authority],
+        ),
+        "token metadata update_field helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn token_group_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let group = Pubkey::new_unique();
+    let mint_authority = keypair_for("spy-group-init-mint-authority");
+    let mint = Pubkey::new_unique();
+
+    seed_token_owned_account(&mut svm, group, token_2022_program_id(), vec![0; 8]);
+    seed_token_owned_account(&mut svm, mint, token_2022_program_id(), vec![0; 8]);
+
+    let metas = vec![
+        AccountMeta::new(group, false),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(mint_authority.pubkey(), true),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(
+            &mut svm,
+            program_id(),
+            vec![51],
+            metas,
+            &payer,
+            &[&mint_authority],
+        ),
+        "token group initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn token_member_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let member = Pubkey::new_unique();
+    let member_mint = Pubkey::new_unique();
+    let member_mint_authority = keypair_for("spy-member-init-mint-authority");
+    let group = Pubkey::new_unique();
+    let group_update_authority = keypair_for("spy-member-init-group-authority");
+
+    seed_token_owned_account(&mut svm, member, token_2022_program_id(), vec![0; 8]);
+    seed_token_owned_account(&mut svm, member_mint, token_2022_program_id(), vec![0; 8]);
+    seed_token_owned_account(&mut svm, group, token_2022_program_id(), vec![0; 8]);
+
+    let metas = vec![
+        AccountMeta::new(member, false),
+        AccountMeta::new_readonly(member_mint, false),
+        AccountMeta::new_readonly(member_mint_authority.pubkey(), true),
+        AccountMeta::new(group, false),
+        AccountMeta::new_readonly(group_update_authority.pubkey(), true),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(
+            &mut svm,
+            program_id(),
+            vec![52],
+            metas,
+            &payer,
+            &[&member_mint_authority, &group_update_authority],
+        ),
+        "token member initialize helper should reject non-Token-2022 program ids before CPI",
     );
 }

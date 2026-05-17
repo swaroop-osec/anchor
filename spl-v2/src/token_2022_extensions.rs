@@ -23,9 +23,6 @@ const DISC_INITIALIZE: u8 = 0;
 const DISC_UPDATE: u8 = 1;
 const DISC_RESUME: u8 = 2;
 
-const TOKEN_METADATA_REMOVE_KEY_DISCRIMINATOR: [u8; 8] =
-    [0xea, 0x12, 0x20, 0x38, 0x59, 0x8d, 0x25, 0xb5];
-
 fn assert_token_2022_program(program: &Address) {
     assert!(
         *program == Token2022::id(),
@@ -672,15 +669,6 @@ fn encode_pausable_initialize(authority: &Address) -> [u8; 34] {
     data
 }
 
-fn encode_token_metadata_remove_key(key: &str, idempotent: bool) -> Vec<u8> {
-    let mut data = Vec::with_capacity(8 + 1 + 4 + key.len());
-    data.extend_from_slice(&TOKEN_METADATA_REMOVE_KEY_DISCRIMINATOR);
-    data.push(u8::from(idempotent));
-    data.extend_from_slice(&(key.len() as u32).to_le_bytes());
-    data.extend_from_slice(key.as_bytes());
-    data
-}
-
 #[deprecated(
     note = "Token-2022 rejects CPI-initiated toggling of CPI Guard with CpiGuardSettingsLocked."
 )]
@@ -754,7 +742,16 @@ pub fn token_metadata_remove_key<'a>(
     key: String,
     idempotent: bool,
 ) {
-    ctx.invoke(&encode_token_metadata_remove_key(&key, idempotent));
+    assert_token_2022_program(ctx.program);
+    let program = address_to_pubkey(ctx.program);
+    let ix = spl_token_metadata_interface::instruction::remove_key(
+        &program,
+        &address_to_pubkey(ctx.accounts.metadata.address()),
+        &address_to_pubkey(ctx.accounts.update_authority.address()),
+        key,
+        idempotent,
+    );
+    ctx.invoke(&ix.data);
 }
 
 pub fn default_account_state_initialize<'a>(
@@ -952,6 +949,7 @@ pub fn token_metadata_initialize<'a>(
     symbol: String,
     uri: String,
 ) {
+    assert_token_2022_program(ctx.program);
     let program = address_to_pubkey(ctx.program);
     let ix = spl_token_metadata_interface::instruction::initialize(
         &program,
@@ -970,6 +968,7 @@ pub fn token_metadata_update_authority<'a>(
     ctx: CpiContext<'a, TokenMetadataUpdateAuthority<'a>>,
     new_authority: Option<&Address>,
 ) {
+    assert_token_2022_program(ctx.program);
     let program = address_to_pubkey(ctx.program);
     let new_authority = OptionalNonZeroPubkey::try_from(optional_address_to_pubkey(new_authority))
         .expect("optional address cannot be the zero address");
@@ -987,6 +986,7 @@ pub fn token_metadata_update_field<'a>(
     field: Field,
     value: String,
 ) {
+    assert_token_2022_program(ctx.program);
     let program = address_to_pubkey(ctx.program);
     let ix = spl_token_metadata_interface::instruction::update_field(
         &program,
@@ -1003,6 +1003,7 @@ pub fn token_group_initialize<'a>(
     update_authority: Option<&Address>,
     max_size: u64,
 ) {
+    assert_token_2022_program(ctx.program);
     let program = address_to_pubkey(ctx.program);
     let ix = spl_token_group_interface::instruction::initialize_group(
         &program,
@@ -1016,6 +1017,7 @@ pub fn token_group_initialize<'a>(
 }
 
 pub fn token_member_initialize<'a>(ctx: CpiContext<'a, TokenMemberInitialize<'a>>) {
+    assert_token_2022_program(ctx.program);
     let program = address_to_pubkey(ctx.program);
     let ix = spl_token_group_interface::instruction::initialize_member(
         &program,
@@ -1337,15 +1339,5 @@ mod tests {
         expected[2..34].copy_from_slice(group.as_ref());
 
         assert_eq!(encode_group_pointer_update(Some(&group)), expected);
-    }
-
-    #[test]
-    fn token_metadata_remove_key_encoder_matches_interface_discriminator() {
-        let data = encode_token_metadata_remove_key("field", true);
-
-        assert_eq!(&data[..8], &TOKEN_METADATA_REMOVE_KEY_DISCRIMINATOR);
-        assert_eq!(data[8], 1);
-        assert_eq!(&data[9..13], &5u32.to_le_bytes());
-        assert_eq!(&data[13..], b"field");
     }
 }

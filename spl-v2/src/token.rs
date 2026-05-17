@@ -23,6 +23,17 @@ pub use {
     spl_token_interface::{self as spl_token, ID},
 };
 
+pub(crate) fn validate_token_account_initialized(data: &[u8]) -> Result<(), ProgramError> {
+    const TOKEN_ACCOUNT_STATE_OFFSET: usize = 32 + 32 + 8 + 4 + 32;
+
+    match data.get(TOKEN_ACCOUNT_STATE_OFFSET).copied() {
+        Some(1) | Some(2) => Ok(()),
+        Some(0) => Err(ProgramError::UninitializedAccount),
+        Some(_) => Err(ProgramError::InvalidAccountData),
+        None => Err(ProgramError::InvalidAccountData),
+    }
+}
+
 /// Create a Token-program-owned account, handling PDA signing if needed.
 pub(crate) fn create_token_account(
     payer: &AccountView,
@@ -95,6 +106,7 @@ impl SlabSchema for TokenAccount {
         if data.len() != core::mem::size_of::<Self>() {
             return Err(ProgramError::InvalidAccountData);
         }
+        validate_token_account_initialized(data)?;
         Ok(())
     }
 }

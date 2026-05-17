@@ -29,6 +29,10 @@ use {
     pinocchio::account::AccountView,
     solana_address::Address,
     solana_program_error::ProgramError,
+    spl_token_2022_interface::{
+        extension::PodStateWithExtensions,
+        pod::{PodAccount, PodMint},
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -93,11 +97,7 @@ impl SlabSchema for Interface<crate::TokenAccount> {
         if !view.owned_by(&Token::id()) && !view.owned_by(&Token2022::id()) {
             return Err(ProgramError::IllegalOwner);
         }
-        // Token-2022 accounts may be larger than 165 bytes (extensions follow
-        // the base state). The first 165 bytes are always the base layout.
-        if data.len() < core::mem::size_of::<crate::TokenAccount>() {
-            return Err(ProgramError::InvalidAccountData);
-        }
+        PodStateWithExtensions::<PodAccount>::unpack(data)?;
         Ok(())
     }
 }
@@ -118,9 +118,7 @@ impl SlabSchema for Interface<crate::Mint> {
         if !view.owned_by(&Token::id()) && !view.owned_by(&Token2022::id()) {
             return Err(ProgramError::IllegalOwner);
         }
-        if data.len() < core::mem::size_of::<crate::Mint>() {
-            return Err(ProgramError::InvalidAccountData);
-        }
+        PodStateWithExtensions::<PodMint>::unpack(data)?;
         Ok(())
     }
 }
