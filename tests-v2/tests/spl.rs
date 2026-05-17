@@ -1979,6 +1979,65 @@ fn group_pointer_extension_round_trips() {
 }
 
 #[test]
+fn group_pointer_extension_rejects_wrong_authority() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("gp-rej-mint-auth");
+    let group_authority = keypair_for("gp-rej-authority");
+    let wrong_authority = keypair_for("gp-rej-wrong-authority");
+    let group = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_group_pointer(&group_authority.pubkey(), &group),
+        ),
+    );
+
+    let mut data = vec![35];
+    data.extend_from_slice(&wrong_authority.pubkey().to_bytes());
+    data.extend_from_slice(&group.to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "wrong group pointer authority should reject"
+    );
+}
+
+#[test]
+fn group_pointer_extension_rejects_wrong_group_address() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("gp-rej2-mint-auth");
+    let group_authority = keypair_for("gp-rej2-authority");
+    let group = Pubkey::new_unique();
+    let wrong_group = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_group_pointer(&group_authority.pubkey(), &group),
+        ),
+    );
+
+    let mut data = vec![35];
+    data.extend_from_slice(&group_authority.pubkey().to_bytes());
+    data.extend_from_slice(&wrong_group.to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(result.is_err(), "wrong group pointer address should reject");
+}
+
+#[test]
 fn group_member_pointer_extension_round_trips() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("gmp-mint-auth");
@@ -2003,6 +2062,68 @@ fn group_member_pointer_extension_round_trips() {
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("GroupMemberPointer should parse and match");
+}
+
+#[test]
+fn group_member_pointer_extension_rejects_wrong_authority() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("gmp-rej-mint-auth");
+    let member_authority = keypair_for("gmp-rej-authority");
+    let wrong_authority = keypair_for("gmp-rej-wrong-authority");
+    let member = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_group_member_pointer(&member_authority.pubkey(), &member),
+        ),
+    );
+
+    let mut data = vec![36];
+    data.extend_from_slice(&wrong_authority.pubkey().to_bytes());
+    data.extend_from_slice(&member.to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "wrong group member pointer authority should reject"
+    );
+}
+
+#[test]
+fn group_member_pointer_extension_rejects_wrong_member_address() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("gmp-rej2-mint-auth");
+    let member_authority = keypair_for("gmp-rej2-authority");
+    let member = Pubkey::new_unique();
+    let wrong_member = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_group_member_pointer(&member_authority.pubkey(), &member),
+        ),
+    );
+
+    let mut data = vec![36];
+    data.extend_from_slice(&member_authority.pubkey().to_bytes());
+    data.extend_from_slice(&wrong_member.to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "wrong group member pointer address should reject"
+    );
 }
 
 #[test]
@@ -2062,6 +2183,59 @@ fn pausable_config_extension_round_trips() {
 }
 
 #[test]
+fn pausable_config_extension_rejects_wrong_authority() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("pause-rej-mint-auth");
+    let pause_authority = keypair_for("pause-rej-authority");
+    let wrong_authority = keypair_for("pause-rej-wrong-authority");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_pausable_config(&pause_authority.pubkey(), 1),
+        ),
+    );
+
+    let mut data = vec![38];
+    data.extend_from_slice(&wrong_authority.pubkey().to_bytes());
+    data.push(1);
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(result.is_err(), "wrong pause authority should reject");
+}
+
+#[test]
+fn pausable_config_extension_rejects_wrong_paused_state() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("pause-rej2-mint-auth");
+    let pause_authority = keypair_for("pause-rej2-authority");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_pausable_config(&pause_authority.pubkey(), 1),
+        ),
+    );
+
+    let mut data = vec![38];
+    data.extend_from_slice(&pause_authority.pubkey().to_bytes());
+    data.push(0);
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(result.is_err(), "wrong paused state should reject");
+}
+
+#[test]
 fn zero_sized_marker_extensions_round_trip() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("marker-mint-auth");
@@ -2091,6 +2265,38 @@ fn zero_sized_marker_extensions_round_trip() {
     ];
     send_instruction(&mut svm, program_id(), vec![39], metas, &payer, &[])
         .expect("zero-sized marker extensions should parse");
+}
+
+#[test]
+fn zero_sized_marker_extensions_reject_when_marker_missing() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("marker-rej-mint-auth");
+    let owner = keypair_for("marker-rej-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(
+            &mint,
+            &owner.pubkey(),
+            0,
+            &concat_tlvs(&[tlv_marker(13), tlv_marker(26)]),
+        ),
+    );
+
+    let metas = vec![
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(token, false),
+    ];
+    let result = send_instruction(&mut svm, program_id(), vec![39], metas, &payer, &[]);
+    assert!(result.is_err(), "missing mint marker should reject");
 }
 
 // ---- Unit tests for host-side helpers --------------------------------------
