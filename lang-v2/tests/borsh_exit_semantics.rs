@@ -114,9 +114,12 @@ fn exit_writes_modified_in_memory_state_to_guard() {
 // code performs the concurrent write — so Tree Borrows has no way to
 // represent it. The Rust-side simulation is inherently UB and Miri
 // correctly rejects it. Covered under regular `cargo test`.
-#[cfg_attr(miri, ignore = "simulates external mutation by violating Rust's \
+#[cfg_attr(
+    miri,
+    ignore = "simulates external mutation by violating Rust's \
     exclusive-borrow invariant — inexpressible under Tree Borrows; covered \
-    under cargo test")]
+    under cargo test"
+)]
 fn stale_detection_misses_content_only_out_of_band_mutation() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);

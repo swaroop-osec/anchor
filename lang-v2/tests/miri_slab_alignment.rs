@@ -88,13 +88,15 @@ fn slab_align1_push_pop_roundtrip() {
 
     let program_id = Address::new_from_array(PROGRAM_ID);
     let view = unsafe { buf.view() };
-    let mut slab = unsafe {
-        Slab::<HeaderAlign1, ItemAlign1>::load_mut(view, &program_id)
-    }
-    .unwrap();
+    let mut slab =
+        unsafe { Slab::<HeaderAlign1, ItemAlign1>::load_mut(view, &program_id) }.unwrap();
 
     // Push 3 items.
-    let items = [ItemAlign1([1; 16]), ItemAlign1([2; 16]), ItemAlign1([3; 16])];
+    let items = [
+        ItemAlign1([1; 16]),
+        ItemAlign1([2; 16]),
+        ItemAlign1([3; 16]),
+    ];
     for item in items {
         slab.try_push(item).unwrap();
     }
@@ -122,10 +124,8 @@ fn slab_align1_swap_remove_preserves_correctness() {
 
     let program_id = Address::new_from_array(PROGRAM_ID);
     let view = unsafe { buf.view() };
-    let mut slab = unsafe {
-        Slab::<HeaderAlign1, ItemAlign1>::load_mut(view, &program_id)
-    }
-    .unwrap();
+    let mut slab =
+        unsafe { Slab::<HeaderAlign1, ItemAlign1>::load_mut(view, &program_id) }.unwrap();
 
     let a = ItemAlign1([0xAA; 16]);
     let b = ItemAlign1([0xBB; 16]);

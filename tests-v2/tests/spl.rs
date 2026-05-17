@@ -711,6 +711,36 @@ fn check_ata_accepts_canonical_address() {
         .expect("canonical ATA should pass");
 }
 
+#[test]
+fn check_ata_rejects_non_canonical_address() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("ata-rej-mint-auth");
+    let wallet = keypair_for("ata-rej-wallet");
+    let wrong_owner = keypair_for("ata-rej-owner");
+
+    let mint = Keypair::new();
+    let wrong_vault = Keypair::new();
+    do_init_mint(&mut svm, &payer, &mint, &mint_authority.pubkey());
+    do_init_token_account(
+        &mut svm,
+        &payer,
+        &mint.pubkey(),
+        &wrong_vault,
+        &wrong_owner.pubkey(),
+    );
+
+    let metas = vec![
+        AccountMeta::new_readonly(wallet.pubkey(), false),
+        AccountMeta::new_readonly(mint.pubkey(), false),
+        AccountMeta::new_readonly(wrong_vault.pubkey(), false),
+    ];
+    let result = send_instruction(&mut svm, program_id(), vec![15], metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "non-canonical ATA address must be rejected"
+    );
+}
+
 // ---- Token-2022 seeding helpers --------------------------------------------
 //
 // Build raw account data for Token-2022 extended mints and token accounts and
@@ -928,6 +958,33 @@ fn read_interface_token_account_accepts_legacy_and_token_2022() {
     let metas = vec![AccountMeta::new_readonly(t22_token, false)];
     send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[])
         .expect("token-2022-owned token account should pass interface load");
+}
+
+#[test]
+fn read_interface_token_account_rejects_foreign_owner() {
+    let (mut svm, payer) = setup();
+    let owner = keypair_for("foreign-token-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    svm.set_account(
+        token,
+        Account {
+            lamports: 10_000_000,
+            data: build_token_account_data(&mint, &owner.pubkey(), 42, &[]),
+            owner: Pubkey::new_unique(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    let result = send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "foreign-owned account should not load as InterfaceAccount<TokenAccount>",
+    );
 }
 
 // ---- InterfaceAccount init path --------------------------------------------
@@ -1447,6 +1504,60 @@ fn metadata_pointer_extension_round_trips() {
 }
 
 #[test]
+fn metadata_pointer_extension_rejects_wrong_authority() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("mp-rej-mint-auth");
+    let meta_authority = keypair_for("mp-rej-meta-auth");
+    let wrong_authority = keypair_for("mp-rej-wrong-auth");
+    let metadata = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    let tlv = tlv_metadata_pointer(&meta_authority.pubkey(), &metadata);
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv),
+    );
+
+    let mut data = vec![28];
+    data.extend_from_slice(&wrong_authority.pubkey().to_bytes());
+    data.extend_from_slice(&metadata.to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "wrong metadata pointer authority should reject"
+    );
+}
+
+#[test]
+fn metadata_pointer_extension_rejects_wrong_metadata_address() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("mp-rej2-mint-auth");
+    let meta_authority = keypair_for("mp-rej2-meta-auth");
+    let metadata = Pubkey::new_unique();
+    let wrong_metadata = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    let tlv = tlv_metadata_pointer(&meta_authority.pubkey(), &metadata);
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv),
+    );
+
+    let mut data = vec![28];
+    data.extend_from_slice(&meta_authority.pubkey().to_bytes());
+    data.extend_from_slice(&wrong_metadata.to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "wrong metadata pointer target should reject"
+    );
+}
+
+#[test]
 fn transfer_hook_extension_round_trips() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("th-mint-auth");
@@ -1467,6 +1578,29 @@ fn transfer_hook_extension_round_trips() {
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("TransferHook program id should match");
+}
+
+#[test]
+fn transfer_hook_extension_rejects_wrong_program() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("th-rej-mint-auth");
+    let hook_authority = keypair_for("th-rej-hook-auth");
+    let hook_program = Pubkey::new_unique();
+    let wrong_program = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    let tlv = tlv_transfer_hook(&hook_authority.pubkey(), &hook_program);
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv),
+    );
+
+    let mut data = vec![29];
+    data.extend_from_slice(&wrong_program.to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(result.is_err(), "wrong transfer hook program should reject");
 }
 
 #[test]
@@ -1492,6 +1626,51 @@ fn mint_close_authority_extension_round_trips() {
 }
 
 #[test]
+fn mint_close_authority_extension_rejects_wrong_authority() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("mca-rej-mint-auth");
+    let close_authority = keypair_for("mca-rej-close-auth");
+    let wrong_authority = keypair_for("mca-rej-wrong-auth");
+    let mint = Pubkey::new_unique();
+
+    let tlv = tlv_mint_close_authority(&close_authority.pubkey());
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv),
+    );
+
+    let mut data = vec![30];
+    data.extend_from_slice(&wrong_authority.pubkey().to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(result.is_err(), "wrong close authority should reject");
+}
+
+#[test]
+fn mint_close_authority_extension_rejects_when_missing() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("mca-missing-mint-auth");
+    let expected = keypair_for("mca-missing-expected");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+
+    let mut data = vec![30];
+    data.extend_from_slice(&expected.pubkey().to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "missing close authority extension should reject"
+    );
+}
+
+#[test]
 fn permanent_delegate_extension_round_trips() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("pd-mint-auth");
@@ -1511,6 +1690,51 @@ fn permanent_delegate_extension_round_trips() {
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("PermanentDelegate delegate should match");
+}
+
+#[test]
+fn permanent_delegate_extension_rejects_wrong_delegate() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("pd-rej-mint-auth");
+    let delegate = keypair_for("pd-rej-delegate");
+    let wrong_delegate = keypair_for("pd-rej-wrong-delegate");
+    let mint = Pubkey::new_unique();
+
+    let tlv = tlv_permanent_delegate(&delegate.pubkey());
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv),
+    );
+
+    let mut data = vec![31];
+    data.extend_from_slice(&wrong_delegate.pubkey().to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(result.is_err(), "wrong permanent delegate should reject");
+}
+
+#[test]
+fn permanent_delegate_extension_rejects_when_missing() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("pd-missing-mint-auth");
+    let expected = keypair_for("pd-missing-expected");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+
+    let mut data = vec![31];
+    data.extend_from_slice(&expected.pubkey().to_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "missing permanent delegate extension should reject"
+    );
 }
 
 #[test]
@@ -1542,6 +1766,33 @@ fn transfer_fee_amount_extension_round_trips() {
 }
 
 #[test]
+fn transfer_fee_amount_extension_rejects_wrong_withheld_amount() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("tfa-rej-mint-auth");
+    let owner = keypair_for("tfa-rej-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+    let tlv = tlv_transfer_fee_amount(777);
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &tlv),
+    );
+
+    let mut data = vec![32];
+    data.extend_from_slice(&778u64.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(result.is_err(), "wrong withheld amount should reject");
+}
+
+#[test]
 fn transfer_hook_account_extension_round_trips() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("tha-mint-auth");
@@ -1566,6 +1817,32 @@ fn transfer_hook_account_extension_round_trips() {
     let metas = vec![AccountMeta::new_readonly(token, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("TransferHookAccount transferring should match");
+}
+
+#[test]
+fn transfer_hook_account_extension_rejects_wrong_transferring_flag() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("tha-rej-mint-auth");
+    let owner = keypair_for("tha-rej-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+    let tlv = tlv_transfer_hook_account(1);
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &tlv),
+    );
+
+    let data = vec![33, 0];
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(result.is_err(), "wrong transferring flag should reject");
 }
 
 #[test]

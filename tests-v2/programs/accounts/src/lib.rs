@@ -3,7 +3,10 @@
 //! and bare UncheckedAccount read paths.
 
 use {
-    anchor_lang_v2::prelude::*,
+    anchor_lang_v2::{
+        prelude::*,
+        programs::{AssociatedToken, Memo},
+    },
     pinocchio::sysvars::{clock::Clock, rent::Rent},
 };
 
@@ -92,6 +95,43 @@ pub mod accounts_test {
         let _ = ctx.accounts.any_account.address();
         Ok(())
     }
+
+    /// Checks the well-known System program marker address.
+    #[discrim = 9]
+    pub fn check_system_program(ctx: &mut Context<CheckSystemProgram>) -> Result<()> {
+        let _ = ctx.accounts.program.address();
+        Ok(())
+    }
+
+    /// Checks the well-known SPL Token program marker address.
+    #[discrim = 10]
+    pub fn check_token_program(ctx: &mut Context<CheckTokenProgram>) -> Result<()> {
+        let _ = ctx.accounts.program.address();
+        Ok(())
+    }
+
+    /// Checks the well-known Token-2022 program marker address.
+    #[discrim = 11]
+    pub fn check_token_2022_program(ctx: &mut Context<CheckToken2022Program>) -> Result<()> {
+        let _ = ctx.accounts.program.address();
+        Ok(())
+    }
+
+    /// Checks the well-known Associated Token program marker address.
+    #[discrim = 12]
+    pub fn check_associated_token_program(
+        ctx: &mut Context<CheckAssociatedTokenProgram>,
+    ) -> Result<()> {
+        let _ = ctx.accounts.program.address();
+        Ok(())
+    }
+
+    /// Checks the well-known Memo program marker address.
+    #[discrim = 13]
+    pub fn check_memo_program(ctx: &mut Context<CheckMemoProgram>) -> Result<()> {
+        let _ = ctx.accounts.program.address();
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -152,4 +192,35 @@ pub struct CheckSystem {
 #[derive(Accounts)]
 pub struct TouchUnchecked {
     pub any_account: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct CheckSystemProgram {
+    pub program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct CheckTokenProgram {
+    pub program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct CheckToken2022Program {
+    pub program: Program<Token2022>,
+}
+
+#[derive(Accounts)]
+pub struct CheckAssociatedTokenProgram {
+    pub program: Program<AssociatedToken>,
+}
+
+#[derive(Accounts)]
+pub struct CheckMemoProgram {
+    pub program: Program<Memo>,
+}
+
+#[derive(Accounts)]
+pub struct CheckAssociatedTokenProgramSeed {
+    #[account(seeds = [b"vault"], bump, seeds::program = AssociatedToken::id())]
+    pub data: UncheckedAccount,
 }

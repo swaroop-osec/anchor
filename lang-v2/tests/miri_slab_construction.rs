@@ -16,10 +16,7 @@
 
 use anchor_lang_v2::testing::AccountBuffer;
 
-use anchor_lang_v2::{
-    accounts::Account,
-    AnchorAccount, Discriminator, Owner,
-};
+use anchor_lang_v2::{accounts::Account, AnchorAccount, Discriminator, Owner};
 use bytemuck::{Pod, Zeroable};
 use pinocchio::address::Address;
 
@@ -46,9 +43,7 @@ impl Owner for Counter {
 
 impl Discriminator for Counter {
     // sha256("account:Counter")[..8] — reused vector from disc_vectors.rs
-    const DISCRIMINATOR: &'static [u8] = &[
-        0xff, 0xb0, 0x04, 0xf5, 0xbc, 0xfd, 0x7c, 0x19,
-    ];
+    const DISCRIMINATOR: &'static [u8] = &[0xff, 0xb0, 0x04, 0xf5, 0xbc, 0xfd, 0x7c, 0x19];
 }
 
 // Account<T> = Slab<T, HeaderOnly>. The core header-only variant.
@@ -63,12 +58,9 @@ fn setup_counter_buffer() -> AccountBuffer<128> {
     // Layout: header + disc (8) + Counter (16) = small.
     let data_len = 8 + core::mem::size_of::<Counter>();
     buf.init(
-        [0xAA; 32],       // address
-        PROGRAM_ID,       // owner = Counter::owner(program_id) = program_id
-        data_len,
-        /*is_signer*/ false,
-        /*is_writable*/ true,
-        /*executable*/ false,
+        [0xAA; 32], // address
+        PROGRAM_ID, // owner = Counter::owner(program_id) = program_id
+        data_len, /*is_signer*/ false, /*is_writable*/ true, /*executable*/ false,
     );
     // Write the discriminator into the first 8 bytes of data.
     let mut data = [0u8; 24];
@@ -95,12 +87,8 @@ fn load_rejects_wrong_owner() {
     let buf = setup_counter_buffer();
     // Corrupt the owner — any value != PROGRAM_ID fails the check.
     buf.init(
-        [0xAA; 32],
-        [0xFF; 32], // wrong owner
-        24,
-        false,
-        true,
-        false,
+        [0xAA; 32], [0xFF; 32], // wrong owner
+        24, false, true, false,
     );
     // Re-write data after init (init wiped our data).
     let mut data = [0u8; 24];

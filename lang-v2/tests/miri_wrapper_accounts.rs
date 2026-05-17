@@ -11,8 +11,8 @@ use anchor_lang_v2::testing::AccountBuffer;
 
 use anchor_lang_v2::{
     accounts::{SystemAccount, UncheckedAccount},
-    programs::{System, Token},
     prelude::{Program, Signer},
+    programs::{System, Token},
     AnchorAccount,
 };
 use pinocchio::address::Address;
@@ -25,12 +25,8 @@ const PROGRAM_ID: [u8; 32] = [0x42; 32];
 fn system_account_loads_for_system_owned() {
     let buf = AccountBuffer::<256>::new();
     buf.init(
-        [0x11; 32],
-        /*owner*/ [0; 32], // System's ID is all-zero.
-        0,
-        false,
-        true,
-        false,
+        [0x11; 32], /*owner*/ [0; 32], // System's ID is all-zero.
+        0, false, true, false,
     );
     let view = unsafe { buf.view() };
     let program_id = Address::new_from_array(PROGRAM_ID);
@@ -70,12 +66,7 @@ fn unchecked_account_loads_for_any_owner() {
 fn program_of_system_loads_when_address_matches_and_executable() {
     let buf = AccountBuffer::<256>::new();
     buf.init(
-        /*address = System::id()*/ [0; 32],
-        [0; 32],
-        0,
-        false,
-        false,
-        /*executable*/ true,
+        /*address = System::id()*/ [0; 32], [0; 32], 0, false, false, /*executable*/ true,
     );
     let view = unsafe { buf.view() };
     let program_id = Address::new_from_array(PROGRAM_ID);
@@ -88,11 +79,7 @@ fn program_of_token_rejects_wrong_address() {
     let buf = AccountBuffer::<256>::new();
     buf.init(
         /*address*/ [0; 32], // System, not Token
-        [0; 32],
-        0,
-        false,
-        false,
-        true,
+        [0; 32], 0, false, false, true,
     );
     let view = unsafe { buf.view() };
     let program_id = Address::new_from_array(PROGRAM_ID);

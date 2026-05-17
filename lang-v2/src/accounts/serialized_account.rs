@@ -341,6 +341,16 @@ where
     }
 }
 
+impl<T, S> AsRef<Address> for SerializedAccount<T, S>
+where
+    T: Owner + Discriminator,
+    S: AnchorAccountSerialize<T>,
+{
+    fn as_ref(&self) -> &Address {
+        self.view.address()
+    }
+}
+
 /// Forward `Discriminator` from a `SerializedAccount<T, S>` to its inner type.
 /// Lets the `#[account(zeroed)]` derive codegen look up the disc via the field
 /// type directly (`<BorshAccount<Counter> as Discriminator>::DISCRIMINATOR`).

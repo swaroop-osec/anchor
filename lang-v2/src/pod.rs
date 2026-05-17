@@ -1278,14 +1278,18 @@ mod kani_proofs {
                 fn saturating_add_matches_native() {
                     let a: $native = kani::any();
                     let b: $native = kani::any();
-                    assert!($pod::from(a).saturating_add($pod::from(b)).get() == a.saturating_add(b));
+                    assert!(
+                        $pod::from(a).saturating_add($pod::from(b)).get() == a.saturating_add(b)
+                    );
                 }
 
                 #[kani::proof]
                 fn saturating_sub_matches_native() {
                     let a: $native = kani::any();
                     let b: $native = kani::any();
-                    assert!($pod::from(a).saturating_sub($pod::from(b)).get() == a.saturating_sub(b));
+                    assert!(
+                        $pod::from(a).saturating_sub($pod::from(b)).get() == a.saturating_sub(b)
+                    );
                 }
 
                 #[kani::proof]
@@ -1384,14 +1388,18 @@ mod kani_proofs {
                 fn saturating_add_matches_native() {
                     let a: $native = kani::any();
                     let b: $native = kani::any();
-                    assert!($pod::from(a).saturating_add($pod::from(b)).get() == a.saturating_add(b));
+                    assert!(
+                        $pod::from(a).saturating_add($pod::from(b)).get() == a.saturating_add(b)
+                    );
                 }
 
                 #[kani::proof]
                 fn saturating_sub_matches_native() {
                     let a: $native = kani::any();
                     let b: $native = kani::any();
-                    assert!($pod::from(a).saturating_sub($pod::from(b)).get() == a.saturating_sub(b));
+                    assert!(
+                        $pod::from(a).saturating_sub($pod::from(b)).get() == a.saturating_sub(b)
+                    );
                 }
 
                 #[kani::proof]
@@ -1497,7 +1505,9 @@ mod kani_proofs {
         fn pod_u128_checked_add_matches_native() {
             let a: u128 = kani::any();
             let b: u128 = kani::any();
-            let lhs = PodU128::from(a).checked_add(PodU128::from(b)).map(|r| r.get());
+            let lhs = PodU128::from(a)
+                .checked_add(PodU128::from(b))
+                .map(|r| r.get());
             assert!(lhs == a.checked_add(b));
         }
 
@@ -1506,7 +1516,9 @@ mod kani_proofs {
         fn pod_u128_checked_sub_matches_native() {
             let a: u128 = kani::any();
             let b: u128 = kani::any();
-            let lhs = PodU128::from(a).checked_sub(PodU128::from(b)).map(|r| r.get());
+            let lhs = PodU128::from(a)
+                .checked_sub(PodU128::from(b))
+                .map(|r| r.get());
             assert!(lhs == a.checked_sub(b));
         }
 
@@ -1515,7 +1527,9 @@ mod kani_proofs {
         fn pod_u128_checked_mul_matches_native() {
             let a: u128 = kani::any();
             let b: u128 = kani::any();
-            let lhs = PodU128::from(a).checked_mul(PodU128::from(b)).map(|r| r.get());
+            let lhs = PodU128::from(a)
+                .checked_mul(PodU128::from(b))
+                .map(|r| r.get());
             assert!(lhs == a.checked_mul(b));
         }
 
@@ -1524,10 +1538,7 @@ mod kani_proofs {
         fn pod_u128_saturating_add_matches_native() {
             let a: u128 = kani::any();
             let b: u128 = kani::any();
-            assert!(
-                PodU128::from(a).saturating_add(PodU128::from(b)).get()
-                    == a.saturating_add(b)
-            );
+            assert!(PodU128::from(a).saturating_add(PodU128::from(b)).get() == a.saturating_add(b));
         }
 
         #[kani::proof]
@@ -1535,10 +1546,7 @@ mod kani_proofs {
         fn pod_u128_saturating_sub_matches_native() {
             let a: u128 = kani::any();
             let b: u128 = kani::any();
-            assert!(
-                PodU128::from(a).saturating_sub(PodU128::from(b)).get()
-                    == a.saturating_sub(b)
-            );
+            assert!(PodU128::from(a).saturating_sub(PodU128::from(b)).get() == a.saturating_sub(b));
         }
 
         #[kani::proof]
@@ -1546,10 +1554,7 @@ mod kani_proofs {
         fn pod_u128_saturating_mul_matches_native() {
             let a: u128 = kani::any();
             let b: u128 = kani::any();
-            assert!(
-                PodU128::from(a).saturating_mul(PodU128::from(b)).get()
-                    == a.saturating_mul(b)
-            );
+            assert!(PodU128::from(a).saturating_mul(PodU128::from(b)).get() == a.saturating_mul(b));
         }
 
         #[kani::proof]
@@ -1557,7 +1562,9 @@ mod kani_proofs {
         fn pod_u128_checked_div_matches_native() {
             let a: u128 = kani::any();
             let b: u128 = kani::any();
-            let lhs = PodU128::from(a).checked_div(PodU128::from(b)).map(|r| r.get());
+            let lhs = PodU128::from(a)
+                .checked_div(PodU128::from(b))
+                .map(|r| r.get());
             assert!(lhs == a.checked_div(b));
         }
 
@@ -1590,7 +1597,9 @@ mod kani_proofs {
         fn pod_i128_checked_add_matches_native() {
             let a: i128 = kani::any();
             let b: i128 = kani::any();
-            let lhs = PodI128::from(a).checked_add(PodI128::from(b)).map(|r| r.get());
+            let lhs = PodI128::from(a)
+                .checked_add(PodI128::from(b))
+                .map(|r| r.get());
             assert!(lhs == a.checked_add(b));
         }
 
@@ -1599,7 +1608,9 @@ mod kani_proofs {
         fn pod_i128_checked_sub_matches_native() {
             let a: i128 = kani::any();
             let b: i128 = kani::any();
-            let lhs = PodI128::from(a).checked_sub(PodI128::from(b)).map(|r| r.get());
+            let lhs = PodI128::from(a)
+                .checked_sub(PodI128::from(b))
+                .map(|r| r.get());
             assert!(lhs == a.checked_sub(b));
         }
 
@@ -1608,7 +1619,9 @@ mod kani_proofs {
         fn pod_i128_checked_mul_matches_native() {
             let a: i128 = kani::any();
             let b: i128 = kani::any();
-            let lhs = PodI128::from(a).checked_mul(PodI128::from(b)).map(|r| r.get());
+            let lhs = PodI128::from(a)
+                .checked_mul(PodI128::from(b))
+                .map(|r| r.get());
             assert!(lhs == a.checked_mul(b));
         }
 
@@ -1643,10 +1656,7 @@ mod kani_proofs {
         fn pod_i128_saturating_add_matches_native() {
             let a: i128 = kani::any();
             let b: i128 = kani::any();
-            assert!(
-                PodI128::from(a).saturating_add(PodI128::from(b)).get()
-                    == a.saturating_add(b)
-            );
+            assert!(PodI128::from(a).saturating_add(PodI128::from(b)).get() == a.saturating_add(b));
         }
 
         #[kani::proof]
@@ -1654,10 +1664,7 @@ mod kani_proofs {
         fn pod_i128_saturating_sub_matches_native() {
             let a: i128 = kani::any();
             let b: i128 = kani::any();
-            assert!(
-                PodI128::from(a).saturating_sub(PodI128::from(b)).get()
-                    == a.saturating_sub(b)
-            );
+            assert!(PodI128::from(a).saturating_sub(PodI128::from(b)).get() == a.saturating_sub(b));
         }
 
         #[kani::proof]
@@ -1665,10 +1672,7 @@ mod kani_proofs {
         fn pod_i128_saturating_mul_matches_native() {
             let a: i128 = kani::any();
             let b: i128 = kani::any();
-            assert!(
-                PodI128::from(a).saturating_mul(PodI128::from(b)).get()
-                    == a.saturating_mul(b)
-            );
+            assert!(PodI128::from(a).saturating_mul(PodI128::from(b)).get() == a.saturating_mul(b));
         }
     }
 
@@ -1823,14 +1827,18 @@ mod kani_proofs {
         // Verify Pod matches. Concrete inputs → CBMC is fine.
         #[kani::proof]
         fn i32_checked_div_min_neg_one_matches_native() {
-            let lhs = PodI32::from(i32::MIN).checked_div(PodI32::from(-1)).map(|r| r.get());
-            assert!(lhs == i32::MIN.checked_div(-1));  // both None
+            let lhs = PodI32::from(i32::MIN)
+                .checked_div(PodI32::from(-1))
+                .map(|r| r.get());
+            assert!(lhs == i32::MIN.checked_div(-1)); // both None
             assert!(lhs.is_none());
         }
 
         #[kani::proof]
         fn i64_checked_div_min_neg_one_matches_native() {
-            let lhs = PodI64::from(i64::MIN).checked_div(PodI64::from(-1)).map(|r| r.get());
+            let lhs = PodI64::from(i64::MIN)
+                .checked_div(PodI64::from(-1))
+                .map(|r| r.get());
             assert!(lhs == i64::MIN.checked_div(-1));
             assert!(lhs.is_none());
         }
@@ -1838,7 +1846,9 @@ mod kani_proofs {
         // iN::MIN.checked_mul(-1) overflows → None. Verify Pod matches.
         #[kani::proof]
         fn i32_checked_mul_min_neg_one_matches_native() {
-            let lhs = PodI32::from(i32::MIN).checked_mul(PodI32::from(-1)).map(|r| r.get());
+            let lhs = PodI32::from(i32::MIN)
+                .checked_mul(PodI32::from(-1))
+                .map(|r| r.get());
             assert!(lhs == i32::MIN.checked_mul(-1));
             assert!(lhs.is_none());
         }
@@ -1849,7 +1859,9 @@ mod kani_proofs {
         #[kani::solver(z3)]
         fn u64_checked_div_by_zero_is_none() {
             let a: u64 = kani::any();
-            let r = PodU64::from(a).checked_div(PodU64::from(0)).map(|r| r.get());
+            let r = PodU64::from(a)
+                .checked_div(PodU64::from(0))
+                .map(|r| r.get());
             assert!(r.is_none());
         }
 
@@ -1857,7 +1869,9 @@ mod kani_proofs {
         #[kani::solver(z3)]
         fn i32_checked_div_by_zero_is_none() {
             let a: i32 = kani::any();
-            let r = PodI32::from(a).checked_div(PodI32::from(0)).map(|r| r.get());
+            let r = PodI32::from(a)
+                .checked_div(PodI32::from(0))
+                .map(|r| r.get());
             assert!(r.is_none());
         }
 
@@ -1880,25 +1894,21 @@ mod kani_proofs {
         fn i32_saturating_mul_min_neg_one_is_max() {
             // i32::MIN * -1 overflows i32, saturates to i32::MAX.
             assert!(
-                PodI32::from(i32::MIN).saturating_mul(PodI32::from(-1)).get()
+                PodI32::from(i32::MIN)
+                    .saturating_mul(PodI32::from(-1))
+                    .get()
                     == i32::MAX
             );
         }
 
         #[kani::proof]
         fn i32_saturating_mul_max_times_two_saturates() {
-            assert!(
-                PodI32::from(i32::MAX).saturating_mul(PodI32::from(2)).get()
-                    == i32::MAX
-            );
+            assert!(PodI32::from(i32::MAX).saturating_mul(PodI32::from(2)).get() == i32::MAX);
         }
 
         #[kani::proof]
         fn i32_saturating_mul_min_times_two_saturates() {
-            assert!(
-                PodI32::from(i32::MIN).saturating_mul(PodI32::from(2)).get()
-                    == i32::MIN
-            );
+            assert!(PodI32::from(i32::MIN).saturating_mul(PodI32::from(2)).get() == i32::MIN);
         }
 
         // Rem (%) operator — must match native.

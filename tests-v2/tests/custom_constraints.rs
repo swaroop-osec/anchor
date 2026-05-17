@@ -295,3 +295,35 @@ fn init_if_needed_exist_branch_runs_check() {
         "exist branch must not re-run init (would have overwritten 42 → 5)",
     );
 }
+
+#[test]
+fn init_if_needed_exist_branch_rejects_failed_check_without_reinit() {
+    let (mut svm, payer) = setup();
+    init_counter(&mut svm, &payer);
+
+    // Corrupt the existing account's live value below the min_value=1
+    // check. If the exist branch accidentally re-ran init, it would stamp
+    // value=5 and pass; the correct behavior is to check the live data and
+    // reject without mutating it.
+    let pda = counter_pda();
+    let mut account = svm.get_account(&pda).expect("counter exists");
+    account.data[8..16].copy_from_slice(&0u64.to_le_bytes());
+    svm.set_account(pda, account).unwrap();
+
+    let data = custom_constraints::instruction::HandleInitIfNeeded {}.data();
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(pda, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "init_if_needed exist branch must reject when check() fails"
+    );
+    assert_eq!(
+        read_counter_value(&svm, &pda),
+        0,
+        "failed exist-branch check must not re-run init or mutate data"
+    );
+}

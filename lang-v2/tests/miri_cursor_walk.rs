@@ -319,17 +319,15 @@ fn non_dup_with_varied_data_len_advances_correctly() {
 
 #[test]
 fn first_account_short_circuit_overrides_wrong_borrow_state_byte() {
-    let mut input = SbfInputBuffer::build(&[
-        AccountRecord::NonDup {
-            address: [0xEE; 32],
-            owner: [0; 32],
-            lamports: 99,
-            is_signer: false,
-            is_writable: true,
-            executable: false,
-            data_len: 0,
-        },
-    ]);
+    let mut input = SbfInputBuffer::build(&[AccountRecord::NonDup {
+        address: [0xEE; 32],
+        owner: [0; 32],
+        lamports: 99,
+        is_signer: false,
+        is_writable: true,
+        executable: false,
+        data_len: 0,
+    }]);
 
     // Corrupt the borrow_state byte at the first record's offset — if
     // the short-circuit didn't fire, the cursor would try to read

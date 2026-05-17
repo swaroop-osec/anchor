@@ -33,8 +33,7 @@ pub mod caller {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx =
-            CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::set_data(cpi_ctx, value);
         Ok(())
     }
@@ -46,8 +45,7 @@ pub mod caller {
             data: ctx.accounts.callee_data.cpi_handle_mut(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
-        let cpi_ctx =
-            CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::noop(cpi_ctx);
         Ok(())
     }
@@ -75,8 +73,7 @@ pub mod caller {
             authority: ctx.accounts.authority.cpi_handle(),
             spectator: ctx.accounts.spectator.cpi_handle(),
         };
-        let cpi_ctx =
-            CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
+        let cpi_ctx = CpiContext::new(ctx.accounts.callee_program.address(), cpi_accounts);
         callee::cpi::touch(cpi_ctx, delta);
         Ok(())
     }

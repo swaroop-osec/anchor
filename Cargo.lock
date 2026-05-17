@@ -8874,6 +8874,7 @@ name = "tests-v2"
 version = "0.1.0"
 dependencies = [
  "accounts-test",
+ "anchor-lang-idl-spec",
  "anchor-lang-v2",
  "anchor-spl-v2",
  "anyhow",
@@ -8886,7 +8887,9 @@ dependencies = [
  "derives-test",
  "dup-mut",
  "litesvm",
+ "pinocchio",
  "seeds",
+ "serde_json",
  "sha2 0.10.9",
  "solana-account 3.4.0",
  "solana-address 2.6.0",

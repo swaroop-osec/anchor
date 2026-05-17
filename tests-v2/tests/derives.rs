@@ -157,6 +157,24 @@ fn verify_invariants_rejects_zero_value() {
     );
 }
 
+#[test]
+fn verify_invariants_rejects_invalid_pod_wrapper_discriminant() {
+    let (mut svm, payer) = setup();
+    let counter = do_initialize(&mut svm, &payer);
+    do_bump(&mut svm, &payer, counter, 5, 0);
+
+    let mut account = svm.get_account(&counter).expect("counter exists");
+    account.data[OFFSET_MODE] = 42;
+    svm.set_account(counter, account).unwrap();
+
+    let metas = vec![AccountMeta::new(counter, false)];
+    let result = send_instruction(&mut svm, program_id(), vec![2], metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "invalid PodMode byte must not silently pass equality checks"
+    );
+}
+
 // ---- #[access_control] ---------------------------------------------------
 
 #[test]

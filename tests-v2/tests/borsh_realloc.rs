@@ -36,6 +36,19 @@ fn data_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"data"], &program_id()).0
 }
 
+fn init_data(svm: &mut LiteSVM, payer: &solana_keypair::Keypair) -> Pubkey {
+    let pda = data_pda();
+    let init_data = borsh_realloc::instruction::Initialize {}.data();
+    let init_metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(pda, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), init_data, init_metas, payer, &[])
+        .expect("initialize should succeed");
+    pda
+}
+
 /// Read the borsh Vec<u8> items from the account data.
 /// Layout: [disc: 8][borsh_vec_len: 4 LE][items: N bytes]
 fn read_items(svm: &LiteSVM, pda: &Pubkey) -> Vec<u8> {
@@ -53,17 +66,7 @@ fn read_items(svm: &LiteSVM, pda: &Pubkey) -> Vec<u8> {
 #[test]
 fn test_borsh_realloc_grow() {
     let (mut svm, payer) = setup();
-    let pda = data_pda();
-
-    // 1. Initialize with items = [1, 2, 3]
-    let init_data = borsh_realloc::instruction::Initialize {}.data();
-    let init_metas = vec![
-        AccountMeta::new(payer.pubkey(), true),
-        AccountMeta::new(pda, false),
-        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
-    ];
-    send_instruction(&mut svm, program_id(), init_data, init_metas, &payer, &[])
-        .expect("initialize should succeed");
+    let pda = init_data(&mut svm, &payer);
 
     let items = read_items(&svm, &pda);
     assert_eq!(items, vec![1, 2, 3], "initial data should be [1,2,3]");
@@ -89,17 +92,7 @@ fn test_borsh_realloc_grow() {
 #[test]
 fn test_borsh_realloc_shrink() {
     let (mut svm, payer) = setup();
-    let pda = data_pda();
-
-    // 1. Initialize with items = [1, 2, 3]
-    let init_data = borsh_realloc::instruction::Initialize {}.data();
-    let init_metas = vec![
-        AccountMeta::new(payer.pubkey(), true),
-        AccountMeta::new(pda, false),
-        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
-    ];
-    send_instruction(&mut svm, program_id(), init_data, init_metas, &payer, &[])
-        .expect("initialize should succeed");
+    let pda = init_data(&mut svm, &payer);
 
     // 2. Grow first so we have room to shrink
     let big_items: Vec<u8> = (1..=10).collect();
@@ -143,23 +136,7 @@ fn test_borsh_realloc_shrink() {
 #[test]
 fn test_borsh_realloc_shrink_to_empty() {
     let (mut svm, payer) = setup();
-    let pda = data_pda();
-
-    // Initialize with [1, 2, 3]
-    let init_data = borsh_realloc::instruction::Initialize {}.data();
-    send_instruction(
-        &mut svm,
-        program_id(),
-        init_data,
-        vec![
-            AccountMeta::new(payer.pubkey(), true),
-            AccountMeta::new(pda, false),
-            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
-        ],
-        &payer,
-        &[],
-    )
-    .expect("initialize");
+    let pda = init_data(&mut svm, &payer);
     assert_eq!(read_items(&svm, &pda), vec![1, 2, 3]);
 
     // Shrink to empty vec
@@ -192,23 +169,7 @@ fn test_borsh_realloc_shrink_to_empty() {
 #[test]
 fn test_borsh_realloc_grow_shrink_grow_roundtrip() {
     let (mut svm, payer) = setup();
-    let pda = data_pda();
-
-    // Initialize with [1, 2, 3]
-    let init_data = borsh_realloc::instruction::Initialize {}.data();
-    send_instruction(
-        &mut svm,
-        program_id(),
-        init_data,
-        vec![
-            AccountMeta::new(payer.pubkey(), true),
-            AccountMeta::new(pda, false),
-            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
-        ],
-        &payer,
-        &[],
-    )
-    .expect("initialize");
+    let pda = init_data(&mut svm, &payer);
 
     // Grow to [1..=20]
     let big: Vec<u8> = (1..=20).collect();
@@ -281,23 +242,7 @@ fn test_borsh_realloc_grow_shrink_grow_roundtrip() {
 #[test]
 fn test_borsh_realloc_grow_from_empty() {
     let (mut svm, payer) = setup();
-    let pda = data_pda();
-
-    // Initialize with [1, 2, 3]
-    let init_data = borsh_realloc::instruction::Initialize {}.data();
-    send_instruction(
-        &mut svm,
-        program_id(),
-        init_data,
-        vec![
-            AccountMeta::new(payer.pubkey(), true),
-            AccountMeta::new(pda, false),
-            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
-        ],
-        &payer,
-        &[],
-    )
-    .expect("initialize");
+    let pda = init_data(&mut svm, &payer);
 
     // Shrink to empty
     let shrink_data = borsh_realloc::instruction::Shrink { new_items: vec![] }.data();
@@ -339,5 +284,179 @@ fn test_borsh_realloc_grow_from_empty() {
         read_items(&svm, &pda),
         items,
         "should grow correctly from empty state"
+    );
+}
+
+#[test]
+fn init_rejects_wrong_pda() {
+    let (mut svm, payer) = setup();
+    let wrong = Pubkey::new_unique();
+
+    let init_data = borsh_realloc::instruction::Initialize {}.data();
+    let result = send_instruction(
+        &mut svm,
+        program_id(),
+        init_data,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(wrong, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &payer,
+        &[],
+    );
+    assert!(result.is_err(), "init must reject a non-canonical PDA");
+    assert!(
+        svm.get_account(&wrong).is_none(),
+        "wrong PDA must not be created on failed init"
+    );
+}
+
+#[test]
+fn init_rejects_existing_pda() {
+    let (mut svm, payer) = setup();
+    let pda = init_data(&mut svm, &payer);
+    svm.expire_blockhash();
+
+    let init_data = borsh_realloc::instruction::Initialize {}.data();
+    let result = send_instruction(
+        &mut svm,
+        program_id(),
+        init_data,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(pda, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &payer,
+        &[],
+    );
+    assert!(
+        result.is_err(),
+        "init must reject an already-initialized PDA"
+    );
+    assert_eq!(
+        read_items(&svm, &pda),
+        vec![1, 2, 3],
+        "failed duplicate init must leave account data unchanged"
+    );
+}
+
+#[test]
+fn grow_rejects_uninitialized_pda() {
+    let (mut svm, payer) = setup();
+    let pda = data_pda();
+
+    let grow_data = borsh_realloc::instruction::Grow {
+        new_items: vec![9, 9, 9],
+    }
+    .data();
+    let result = send_instruction(
+        &mut svm,
+        program_id(),
+        grow_data,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(pda, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &payer,
+        &[],
+    );
+    assert!(result.is_err(), "grow must reject an uninitialized account");
+}
+
+#[test]
+fn grow_rejects_wrong_pda_and_preserves_data() {
+    let (mut svm, payer) = setup();
+    let pda = init_data(&mut svm, &payer);
+    let wrong = Pubkey::new_unique();
+
+    let grow_data = borsh_realloc::instruction::Grow {
+        new_items: vec![4, 5, 6],
+    }
+    .data();
+    let result = send_instruction(
+        &mut svm,
+        program_id(),
+        grow_data,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(wrong, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &payer,
+        &[],
+    );
+    assert!(result.is_err(), "grow must reject a non-canonical PDA");
+    assert_eq!(
+        read_items(&svm, &pda),
+        vec![1, 2, 3],
+        "failed grow must not mutate the canonical account"
+    );
+}
+
+#[test]
+fn shrink_rejects_wrong_pda_and_preserves_data() {
+    let (mut svm, payer) = setup();
+    let pda = init_data(&mut svm, &payer);
+    let wrong = Pubkey::new_unique();
+
+    let shrink_data = borsh_realloc::instruction::Shrink { new_items: vec![] }.data();
+    let result = send_instruction(
+        &mut svm,
+        program_id(),
+        shrink_data,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(wrong, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &payer,
+        &[],
+    );
+    assert!(result.is_err(), "shrink must reject a non-canonical PDA");
+    assert_eq!(
+        read_items(&svm, &pda),
+        vec![1, 2, 3],
+        "failed shrink must not mutate the canonical account"
+    );
+}
+
+#[test]
+fn shrink_below_discriminator_is_rejected_and_rolls_back() {
+    let (mut svm, payer) = setup();
+    let pda = init_data(&mut svm, &payer);
+    let account_before = svm.get_account(&pda).expect("data exists before");
+    let items_before = read_items(&svm, &pda);
+
+    let shrink_data = borsh_realloc::instruction::ShrinkBelowDiscriminator {}.data();
+    let result = send_instruction(
+        &mut svm,
+        program_id(),
+        shrink_data,
+        vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new(pda, false),
+            AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        ],
+        &payer,
+        &[],
+    );
+
+    assert!(
+        result.is_err(),
+        "realloc below the discriminator length must be rejected"
+    );
+    let account_after = svm.get_account(&pda).expect("data still exists");
+    assert_eq!(
+        account_after.data.len(),
+        account_before.data.len(),
+        "failed realloc must roll back the account size"
+    );
+    assert_eq!(
+        read_items(&svm, &pda),
+        items_before,
+        "failed realloc must preserve serialized data"
     );
 }

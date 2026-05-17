@@ -1019,7 +1019,11 @@ mod kani_proofs {
         let raw_len: usize = kani::any();
         kani::assume(capacity <= DATA_LEN_MAX);
         kani::assume(raw_len <= DATA_LEN_MAX);
-        let clamped_len = if raw_len < capacity { raw_len } else { capacity };
+        let clamped_len = if raw_len < capacity {
+            raw_len
+        } else {
+            capacity
+        };
         assert!(clamped_len <= capacity);
     }
 }

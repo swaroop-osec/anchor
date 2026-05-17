@@ -54,9 +54,7 @@ struct Vault {
 
 impl Discriminator for Vault {
     // sha256("account:Vault")[..8] = d308e82b02987577
-    const DISCRIMINATOR: &'static [u8] = &[
-        0xd3, 0x08, 0xe8, 0x2b, 0x02, 0x98, 0x75, 0x77,
-    ];
+    const DISCRIMINATOR: &'static [u8] = &[0xd3, 0x08, 0xe8, 0x2b, 0x02, 0x98, 0x75, 0x77];
 }
 
 #[test]

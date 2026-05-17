@@ -57,7 +57,6 @@ pub struct TokenAccount {
 unsafe impl Pod for TokenAccount {}
 unsafe impl Zeroable for TokenAccount {}
 
-
 // TokenAccount is defined by the SPL Token program, not by the user's program
 // — its layout is known to any SPL-aware client. Default `__IDL_TYPE = None`
 // keeps it out of the user's IDL `types[]` array (matches v1's
@@ -698,4 +697,3 @@ pub mod cpi {
         ctx.invoke(&[DISC_SYNC_NATIVE])
     }
 }
-

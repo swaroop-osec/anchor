@@ -22,6 +22,10 @@ pub mod borsh_realloc {
         ctx.accounts.data.items = new_items;
         Ok(())
     }
+
+    pub fn shrink_below_discriminator(_ctx: &mut Context<ShrinkBelowDiscriminator>) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -68,6 +72,22 @@ pub struct Shrink {
         seeds = [b"data"],
         bump,
         realloc = 8 + 4 + new_items.len(),
+        realloc_payer = payer,
+        realloc_zero = false,
+    )]
+    pub data: BorshAccount<DynData>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct ShrinkBelowDiscriminator {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        mut,
+        seeds = [b"data"],
+        bump,
+        realloc = 4,
         realloc_payer = payer,
         realloc_zero = false,
     )]

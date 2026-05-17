@@ -374,9 +374,7 @@ pub struct ToolchainConfig {
 /// that need to resolve a concrete package manager (when nothing is configured)
 /// should go through `crate::resolve_package_manager` so the waterfall
 /// (pnpm → yarn → npm) and missing-binary diagnostics are centralized.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Parser, ValueEnum, Serialize, Deserialize, AbsolutePath,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Parser, ValueEnum, Serialize, Deserialize, AbsolutePath)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageManager {
     /// Use npm as the package manager.

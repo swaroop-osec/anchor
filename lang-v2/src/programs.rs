@@ -3,6 +3,10 @@
 //! IDs are const-evaluated via `from_str_const` (base58 decoded at compile
 //! time). Each marker exposes `IDL_ADDRESS`, forwarded through `IdlAccountType::__IDL_ADDRESS`
 //! at emission time.
+//!
+//! The runtime ID returned by each marker is an `Address`, not a separate
+//! legacy key type, so callers can pass `Token::id()` directly into modern
+//! Solana instruction/account-meta builders.
 
 use {crate::Id, pinocchio::address::Address};
 

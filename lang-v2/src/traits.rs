@@ -190,6 +190,13 @@ pub trait Owner {
     fn owner(program_id: &Address) -> Address;
 }
 
+/// Declares the on-chain address for a program marker type.
+///
+/// `Address` is re-exported from `pinocchio`, which itself re-exports
+/// `solana_address::Address`. That means built-in markers such as
+/// `Token::id()` and `System::id()` can be passed directly to modern Solana
+/// instruction APIs that use `Address` or compatibility aliases named
+/// `Pubkey`.
 pub trait Id {
     fn id() -> Address;
     /// Well-known base58 program address for IDL emission. Empty string

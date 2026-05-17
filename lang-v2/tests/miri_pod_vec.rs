@@ -80,12 +80,8 @@ fn truncate_and_clear() {
 #[test]
 fn extend_then_pop_does_not_corrupt() {
     let mut v: PodVec<PodU64, 8> = PodVec::default();
-    v.try_extend_from_slice(&[
-        PodU64::from(1),
-        PodU64::from(2),
-        PodU64::from(3),
-    ])
-    .unwrap();
+    v.try_extend_from_slice(&[PodU64::from(1), PodU64::from(2), PodU64::from(3)])
+        .unwrap();
     // Extend beyond capacity fails atomically — state unchanged.
     let big: Vec<PodU64> = (0u64..6).map(PodU64::from).collect();
     assert!(v.try_extend_from_slice(&big).is_err());

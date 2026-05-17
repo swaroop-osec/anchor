@@ -69,9 +69,18 @@ fn all_labeled_variants() -> Vec<(&'static str, ErrorCode)> {
         ("ConstraintRaw", ErrorCode::ConstraintRaw),
         ("ConstraintExecutable", ErrorCode::ConstraintExecutable),
         ("ConstraintZero", ErrorCode::ConstraintZero),
-        ("InstructionDidNotDeserialize", ErrorCode::InstructionDidNotDeserialize),
-        ("DeclaredProgramIdMismatch", ErrorCode::DeclaredProgramIdMismatch),
-        ("InstructionFallbackNotFound", ErrorCode::InstructionFallbackNotFound),
+        (
+            "InstructionDidNotDeserialize",
+            ErrorCode::InstructionDidNotDeserialize,
+        ),
+        (
+            "DeclaredProgramIdMismatch",
+            ErrorCode::DeclaredProgramIdMismatch,
+        ),
+        (
+            "InstructionFallbackNotFound",
+            ErrorCode::InstructionFallbackNotFound,
+        ),
         ("RequireViolated", ErrorCode::RequireViolated),
         ("RequireEqViolated", ErrorCode::RequireEqViolated),
         ("RequireNeqViolated", ErrorCode::RequireNeqViolated),
@@ -79,7 +88,10 @@ fn all_labeled_variants() -> Vec<(&'static str, ErrorCode)> {
         ("RequireKeysNeqViolated", ErrorCode::RequireKeysNeqViolated),
         ("RequireGtViolated", ErrorCode::RequireGtViolated),
         ("RequireGteViolated", ErrorCode::RequireGteViolated),
-        ("ConstraintDuplicateMutableAccount", ErrorCode::ConstraintDuplicateMutableAccount),
+        (
+            "ConstraintDuplicateMutableAccount",
+            ErrorCode::ConstraintDuplicateMutableAccount,
+        ),
     ]
 }
 
@@ -124,7 +136,8 @@ fn custom_codes_are_in_reserved_ranges() {
                 in_constraints || in_requires,
                 "ErrorCode::{} maps to Custom({}), outside the documented \
                  ranges [2000-2499] (constraints) and [2500-2999] (require!)",
-                label, n
+                label,
+                n
             );
         }
     }
@@ -144,18 +157,58 @@ fn builtin_groupings_are_stable() {
         );
     }
 
-    check("AccountNotEnoughKeys", ErrorCode::AccountNotEnoughKeys.into(), NotEnoughAccountKeys);
-    check("ConstraintSigner", ErrorCode::ConstraintSigner.into(), MissingRequiredSignature);
-    check("ConstraintSeeds", ErrorCode::ConstraintSeeds.into(), InvalidSeeds);
-    check("ConstraintOwner", ErrorCode::ConstraintOwner.into(), IllegalOwner);
-    check("DeclaredProgramIdMismatch", ErrorCode::DeclaredProgramIdMismatch.into(), IncorrectProgramId);
+    check(
+        "AccountNotEnoughKeys",
+        ErrorCode::AccountNotEnoughKeys.into(),
+        NotEnoughAccountKeys,
+    );
+    check(
+        "ConstraintSigner",
+        ErrorCode::ConstraintSigner.into(),
+        MissingRequiredSignature,
+    );
+    check(
+        "ConstraintSeeds",
+        ErrorCode::ConstraintSeeds.into(),
+        InvalidSeeds,
+    );
+    check(
+        "ConstraintOwner",
+        ErrorCode::ConstraintOwner.into(),
+        IllegalOwner,
+    );
+    check(
+        "DeclaredProgramIdMismatch",
+        ErrorCode::DeclaredProgramIdMismatch.into(),
+        IncorrectProgramId,
+    );
 
     // Grouped under InvalidAccountData
-    check("ConstraintHasOne", ErrorCode::ConstraintHasOne.into(), InvalidAccountData);
-    check("ConstraintAddress", ErrorCode::ConstraintAddress.into(), InvalidAccountData);
-    check("ConstraintClose", ErrorCode::ConstraintClose.into(), InvalidAccountData);
+    check(
+        "ConstraintHasOne",
+        ErrorCode::ConstraintHasOne.into(),
+        InvalidAccountData,
+    );
+    check(
+        "ConstraintAddress",
+        ErrorCode::ConstraintAddress.into(),
+        InvalidAccountData,
+    );
+    check(
+        "ConstraintClose",
+        ErrorCode::ConstraintClose.into(),
+        InvalidAccountData,
+    );
 
     // Grouped under InvalidInstructionData
-    check("InstructionDidNotDeserialize", ErrorCode::InstructionDidNotDeserialize.into(), InvalidInstructionData);
-    check("InstructionFallbackNotFound", ErrorCode::InstructionFallbackNotFound.into(), InvalidInstructionData);
+    check(
+        "InstructionDidNotDeserialize",
+        ErrorCode::InstructionDidNotDeserialize.into(),
+        InvalidInstructionData,
+    );
+    check(
+        "InstructionFallbackNotFound",
+        ErrorCode::InstructionFallbackNotFound.into(),
+        InvalidInstructionData,
+    );
 }

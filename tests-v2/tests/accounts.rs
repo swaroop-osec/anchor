@@ -2,7 +2,11 @@
 //! SystemAccount, UncheckedAccount.
 
 use {
-    anchor_lang_v2::solana_program::instruction::{AccountMeta, Instruction},
+    anchor_lang_v2::{
+        programs::{Token, Token2022},
+        solana_program::instruction::{AccountMeta, Instruction},
+        Id,
+    },
     litesvm::{types::TransactionResult, LiteSVM},
     solana_keypair::Keypair,
     solana_message::{Message, VersionedMessage},
@@ -219,6 +223,42 @@ fn call_raw(
     svm.send_transaction(tx)
 }
 
+fn assert_single_account_instruction_rejects(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    disc: u8,
+    account: Pubkey,
+    reason: &str,
+) {
+    let result = call_raw(
+        svm,
+        payer,
+        disc,
+        vec![AccountMeta::new_readonly(account, false)],
+    );
+    assert!(result.is_err(), "{reason}");
+}
+
+fn assert_program_marker_rejects_wrong_pubkey(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    disc: u8,
+    wrong_program: Pubkey,
+    marker_name: &str,
+) {
+    let result = call_raw(
+        svm,
+        payer,
+        disc,
+        vec![AccountMeta::new_readonly(wrong_program, false)],
+    );
+    let err = format!("{:?}", result.unwrap_err().err);
+    assert!(
+        err.contains("IncorrectProgramId") || err.contains("Custom("),
+        "Program<{marker_name}> must reject wrong pubkey {wrong_program}, got: {err}"
+    );
+}
+
 // ---- Sysvar field assertions -----------------------------------------------
 
 #[test]
@@ -297,9 +337,13 @@ fn read_clock_rejects_wrong_sysvar_with_specific_error() {
 fn read_rent_rejects_wrong_sysvar() {
     let (mut svm, payer) = setup();
     // Pass clock sysvar to rent handler
-    let metas = vec![AccountMeta::new_readonly(clock_sysvar_id(), false)];
-    let result = call_raw(&mut svm, &payer, 6, metas);
-    assert!(result.is_err(), "wrong sysvar should be rejected for rent");
+    assert_single_account_instruction_rejects(
+        &mut svm,
+        &payer,
+        6,
+        clock_sysvar_id(),
+        "wrong sysvar should be rejected for rent",
+    );
 }
 
 // ---- Box<Account<T>> -------------------------------------------------------
@@ -445,6 +489,50 @@ fn check_system_accepts_unfunded_system_account() {
         .expect("unfunded system account should be accepted");
 }
 
+// ---- Program<T> builtin markers -------------------------------------------
+
+#[test]
+fn program_system_rejects_wrong_pubkey() {
+    let (mut svm, payer) = setup();
+    assert_program_marker_rejects_wrong_pubkey(&mut svm, &payer, 9, Token::id(), "System");
+}
+
+#[test]
+fn program_token_rejects_wrong_pubkey() {
+    let (mut svm, payer) = setup();
+    assert_program_marker_rejects_wrong_pubkey(&mut svm, &payer, 10, Token2022::id(), "Token");
+}
+
+#[test]
+fn program_token_2022_rejects_wrong_pubkey() {
+    let (mut svm, payer) = setup();
+    assert_program_marker_rejects_wrong_pubkey(&mut svm, &payer, 11, Token::id(), "Token2022");
+}
+
+#[test]
+fn program_associated_token_rejects_wrong_pubkey() {
+    let (mut svm, payer) = setup();
+    assert_program_marker_rejects_wrong_pubkey(
+        &mut svm,
+        &payer,
+        12,
+        solana_sdk_ids::system_program::ID,
+        "AssociatedToken",
+    );
+}
+
+#[test]
+fn program_memo_rejects_wrong_pubkey() {
+    let (mut svm, payer) = setup();
+    assert_program_marker_rejects_wrong_pubkey(
+        &mut svm,
+        &payer,
+        13,
+        solana_sdk_ids::system_program::ID,
+        "Memo",
+    );
+}
+
 // ---- Counter init ----------------------------------------------------------
 
 #[test]
@@ -490,5 +578,129 @@ fn initialize_rejects_double_init() {
     assert!(
         result.is_err(),
         "double init on same PDA should be rejected"
+    );
+}
+
+#[test]
+fn initialize_rejects_wrong_pda() {
+    let (mut svm, payer) = setup();
+    let wrong = Pubkey::new_unique();
+
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(wrong, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    let result = call_raw(&mut svm, &payer, 0, metas);
+    assert!(result.is_err(), "init must reject a non-canonical PDA");
+    assert!(
+        svm.get_account(&wrong).is_none(),
+        "wrong PDA must not be created on failed init"
+    );
+}
+
+#[test]
+fn initialize_rejects_wrong_system_program_pubkey() {
+    let (mut svm, payer) = setup();
+    let counter = counter_pda();
+
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(counter, false),
+        AccountMeta::new_readonly(Token::id(), false),
+    ];
+    let result = call_raw(&mut svm, &payer, 0, metas);
+    assert!(
+        result.is_err(),
+        "init must reject a non-System program pubkey"
+    );
+    assert!(
+        svm.get_account(&counter).is_none(),
+        "failed init must not create the PDA"
+    );
+}
+
+#[test]
+fn initialize_boxed_rejects_wrong_system_program_pubkey() {
+    let (mut svm, payer) = setup();
+    let counter = boxed_counter_pda();
+
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(counter, false),
+        AccountMeta::new_readonly(Token::id(), false),
+    ];
+    let result = call_raw(&mut svm, &payer, 3, metas);
+    assert!(
+        result.is_err(),
+        "boxed init must reject a non-System program pubkey"
+    );
+    assert!(
+        svm.get_account(&counter).is_none(),
+        "failed boxed init must not create the PDA"
+    );
+}
+
+#[test]
+fn read_boxed_rejects_wrong_seed_pda() {
+    let (mut svm, payer) = setup();
+    let counter = do_initialize(&mut svm, &payer);
+
+    // `read_boxed` expects the boxed-counter PDA, not the regular counter PDA.
+    let metas = vec![AccountMeta::new_readonly(counter, false)];
+    let result = call_raw(&mut svm, &payer, 2, metas);
+    assert!(
+        result.is_err(),
+        "Box<Account<Counter>> with seeds must reject the wrong PDA"
+    );
+}
+
+#[test]
+fn read_boxed_rejects_wrong_discriminator() {
+    let (mut svm, payer) = setup();
+    let counter = do_initialize_boxed(&mut svm, &payer);
+    let mut account = svm.get_account(&counter).expect("boxed counter exists");
+    account.data[0] ^= 0xff;
+    svm.set_account(counter, account).unwrap();
+
+    let metas = vec![AccountMeta::new_readonly(counter, false)];
+    let result = call_raw(&mut svm, &payer, 2, metas);
+    assert!(
+        result.is_err(),
+        "Box<Account<Counter>> load must reject discriminator mismatch"
+    );
+}
+
+#[test]
+fn close_boxed_rejects_non_system_receiver_and_preserves_accounts() {
+    let (mut svm, payer) = setup();
+    let boxed = do_initialize_boxed(&mut svm, &payer);
+    let receiver = do_initialize(&mut svm, &payer);
+    let boxed_before = svm.get_account(&boxed).expect("boxed counter exists");
+    let receiver_before = svm.get_account(&receiver).expect("receiver counter exists");
+
+    let metas = vec![
+        AccountMeta::new(boxed, false),
+        AccountMeta::new(receiver, false),
+    ];
+    let result = call_raw(&mut svm, &payer, 4, metas);
+    assert!(
+        result.is_err(),
+        "close receiver is SystemAccount and must reject program-owned accounts"
+    );
+
+    let boxed_after = svm
+        .get_account(&boxed)
+        .expect("boxed counter should remain");
+    let receiver_after = svm
+        .get_account(&receiver)
+        .expect("receiver counter should remain");
+    assert_eq!(
+        boxed_after.lamports, boxed_before.lamports,
+        "failed close must preserve boxed counter lamports"
+    );
+    assert_eq!(
+        receiver_after.lamports, receiver_before.lamports,
+        "failed close must not credit the invalid receiver"
     );
 }

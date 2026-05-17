@@ -77,5 +77,8 @@ fn wrong_size_rejects_cast() {
     let result = std::panic::catch_unwind(|| {
         let _: &TokenAccount = bytemuck::from_bytes(&src);
     });
-    assert!(result.is_err(), "bytemuck::from_bytes should reject mismatched size");
+    assert!(
+        result.is_err(),
+        "bytemuck::from_bytes should reject mismatched size"
+    );
 }

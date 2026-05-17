@@ -97,8 +97,8 @@ fn len_greater_than_max_bytemuck_path() {
     // `len` prefix claims 99. Layout: [len_lo=99][len_hi=0][data ... 32 bytes].
     let mut bytes = [0u8; 2 + 8 * 4];
     bytes[0] = 99; // len = 99, but MAX = 4
-    // Reading .len() should return 99 — that's what the raw bytes say.
-    // Downstream slice access is where the bug lands.
+                   // Reading .len() should return 99 — that's what the raw bytes say.
+                   // Downstream slice access is where the bug lands.
     let v: &PodVec<PodU64, 4> = bytemuck::from_bytes(&bytes);
     assert_eq!(v.len(), 99);
     // `as_slice()` does `&self.data[..self.len()]` — with len=99 and

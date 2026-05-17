@@ -150,6 +150,12 @@ pub use idl_build::IdlAccountType;
 /// Re-exported from `solana-instruction` so tests and CPI builders can pass
 /// the output of `to_account_metas()` straight into `solana_instruction::
 /// Instruction::new_with_bytes` without a manual field rename.
+///
+/// `AccountMeta` itself comes from `solana-instruction`, whose account key
+/// field is named `solana_pubkey::Pubkey`. In current Solana crates that
+/// `Pubkey` is a re-export of `solana_address::Address`, so built-in program
+/// marker IDs such as `Token::id()` already return the same address type and
+/// do not need a byte-level conversion.
 pub use solana_instruction::account_meta::AccountMeta;
 pub use {
     accounts::{AccountInitialize, SlabInit},
