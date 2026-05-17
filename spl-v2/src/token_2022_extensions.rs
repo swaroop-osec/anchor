@@ -94,6 +94,8 @@ impl<'a> ToCpiAccounts<'a> for GroupPointerUpdate<'a> {
     fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
         vec![
             InstructionAccount::writable(self.mint.address()),
+            // TODO: Investigate whether v2 should keep mirroring v1's odd
+            // single-authority-as-multisig account shape here.
             InstructionAccount::new(self.authority.address(), false, false),
             InstructionAccount::readonly_signer(self.authority.address()),
         ]
@@ -1197,6 +1199,10 @@ pub mod cpi_guard {
     pub use super::{cpi_guard_disable, cpi_guard_enable, CpiGuard};
 }
 
+pub mod confidential_transfer {}
+
+pub mod confidential_transfer_fee {}
+
 pub mod default_account_state {
     pub use super::{
         default_account_state_initialize, default_account_state_update,
@@ -1288,6 +1294,8 @@ pub mod transfer_hook {
         transfer_hook_initialize, transfer_hook_update, TransferHookInitialize, TransferHookUpdate,
     };
 }
+
+pub use {spl_pod, spl_token_metadata_interface};
 
 #[cfg(test)]
 mod tests {
