@@ -4,8 +4,8 @@ extern crate alloc;
 
 use {
     alloc::{vec, vec::Vec},
-    anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
-    pinocchio::instruction::InstructionAccount,
+    anchor_lang_v2::{programs::Token2022, CpiContext, CpiHandle, Id, ToCpiAccounts},
+    pinocchio::{address::Address, instruction::InstructionAccount},
 };
 
 /// Token-2022 account extension types used by `reallocate`.
@@ -140,6 +140,13 @@ const DISC_CREATE_NATIVE_MINT: u8 = 31;
 const DISC_INITIALIZE_NON_TRANSFERABLE_MINT: u8 = 32;
 const DISC_WITHDRAW_EXCESS_LAMPORTS: u8 = 38;
 
+fn assert_token_2022_program(program: &Address) {
+    assert!(
+        *program == Token2022::id(),
+        "incorrect Token-2022 program id"
+    );
+}
+
 fn encode_reallocate_ix(extension_types: &[ExtensionType]) -> Vec<u8> {
     let mut data = Vec::with_capacity(1 + extension_types.len() * 2);
     data.push(DISC_REALLOCATE);
@@ -150,19 +157,47 @@ fn encode_reallocate_ix(extension_types: &[ExtensionType]) -> Vec<u8> {
 }
 
 pub fn create_native_mint<'a>(ctx: CpiContext<'a, CreateNativeMint<'a>>) {
+    assert_token_2022_program(ctx.program);
     ctx.invoke(&[DISC_CREATE_NATIVE_MINT]);
 }
 
 pub fn initialize_non_transferable_mint<'a>(
     ctx: CpiContext<'a, InitializeNonTransferableMint<'a>>,
 ) {
+    assert_token_2022_program(ctx.program);
     ctx.invoke(&[DISC_INITIALIZE_NON_TRANSFERABLE_MINT]);
 }
 
 pub fn reallocate<'a>(ctx: CpiContext<'a, Reallocate<'a>>, extension_types: &[ExtensionType]) {
+    assert_token_2022_program(ctx.program);
     ctx.invoke(&encode_reallocate_ix(extension_types));
 }
 
 pub fn withdraw_excess_lamports<'a>(ctx: CpiContext<'a, WithdrawExcessLamports<'a>>) {
+    assert_token_2022_program(ctx.program);
     ctx.invoke(&[DISC_WITHDRAW_EXCESS_LAMPORTS]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_2022_program_check_accepts_canonical_id() {
+        assert_token_2022_program(&Token2022::id());
+    }
+
+    #[test]
+    #[should_panic(expected = "incorrect Token-2022 program id")]
+    fn token_2022_program_check_rejects_other_programs() {
+        assert_token_2022_program(&Address::new_from_array([1; 32]));
+    }
+
+    #[test]
+    fn reallocate_encoder_matches_v1_extension_discriminants() {
+        assert_eq!(
+            encode_reallocate_ix(&[ExtensionType::GroupPointer, ExtensionType::PausableAccount,]),
+            vec![DISC_REALLOCATE, 20, 0, 27, 0]
+        );
+    }
 }

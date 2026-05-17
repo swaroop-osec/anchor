@@ -2312,7 +2312,7 @@ fn zero_sized_marker_extensions_reject_when_marker_missing() {
 }
 
 #[test]
-fn cpi_guard_enable_helper_passes_explicit_owner_account() {
+fn cpi_guard_enable_helper_rejects_non_token_2022_program() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("spy-cg-mint-auth");
     let owner = keypair_for("spy-cg-owner");
@@ -2335,12 +2335,15 @@ fn cpi_guard_enable_helper_passes_explicit_owner_account() {
         AccountMeta::new_readonly(owner.pubkey(), true),
         AccountMeta::new_readonly(spy_program_id(), false),
     ];
-    send_instruction(&mut svm, program_id(), vec![40], metas, &payer, &[&owner])
-        .expect("CPI guard helper should pass the explicit owner signer account");
+    let result = send_instruction(&mut svm, program_id(), vec![40], metas, &payer, &[&owner]);
+    assert!(
+        result.is_err(),
+        "CPI guard helper should reject non-Token-2022 program ids before CPI"
+    );
 }
 
 #[test]
-fn group_pointer_update_helper_includes_authority_account() {
+fn group_pointer_update_helper_rejects_non_token_2022_program() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("spy-gp-mint-auth");
     let authority = keypair_for("spy-gp-authority");
@@ -2365,12 +2368,15 @@ fn group_pointer_update_helper_includes_authority_account() {
         AccountMeta::new_readonly(authority.pubkey(), true),
         AccountMeta::new_readonly(spy_program_id(), false),
     ];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[&authority])
-        .expect("group pointer update helper should pass the authority signer account");
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[&authority]);
+    assert!(
+        result.is_err(),
+        "group pointer update helper should reject non-Token-2022 program ids before CPI"
+    );
 }
 
 #[test]
-fn group_member_pointer_update_helper_includes_authority_account() {
+fn group_member_pointer_update_helper_rejects_non_token_2022_program() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("spy-gmp-mint-auth");
     let authority = keypair_for("spy-gmp-authority");
@@ -2395,12 +2401,15 @@ fn group_member_pointer_update_helper_includes_authority_account() {
         AccountMeta::new_readonly(authority.pubkey(), true),
         AccountMeta::new_readonly(spy_program_id(), false),
     ];
-    send_instruction(&mut svm, program_id(), data, metas, &payer, &[&authority])
-        .expect("group member pointer update helper should pass the authority signer account");
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[&authority]);
+    assert!(
+        result.is_err(),
+        "group member pointer update helper should reject non-Token-2022 program ids before CPI"
+    );
 }
 
 #[test]
-fn reallocate_helper_encodes_account_extension_type() {
+fn reallocate_helper_rejects_non_token_2022_program() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("spy-realloc-mint-auth");
     let owner = keypair_for("spy-realloc-owner");
@@ -2420,13 +2429,16 @@ fn reallocate_helper_encodes_account_extension_type() {
         AccountMeta::new_readonly(mint_authority.pubkey(), true),
         AccountMeta::new_readonly(spy_program_id(), false),
     ];
-    send_instruction(
+    let result = send_instruction(
         &mut svm,
         program_id(),
         vec![43],
         metas,
         &payer,
         &[&mint_authority],
-    )
-    .expect("reallocate helper should encode GroupPointer as account extension type 20");
+    );
+    assert!(
+        result.is_err(),
+        "reallocate helper should reject non-Token-2022 program ids before CPI"
+    );
 }
