@@ -888,19 +888,19 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     //
     // Emits a sibling `__cpi_accounts_<name>` module containing a struct of
     // `CpiHandle<'a>` fields and a `ToCpiAccounts<'a>` impl driven by each
-    // field's compile-time writable / signer flags. Skipped when the
-    // Accounts struct contains `Option<_>` or `Nested<_>` fields — those
-    // shapes need bespoke flattening / fallback logic that this initial
-    // codegen pass does not yet handle. The `#[program]` macro re-exports
-    // the resulting type under `cpi::accounts::<name>` and synthesizes the
-    // per-instruction wrapper functions.
+    // field's compile-time writable / signer flags. `Nested<T>` fields hold
+    // T's generated CPI accounts struct and flatten through `ToCpiAccounts`,
+    // matching the account ordering used by `TryAccounts`. Skipped when the
+    // Accounts struct contains `Option<_>` fields — those need sentinel
+    // fallback logic that this codegen pass does not yet handle. The
+    // `#[program]` macro re-exports the resulting type under
+    // `cpi::accounts::<name>` and synthesizes the per-instruction wrapper
+    // functions.
     let cpi_mod_name = syn::Ident::new(
         &format!("__cpi_accounts_{}", name.to_string().to_lowercase()),
         name.span(),
     );
-    let cpi_unsupported = fields
-        .iter()
-        .any(|f| f.is_optional || parse::is_nested_type(&f.ty));
+    let cpi_unsupported = fields.iter().any(|f| f.is_optional);
     let cpi_accounts_mod = if cpi_unsupported {
         quote! {}
     } else {
@@ -908,13 +908,32 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             .iter()
             .map(|f| {
                 let n = &f.name;
-                quote! { pub #n: anchor_lang_v2::CpiHandle<'a> }
+                if parse::is_nested_type(&f.ty) {
+                    let inner_ty = parse::extract_nested_inner_type(&f.ty)
+                        .expect("is_nested_type was true but extract_nested_inner_type returned None");
+                    let inner_name = parse::field_ty_str(inner_ty);
+                    let inner_ident = syn::Ident::new(&inner_name, n.span());
+                    let inner_mod = syn::Ident::new(
+                        &format!("__cpi_accounts_{}", inner_name.to_lowercase()),
+                        n.span(),
+                    );
+                    quote! { pub #n: super::#inner_mod::#inner_ident<'a> }
+                } else {
+                    quote! { pub #n: anchor_lang_v2::CpiHandle<'a> }
+                }
             })
             .collect();
-        let cpi_meta_entries: Vec<_> = fields
+        let cpi_meta_steps: Vec<_> = fields
             .iter()
             .map(|f| {
                 let n = &f.name;
+                if parse::is_nested_type(&f.ty) {
+                    return quote! {
+                        __accounts.extend(
+                            anchor_lang_v2::ToCpiAccounts::to_instruction_accounts(&self.#n),
+                        );
+                    };
+                }
                 let writable = f.idl_writable;
                 let is_signer_ty = parse::field_ty_str(&f.ty) == "Signer" || f.idl_init_signer;
                 let ctor = match (writable, is_signer_ty) {
@@ -924,17 +943,25 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                     (false, false) => quote! { readonly },
                 };
                 quote! {
-                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::#ctor(
-                        self.#n.address(),
-                    )
+                    __accounts.push(
+                        anchor_lang_v2::pinocchio::instruction::InstructionAccount::#ctor(
+                            self.#n.address(),
+                        ),
+                    );
                 }
             })
             .collect();
-        let cpi_handle_entries: Vec<_> = fields
+        let cpi_handle_steps: Vec<_> = fields
             .iter()
             .map(|f| {
                 let n = &f.name;
-                quote! { self.#n }
+                if parse::is_nested_type(&f.ty) {
+                    quote! {
+                        __handles.extend(anchor_lang_v2::ToCpiAccounts::to_cpi_handles(&self.#n));
+                    }
+                } else {
+                    quote! { __handles.push(self.#n); }
+                }
             })
             .collect();
         // An empty Accounts struct would otherwise emit `pub struct Foo<'a> {}`,
@@ -980,12 +1007,16 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                     ) -> alloc::vec::Vec<
                         anchor_lang_v2::pinocchio::instruction::InstructionAccount<'a>,
                     > {
-                        alloc::vec![#(#cpi_meta_entries),*]
+                        let mut __accounts = alloc::vec::Vec::new();
+                        #(#cpi_meta_steps)*
+                        __accounts
                     }
                     fn to_cpi_handles(
                         &self,
                     ) -> alloc::vec::Vec<anchor_lang_v2::CpiHandle<'a>> {
-                        alloc::vec![#(#cpi_handle_entries),*]
+                        let mut __handles = alloc::vec::Vec::new();
+                        #(#cpi_handle_steps)*
+                        __handles
                     }
                 }
             }
