@@ -11,6 +11,7 @@ use {
 
 const EXT_CPI_GUARD: u8 = 34;
 const EXT_GROUP_POINTER: u8 = 40;
+const EXT_GROUP_MEMBER_POINTER: u8 = 41;
 const EXT_PAUSABLE: u8 = 44;
 
 const DISC_INITIALIZE: u8 = 0;
@@ -58,6 +59,38 @@ pub struct GroupPointerUpdate<'a> {
 }
 
 impl<'a> ToCpiAccounts<'a> for GroupPointerUpdate<'a> {
+    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
+        vec![
+            InstructionAccount::writable(self.mint.address()),
+            InstructionAccount::readonly_signer(self.authority.address()),
+        ]
+    }
+
+    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
+        vec![self.mint, self.authority]
+    }
+}
+
+pub struct GroupMemberPointerInitialize<'a> {
+    pub mint: CpiHandle<'a>,
+}
+
+impl<'a> ToCpiAccounts<'a> for GroupMemberPointerInitialize<'a> {
+    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
+        vec![InstructionAccount::writable(self.mint.address())]
+    }
+
+    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
+        vec![self.mint]
+    }
+}
+
+pub struct GroupMemberPointerUpdate<'a> {
+    pub mint: CpiHandle<'a>,
+    pub authority: CpiHandle<'a>,
+}
+
+impl<'a> ToCpiAccounts<'a> for GroupMemberPointerUpdate<'a> {
     fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
         vec![
             InstructionAccount::writable(self.mint.address()),
@@ -148,6 +181,26 @@ fn encode_group_pointer_update(group_address: Option<&Address>) -> [u8; 34] {
     data
 }
 
+fn encode_group_member_pointer_initialize(
+    authority: Option<&Address>,
+    member_address: Option<&Address>,
+) -> [u8; 66] {
+    let mut data = [0u8; 66];
+    data[0] = EXT_GROUP_MEMBER_POINTER;
+    data[1] = DISC_INITIALIZE;
+    data[2..34].copy_from_slice(&encode_optional_address(authority));
+    data[34..66].copy_from_slice(&encode_optional_address(member_address));
+    data
+}
+
+fn encode_group_member_pointer_update(member_address: Option<&Address>) -> [u8; 34] {
+    let mut data = [0u8; 34];
+    data[0] = EXT_GROUP_MEMBER_POINTER;
+    data[1] = DISC_UPDATE;
+    data[2..34].copy_from_slice(&encode_optional_address(member_address));
+    data
+}
+
 fn encode_pausable_initialize(authority: &Address) -> [u8; 34] {
     let mut data = [0u8; 34];
     data[0] = EXT_PAUSABLE;
@@ -194,6 +247,24 @@ pub fn group_pointer_update<'a>(
     ctx.invoke(&encode_group_pointer_update(group_address));
 }
 
+pub fn group_member_pointer_initialize<'a>(
+    ctx: CpiContext<'a, GroupMemberPointerInitialize<'a>>,
+    authority: Option<&Address>,
+    member_address: Option<&Address>,
+) {
+    ctx.invoke(&encode_group_member_pointer_initialize(
+        authority,
+        member_address,
+    ));
+}
+
+pub fn group_member_pointer_update<'a>(
+    ctx: CpiContext<'a, GroupMemberPointerUpdate<'a>>,
+    member_address: Option<&Address>,
+) {
+    ctx.invoke(&encode_group_member_pointer_update(member_address));
+}
+
 pub fn pausable_initialize<'a>(ctx: CpiContext<'a, PausableInitialize<'a>>, authority: &Address) {
     ctx.invoke(&encode_pausable_initialize(authority));
 }
@@ -217,15 +288,58 @@ pub fn token_metadata_remove_key<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use {
+        alloc::string::ToString,
+        anchor_lang_v2::{
+            accounts::UncheckedAccount,
+            testing::{AccountBuffer, MIN_ACCOUNT_BUF},
+            AnchorAccount,
+        },
+        spl_discriminator::SplDiscriminate,
+        spl_token_metadata_interface::instruction::{RemoveKey, TokenMetadataInstruction},
+    };
 
     fn address(byte: u8) -> Address {
         Address::new_from_array([byte; 32])
+    }
+
+    fn unchecked_account<const N: usize>(
+        buffer: &AccountBuffer<N>,
+        address: u8,
+        is_signer: bool,
+        is_writable: bool,
+    ) -> UncheckedAccount {
+        buffer.init([address; 32], [250; 32], 0, is_signer, is_writable, false);
+        UncheckedAccount::load(unsafe { buffer.view() }, &Address::new_from_array([0; 32])).unwrap()
     }
 
     #[test]
     fn cpi_guard_encoding_matches_token_2022() {
         assert_eq!([EXT_CPI_GUARD, DISC_INITIALIZE], [34, 0]);
         assert_eq!([EXT_CPI_GUARD, DISC_UPDATE], [34, 1]);
+    }
+
+    #[test]
+    fn cpi_guard_account_metas_use_owner_account_as_signer() {
+        let account_buf = AccountBuffer::<MIN_ACCOUNT_BUF>::new();
+        let owner_buf = AccountBuffer::<MIN_ACCOUNT_BUF>::new();
+        let mut account = unchecked_account(&account_buf, 1, false, true);
+        let owner = unchecked_account(&owner_buf, 2, true, false);
+        let account_address = *account.address();
+        let owner_address = *owner.address();
+
+        let accounts = CpiGuard {
+            account: account.cpi_handle_mut(),
+            owner: owner.cpi_handle(),
+        };
+        let metas = accounts.to_instruction_accounts();
+        assert_eq!(metas.len(), 2);
+        assert_eq!(*metas[0].address, account_address);
+        assert!(metas[0].is_writable);
+        assert!(!metas[0].is_signer);
+        assert_eq!(*metas[1].address, owner_address);
+        assert!(!metas[1].is_writable);
+        assert!(metas[1].is_signer);
     }
 
     #[test]
@@ -251,6 +365,66 @@ mod tests {
     }
 
     #[test]
+    fn group_pointer_update_includes_authority_handle() {
+        let mint_buf = AccountBuffer::<MIN_ACCOUNT_BUF>::new();
+        let authority_buf = AccountBuffer::<MIN_ACCOUNT_BUF>::new();
+        let mut mint = unchecked_account(&mint_buf, 3, false, true);
+        let authority = unchecked_account(&authority_buf, 4, true, false);
+        let authority_address = *authority.address();
+
+        let accounts = GroupPointerUpdate {
+            mint: mint.cpi_handle_mut(),
+            authority: authority.cpi_handle(),
+        };
+        let metas = accounts.to_instruction_accounts();
+        assert_eq!(metas.len(), 2);
+        assert_eq!(*metas[1].address, authority_address);
+        assert!(metas[1].is_signer);
+        assert_eq!(accounts.to_cpi_handles().len(), 2);
+    }
+
+    #[test]
+    fn group_member_pointer_initialize_encoding_matches_token_2022() {
+        let authority = address(5);
+        let member = address(6);
+        let data = encode_group_member_pointer_initialize(Some(&authority), Some(&member));
+        assert_eq!(&data[..2], &[41, 0]);
+        assert_eq!(&data[2..34], authority.as_ref());
+        assert_eq!(&data[34..66], member.as_ref());
+
+        let data = encode_group_member_pointer_initialize(None, None);
+        assert_eq!(&data[..2], &[41, 0]);
+        assert_eq!(&data[2..66], &[0u8; 64]);
+    }
+
+    #[test]
+    fn group_member_pointer_update_encoding_matches_token_2022() {
+        let member = address(7);
+        let data = encode_group_member_pointer_update(Some(&member));
+        assert_eq!(&data[..2], &[41, 1]);
+        assert_eq!(&data[2..34], member.as_ref());
+    }
+
+    #[test]
+    fn group_member_pointer_update_includes_authority_handle() {
+        let mint_buf = AccountBuffer::<MIN_ACCOUNT_BUF>::new();
+        let authority_buf = AccountBuffer::<MIN_ACCOUNT_BUF>::new();
+        let mut mint = unchecked_account(&mint_buf, 8, false, true);
+        let authority = unchecked_account(&authority_buf, 9, true, false);
+        let authority_address = *authority.address();
+
+        let accounts = GroupMemberPointerUpdate {
+            mint: mint.cpi_handle_mut(),
+            authority: authority.cpi_handle(),
+        };
+        let metas = accounts.to_instruction_accounts();
+        assert_eq!(metas.len(), 2);
+        assert_eq!(*metas[1].address, authority_address);
+        assert!(metas[1].is_signer);
+        assert_eq!(accounts.to_cpi_handles().len(), 2);
+    }
+
+    #[test]
     fn pausable_encoding_matches_token_2022() {
         let authority = address(4);
         let data = encode_pausable_initialize(&authority);
@@ -263,15 +437,12 @@ mod tests {
     #[test]
     fn token_metadata_remove_key_encoding_matches_interface() {
         let data = encode_token_metadata_remove_key("royalty_basis_points", true);
-        assert_eq!(
-            &data[..8],
-            &[0xea, 0x12, 0x20, 0x38, 0x59, 0x8d, 0x25, 0xb5]
-        );
-        assert_eq!(data[8], 1);
-        assert_eq!(
-            u32::from_le_bytes(data[9..13].try_into().unwrap()),
-            "royalty_basis_points".len() as u32
-        );
-        assert_eq!(&data[13..], b"royalty_basis_points");
+        let expected = TokenMetadataInstruction::RemoveKey(RemoveKey {
+            idempotent: true,
+            key: "royalty_basis_points".to_string(),
+        })
+        .pack();
+        assert_eq!(RemoveKey::SPL_DISCRIMINATOR_SLICE, &data[..8]);
+        assert_eq!(data, expected);
     }
 }

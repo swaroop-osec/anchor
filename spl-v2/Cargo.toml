@@ -18,9 +18,12 @@ solana-address = { version = "2.0", features = ["bytemuck"] }
 solana-program-error = "3.0"
 
 [dev-dependencies]
+anchor-lang-v2 = { path = "../lang-v2", version = "2.0.0", features = ["testing"] }
 # Cross-checks `Mint` / `TokenAccount` layout against the canonical
 # `spl-token-interface` types (see `tests/miri_spl_pod.rs`). Dev-only.
 spl-token-interface = "2"
+spl-token-metadata-interface = "0.8"
+spl-discriminator = "0.5"
 solana-program-pack = "3"
 
 [lints.rust.unexpected_cfgs]
