@@ -18,7 +18,9 @@ pub mod token_interface;
 /// Re-export `pinocchio-token-2022` for Token-2022 extension CPI instructions.
 pub use pinocchio_token_2022 as token_2022_cpi;
 pub use {
-    associated_token::get_associated_token_address,
+    associated_token::{
+        get_associated_token_address, get_associated_token_address_with_program_id,
+    },
     mint::{Mint, MintInitParams},
     token::{TokenAccount, TokenAccountInitParams},
     token_interface::{Interface, InterfaceAccount},

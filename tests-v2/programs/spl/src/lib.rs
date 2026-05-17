@@ -102,7 +102,7 @@ pub mod spl_test {
     #[discrim = 6]
     pub fn do_approve(ctx: &mut Context<DoApprove>, amount: u64) -> Result<()> {
         let accs = token::Approve {
-            source: ctx.accounts.source.cpi_handle_mut(),
+            to: ctx.accounts.source.cpi_handle_mut(),
             delegate: ctx.accounts.delegate.cpi_handle(),
             authority: ctx.accounts.authority.cpi_handle(),
         };
@@ -207,7 +207,6 @@ pub mod spl_test {
         let expected = get_associated_token_address(
             ctx.accounts.authority.account().address(),
             ctx.accounts.mint.account().address(),
-            &anchor_lang_v2::programs::Token::id(),
         );
         if *ctx.accounts.vault.account().address() != expected {
             return Err(ProgramError::InvalidAccountData.into());

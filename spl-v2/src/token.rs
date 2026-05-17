@@ -9,13 +9,18 @@ use {
     alloc::{vec, vec::Vec},
     anchor_lang_v2::{
         accounts::{Account, SlabInit, SlabSchema},
-        programs::Token,
         AccountConstraint, CpiContext, CpiHandle, Id, ToCpiAccounts,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::{account::AccountView, instruction::InstructionAccount},
     solana_address::Address,
     solana_program_error::ProgramError,
+};
+
+pub use {
+    crate::mint::Mint,
+    anchor_lang_v2::programs::Token,
+    spl_token_interface::{self as spl_token, ID},
 };
 
 /// Create a Token-program-owned account, handling PDA signing if needed.
@@ -128,6 +133,8 @@ impl SlabInit for TokenAccount {
 }
 
 impl TokenAccount {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+
     /// The mint associated with this token account.
     pub fn mint(&self) -> &Address {
         &self.mint
@@ -266,6 +273,79 @@ impl AccountConstraint<Account<TokenAccount>> for TokenProgramConstraint {
 pub mod accounts {
     use super::*;
 
+    pub struct InitializeAccount<'a> {
+        pub account: CpiHandle<'a>,
+        pub mint: CpiHandle<'a>,
+        pub authority: CpiHandle<'a>,
+        pub rent: CpiHandle<'a>,
+    }
+
+    impl<'a> ToCpiAccounts<'a> for InitializeAccount<'a> {
+        fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
+            vec![
+                InstructionAccount::writable(self.account.address()),
+                InstructionAccount::new(self.mint.address(), false, false),
+                InstructionAccount::new(self.authority.address(), false, false),
+                InstructionAccount::new(self.rent.address(), false, false),
+            ]
+        }
+
+        fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
+            vec![self.account, self.mint, self.authority, self.rent]
+        }
+    }
+
+    pub struct InitializeAccount3<'a> {
+        pub account: CpiHandle<'a>,
+        pub mint: CpiHandle<'a>,
+        pub authority: CpiHandle<'a>,
+    }
+
+    impl<'a> ToCpiAccounts<'a> for InitializeAccount3<'a> {
+        fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
+            vec![
+                InstructionAccount::writable(self.account.address()),
+                InstructionAccount::new(self.mint.address(), false, false),
+            ]
+        }
+
+        fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
+            vec![self.account, self.mint]
+        }
+    }
+
+    pub struct InitializeMint<'a> {
+        pub mint: CpiHandle<'a>,
+        pub rent: CpiHandle<'a>,
+    }
+
+    impl<'a> ToCpiAccounts<'a> for InitializeMint<'a> {
+        fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
+            vec![
+                InstructionAccount::writable(self.mint.address()),
+                InstructionAccount::new(self.rent.address(), false, false),
+            ]
+        }
+
+        fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
+            vec![self.mint, self.rent]
+        }
+    }
+
+    pub struct InitializeMint2<'a> {
+        pub mint: CpiHandle<'a>,
+    }
+
+    impl<'a> ToCpiAccounts<'a> for InitializeMint2<'a> {
+        fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
+            vec![InstructionAccount::writable(self.mint.address())]
+        }
+
+        fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
+            vec![self.mint]
+        }
+    }
+
     /// `spl_token::instruction::transfer` — accounts list:
     ///   0. `[writable]` from
     ///   1. `[writable]` to
@@ -395,7 +475,7 @@ pub mod accounts {
     }
 
     pub struct Approve<'a> {
-        pub source: CpiHandle<'a>,
+        pub to: CpiHandle<'a>,
         pub delegate: CpiHandle<'a>,
         pub authority: CpiHandle<'a>,
     }
@@ -403,18 +483,18 @@ pub mod accounts {
     impl<'a> ToCpiAccounts<'a> for Approve<'a> {
         fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
             vec![
-                InstructionAccount::writable(self.source.address()),
+                InstructionAccount::writable(self.to.address()),
                 InstructionAccount::new(self.delegate.address(), false, false),
                 InstructionAccount::readonly_signer(self.authority.address()),
             ]
         }
         fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-            vec![self.source, self.delegate, self.authority]
+            vec![self.to, self.delegate, self.authority]
         }
     }
 
     pub struct ApproveChecked<'a> {
-        pub source: CpiHandle<'a>,
+        pub to: CpiHandle<'a>,
         pub mint: CpiHandle<'a>,
         pub delegate: CpiHandle<'a>,
         pub authority: CpiHandle<'a>,
@@ -423,14 +503,14 @@ pub mod accounts {
     impl<'a> ToCpiAccounts<'a> for ApproveChecked<'a> {
         fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
             vec![
-                InstructionAccount::writable(self.source.address()),
+                InstructionAccount::writable(self.to.address()),
                 InstructionAccount::new(self.mint.address(), false, false),
                 InstructionAccount::new(self.delegate.address(), false, false),
                 InstructionAccount::readonly_signer(self.authority.address()),
             ]
         }
         fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-            vec![self.source, self.mint, self.delegate, self.authority]
+            vec![self.to, self.mint, self.delegate, self.authority]
         }
     }
 
@@ -452,19 +532,19 @@ pub mod accounts {
     }
 
     pub struct SetAuthority<'a> {
-        pub account: CpiHandle<'a>,
-        pub authority: CpiHandle<'a>,
+        pub current_authority: CpiHandle<'a>,
+        pub account_or_mint: CpiHandle<'a>,
     }
 
     impl<'a> ToCpiAccounts<'a> for SetAuthority<'a> {
         fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
             vec![
-                InstructionAccount::writable(self.account.address()),
-                InstructionAccount::readonly_signer(self.authority.address()),
+                InstructionAccount::writable(self.account_or_mint.address()),
+                InstructionAccount::readonly_signer(self.current_authority.address()),
             ]
         }
         fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-            vec![self.account, self.authority]
+            vec![self.account_or_mint, self.current_authority]
         }
     }
 
@@ -540,10 +620,13 @@ pub mod accounts {
 }
 
 pub use accounts::{
-    Approve, ApproveChecked, Burn, BurnChecked, CloseAccount, FreezeAccount, MintTo, MintToChecked,
-    Revoke, SetAuthority, SyncNative, ThawAccount, Transfer, TransferChecked,
+    Approve, ApproveChecked, Burn, BurnChecked, CloseAccount, FreezeAccount, InitializeAccount,
+    InitializeAccount3, InitializeMint, InitializeMint2, MintTo, MintToChecked, Revoke,
+    SetAuthority, SyncNative, ThawAccount, Transfer, TransferChecked,
 };
 
+const DISC_INITIALIZE_MINT: u8 = 0;
+const DISC_INITIALIZE_ACCOUNT: u8 = 1;
 const DISC_TRANSFER: u8 = 3;
 const DISC_APPROVE: u8 = 4;
 const DISC_REVOKE: u8 = 5;
@@ -558,6 +641,18 @@ const DISC_APPROVE_CHECKED: u8 = 13;
 const DISC_MINT_TO_CHECKED: u8 = 14;
 const DISC_BURN_CHECKED: u8 = 15;
 const DISC_SYNC_NATIVE: u8 = 17;
+const DISC_INITIALIZE_ACCOUNT3: u8 = 18;
+const DISC_INITIALIZE_MINT2: u8 = 20;
+
+#[inline]
+fn authority_type_to_u8(authority_type: spl_token::instruction::AuthorityType) -> u8 {
+    match authority_type {
+        spl_token::instruction::AuthorityType::MintTokens => 0,
+        spl_token::instruction::AuthorityType::FreezeAccount => 1,
+        spl_token::instruction::AuthorityType::AccountOwner => 2,
+        spl_token::instruction::AuthorityType::CloseAccount => 3,
+    }
+}
 
 // Encode an SPL Token instruction with layout `[disc u8][amount u64 LE]`.
 //
@@ -583,6 +678,79 @@ fn encode_amount_decimals_ix(disc: u8, amount: u64, decimals: u8) -> [u8; 10] {
     data[1..9].copy_from_slice(&amount.to_le_bytes());
     data[9] = decimals;
     data
+}
+
+#[inline]
+fn push_pubkey_option(data: &mut Vec<u8>, address: Option<&Address>) {
+    match address {
+        Some(address) => {
+            data.push(1);
+            data.extend_from_slice(address.as_ref());
+        }
+        None => data.push(0),
+    }
+}
+
+#[inline]
+fn encode_initialize_mint_ix(
+    disc: u8,
+    decimals: u8,
+    authority: &Address,
+    freeze_authority: Option<&Address>,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(67);
+    data.push(disc);
+    data.push(decimals);
+    data.extend_from_slice(authority.as_ref());
+    push_pubkey_option(&mut data, freeze_authority);
+    data
+}
+
+#[inline]
+fn encode_pubkey_ix(disc: u8, address: &Address) -> [u8; 33] {
+    let mut data = [0u8; 33];
+    data[0] = disc;
+    data[1..33].copy_from_slice(address.as_ref());
+    data
+}
+
+pub fn initialize_account<'a>(ctx: CpiContext<'a, accounts::InitializeAccount<'a>>) {
+    ctx.invoke(&[DISC_INITIALIZE_ACCOUNT]);
+}
+
+pub fn initialize_account3<'a>(ctx: CpiContext<'a, accounts::InitializeAccount3<'a>>) {
+    ctx.invoke(&encode_pubkey_ix(
+        DISC_INITIALIZE_ACCOUNT3,
+        ctx.accounts.authority.address(),
+    ));
+}
+
+pub fn initialize_mint<'a>(
+    ctx: CpiContext<'a, accounts::InitializeMint<'a>>,
+    decimals: u8,
+    authority: &Address,
+    freeze_authority: Option<&Address>,
+) {
+    ctx.invoke(&encode_initialize_mint_ix(
+        DISC_INITIALIZE_MINT,
+        decimals,
+        authority,
+        freeze_authority,
+    ));
+}
+
+pub fn initialize_mint2<'a>(
+    ctx: CpiContext<'a, accounts::InitializeMint2<'a>>,
+    decimals: u8,
+    authority: &Address,
+    freeze_authority: Option<&Address>,
+) {
+    ctx.invoke(&encode_initialize_mint_ix(
+        DISC_INITIALIZE_MINT2,
+        decimals,
+        authority,
+        freeze_authority,
+    ));
 }
 
 pub fn transfer<'a>(ctx: CpiContext<'a, accounts::Transfer<'a>>, amount: u64) {
@@ -649,32 +817,16 @@ pub fn revoke<'a>(ctx: CpiContext<'a, accounts::Revoke<'a>>) {
     ctx.invoke(&[DISC_REVOKE]);
 }
 
-/// SPL Token `SetAuthority`.
-///
-/// `authority_type`: 0 = MintTokens, 1 = FreezeAccount, 2 = AccountOwner,
-/// 3 = CloseAccount. See `spl_token::instruction::AuthorityType`.
-///
-/// `new_authority`: `Some(address)` to set, `None` to revoke.
 pub fn set_authority<'a>(
     ctx: CpiContext<'a, accounts::SetAuthority<'a>>,
-    authority_type: u8,
-    new_authority: Option<&anchor_lang_v2::Address>,
+    authority_type: spl_token::instruction::AuthorityType,
+    new_authority: Option<Address>,
 ) {
-    // Layout: disc(1) + authority_type(1) + option_tag(1) + [address(32)] = 3 or 35.
-    let mut data = [0u8; 35];
-    data[0] = DISC_SET_AUTHORITY;
-    data[1] = authority_type;
-    match new_authority {
-        Some(addr) => {
-            data[2] = 1;
-            data[3..35].copy_from_slice(addr.as_ref());
-            ctx.invoke(&data[..35]);
-        }
-        None => {
-            data[2] = 0;
-            ctx.invoke(&data[..3]);
-        }
-    }
+    let mut data = Vec::with_capacity(35);
+    data.push(DISC_SET_AUTHORITY);
+    data.push(authority_type_to_u8(authority_type));
+    push_pubkey_option(&mut data, new_authority.as_ref());
+    ctx.invoke(&data);
 }
 
 pub fn close_account<'a>(ctx: CpiContext<'a, accounts::CloseAccount<'a>>) {
