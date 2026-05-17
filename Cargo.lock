@@ -522,9 +522,7 @@ dependencies = [
  "solana-address 2.6.0",
  "solana-program-error 3.0.0",
  "solana-program-pack 3.1.0",
- "spl-discriminator",
  "spl-token-interface",
- "spl-token-metadata-interface",
 ]
 
 [[package]]
@@ -9098,6 +9096,14 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "token-2022-spy"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
 
 [[package]]
 name = "tokio"

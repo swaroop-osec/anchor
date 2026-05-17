@@ -17,6 +17,7 @@ use {
         },
         mint::{self, Mint},
         token::{self, cpi as token_cpi, TokenAccount},
+        token_2022_extensions as token_2022_ext_cpi,
         token_interface::InterfaceAccount,
     },
 };
@@ -494,6 +495,49 @@ pub mod spl_test {
             extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
         Ok(())
     }
+
+    /// Invoke the Token-2022 CPI Guard helper against the spy program.
+    #[discrim = 40]
+    pub fn spy_cpi_guard_enable(ctx: &mut Context<SpyCpiGuard>) -> Result<()> {
+        let accs = token_2022_ext_cpi::CpiGuard {
+            account: ctx.accounts.account.cpi_handle_mut(),
+            owner: ctx.accounts.owner.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        #[allow(deprecated)]
+        token_2022_ext_cpi::cpi_guard_enable(cpi_ctx);
+        Ok(())
+    }
+
+    /// Invoke the Token-2022 group pointer update helper against the spy program.
+    #[discrim = 41]
+    pub fn spy_group_pointer_update(
+        ctx: &mut Context<SpyGroupPointerUpdate>,
+        group_address: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::GroupPointerUpdate {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::group_pointer_update(cpi_ctx, Some(&group_address));
+        Ok(())
+    }
+
+    /// Invoke the Token-2022 group member pointer update helper against the spy program.
+    #[discrim = 42]
+    pub fn spy_group_member_pointer_update(
+        ctx: &mut Context<SpyGroupMemberPointerUpdate>,
+        member_address: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::GroupMemberPointerUpdate {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::group_member_pointer_update(cpi_ctx, Some(&member_address));
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -833,4 +877,28 @@ pub struct ReadPausableConfig {
 pub struct ReadMarkerExtensions {
     pub mint: InterfaceAccount<Mint>,
     pub token_account: InterfaceAccount<TokenAccount>,
+}
+
+#[derive(Accounts)]
+pub struct SpyCpiGuard {
+    #[account(mut)]
+    pub account: UncheckedAccount,
+    pub owner: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyGroupPointerUpdate {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub authority: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyGroupMemberPointerUpdate {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub authority: Signer,
+    pub token_program: UncheckedAccount,
 }

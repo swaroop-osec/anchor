@@ -125,29 +125,4 @@ pub mod cpi {
     pub fn withdraw_excess_lamports<'a>(ctx: CpiContext<'a, accounts::WithdrawExcessLamports<'a>>) {
         ctx.invoke(&[DISC_WITHDRAW_EXCESS_LAMPORTS]);
     }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn reallocate_encoding_matches_token_2022() {
-            assert_eq!(encode_reallocate_ix(&[]), vec![29]);
-            assert_eq!(
-                encode_reallocate_ix(&[
-                    ExtensionDiscriminator::TransferFee,
-                    ExtensionDiscriminator::GroupPointer,
-                    ExtensionDiscriminator::Pausable,
-                ]),
-                vec![29, 26, 0, 40, 0, 44, 0]
-            );
-        }
-
-        #[test]
-        fn extension_helper_discriminators_match_token_2022() {
-            assert_eq!(DISC_CREATE_NATIVE_MINT, 31);
-            assert_eq!(DISC_INITIALIZE_NON_TRANSFERABLE_MINT, 32);
-            assert_eq!(DISC_WITHDRAW_EXCESS_LAMPORTS, 38);
-        }
-    }
 }

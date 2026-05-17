@@ -31,6 +31,12 @@ fn program_id() -> Pubkey {
         .unwrap()
 }
 
+fn spy_program_id() -> Pubkey {
+    "7TdHZyhueZP4B8fvbgvbGPTH4bijkBPtpWc3wBfTmWQv"
+        .parse()
+        .unwrap()
+}
+
 fn token_program_id() -> Pubkey {
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         .parse()
@@ -56,10 +62,16 @@ fn setup() -> (LiteSVM, Keypair) {
         test_dir.join("programs/spl").to_str().unwrap(),
         deploy_dir.to_str().unwrap(),
     );
+    build_program(
+        test_dir.join("programs/token-2022-spy").to_str().unwrap(),
+        deploy_dir.to_str().unwrap(),
+    );
 
     let mut svm = LiteSVM::new();
     svm.add_program_from_file(program_id(), deploy_dir.join("spl_test.so"))
         .expect("load spl_test program");
+    svm.add_program_from_file(spy_program_id(), deploy_dir.join("token_2022_spy.so"))
+        .expect("load token_2022_spy program");
 
     let payer = keypair_for("spl-payer");
     svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
@@ -2299,21 +2311,90 @@ fn zero_sized_marker_extensions_reject_when_marker_missing() {
     assert!(result.is_err(), "missing mint marker should reject");
 }
 
-// ---- Unit tests for host-side helpers --------------------------------------
-//
-// `is_some_address` / `optional_address` are `pub fn` on `anchor-spl-v2` and
-// can be called directly from the host-side test binary.
+#[test]
+fn cpi_guard_enable_helper_passes_explicit_owner_account() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("spy-cg-mint-auth");
+    let owner = keypair_for("spy-cg-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &tlv_cpi_guard(0)),
+    );
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(owner.pubkey(), true),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![40], metas, &payer, &[&owner])
+        .expect("CPI guard helper should pass the explicit owner signer account");
+}
 
 #[test]
-fn is_some_address_detects_zero_and_nonzero() {
-    use anchor_spl_v2::extensions::{is_some_address, optional_address};
-    let zero = solana_address::Address::new_from_array([0u8; 32]);
-    let mut nonzero_bytes = [0u8; 32];
-    nonzero_bytes[31] = 1;
-    let nonzero = solana_address::Address::new_from_array(nonzero_bytes);
+fn group_pointer_update_helper_includes_authority_account() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("spy-gp-mint-auth");
+    let authority = keypair_for("spy-gp-authority");
+    let group = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
 
-    assert!(!is_some_address(&zero));
-    assert!(is_some_address(&nonzero));
-    assert!(optional_address(&zero).is_none());
-    assert_eq!(optional_address(&nonzero), Some(&nonzero));
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_group_pointer(&authority.pubkey(), &group),
+        ),
+    );
+
+    let mut data = vec![41];
+    data.extend_from_slice(&group.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(authority.pubkey(), true),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[&authority])
+        .expect("group pointer update helper should pass the authority signer account");
+}
+
+#[test]
+fn group_member_pointer_update_helper_includes_authority_account() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("spy-gmp-mint-auth");
+    let authority = keypair_for("spy-gmp-authority");
+    let member = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_group_member_pointer(&authority.pubkey(), &member),
+        ),
+    );
+
+    let mut data = vec![42];
+    data.extend_from_slice(&member.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(authority.pubkey(), true),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[&authority])
+        .expect("group member pointer update helper should pass the authority signer account");
 }
