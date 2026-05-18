@@ -1,6 +1,10 @@
 use {
     core::ops::Deref,
-    pinocchio::{account::AccountView, address::Address, instruction::InstructionAccount},
+    pinocchio::{
+        account::{AccountView, Ref, RefMut},
+        address::Address,
+        instruction::InstructionAccount,
+    },
     solana_program_error::{ProgramError, ProgramResult},
 };
 
@@ -208,17 +212,45 @@ impl<T: AccountAddress> AccountAddress for Option<T> {
     }
 }
 
-/// v1-compatible key projection for raw remaining-account views.
+/// v1-compatible utility methods for raw remaining-account views.
 #[cfg(feature = "compat")]
-pub trait Key {
+pub trait AccountViewCompat {
     fn key(&self) -> crate::solana_program::pubkey::Pubkey;
+
+    fn data_is_empty(&self) -> bool;
+
+    fn try_data_len(&self) -> Result<usize, ProgramError>;
+
+    fn try_borrow_data(&self) -> Result<Ref<'_, [u8]>, ProgramError>;
+
+    fn try_borrow_mut_data(&mut self) -> Result<RefMut<'_, [u8]>, ProgramError>;
 }
 
 #[cfg(feature = "compat")]
-impl Key for AccountView {
+impl AccountViewCompat for AccountView {
     #[inline(always)]
     fn key(&self) -> crate::solana_program::pubkey::Pubkey {
         *self.address()
+    }
+
+    #[inline(always)]
+    fn data_is_empty(&self) -> bool {
+        self.data_len() == 0
+    }
+
+    #[inline(always)]
+    fn try_data_len(&self) -> Result<usize, ProgramError> {
+        Ok(self.data_len())
+    }
+
+    #[inline(always)]
+    fn try_borrow_data(&self) -> Result<Ref<'_, [u8]>, ProgramError> {
+        self.try_borrow()
+    }
+
+    #[inline(always)]
+    fn try_borrow_mut_data(&mut self) -> Result<RefMut<'_, [u8]>, ProgramError> {
+        self.try_borrow_mut()
     }
 }
 

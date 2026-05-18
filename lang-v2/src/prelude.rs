@@ -87,7 +87,7 @@ pub use crate::{
 #[cfg(feature = "compat")]
 pub use crate::{err, error, pubkey};
 #[cfg(feature = "compat")]
-pub use crate::Key;
+pub use crate::AccountViewCompat;
 // Re-export pinocchio sysvar types and trait for use with Sysvar<T>
 pub use pinocchio::sysvars::Sysvar as PinocchioSysvar;
 pub use {
