@@ -8,6 +8,7 @@
 use {
     anchor_lang_v2::prelude::*,
     anchor_spl_v2::{
+        associated_token::AssociatedToken,
         mint::{self, Mint},
         token::{self, Token, TokenAccount},
     },
@@ -62,6 +63,23 @@ pub mod account_address_constraints {
     #[discrim = 5]
     pub fn check_token_with_optional_authority(
         _ctx: &mut Context<CheckTokenWithOptionalAuthority>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 6]
+    pub fn init_ata_with_box_refs(_ctx: &mut Context<InitAtaWithBoxRefs>) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 7]
+    pub fn check_ata_with_box_refs(_ctx: &mut Context<CheckAtaWithBoxRefs>) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 8]
+    pub fn check_ata_with_optional_refs(
+        _ctx: &mut Context<CheckAtaWithOptionalRefs>,
     ) -> Result<()> {
         Ok(())
     }
@@ -125,5 +143,50 @@ pub struct CheckMintWithOptionalAuthority {
 pub struct CheckTokenWithOptionalAuthority {
     pub authority: Option<Account<AuthorityData>>,
     #[account(mut, token::authority = authority)]
+    pub token_account: Account<TokenAccount>,
+}
+
+#[derive(Accounts)]
+pub struct InitAtaWithBoxRefs {
+    #[account(mut)]
+    pub payer: Signer,
+    pub mint: Box<Account<Mint>>,
+    pub authority: Box<Account<AuthorityData>>,
+    pub token_program: Box<Program<Token>>,
+    #[account(
+        init,
+        payer = payer,
+        associated_token::mint = mint,
+        associated_token::authority = authority,
+        associated_token::token_program = token_program,
+    )]
+    pub token_account: Account<TokenAccount>,
+    pub associated_token_program: Program<AssociatedToken>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct CheckAtaWithBoxRefs {
+    pub mint: Box<Account<Mint>>,
+    pub authority: Box<Account<AuthorityData>>,
+    pub token_program: Box<Program<Token>>,
+    #[account(
+        associated_token::mint = mint,
+        associated_token::authority = authority,
+        associated_token::token_program = token_program,
+    )]
+    pub token_account: Account<TokenAccount>,
+}
+
+#[derive(Accounts)]
+pub struct CheckAtaWithOptionalRefs {
+    pub mint: Option<Account<Mint>>,
+    pub authority: Option<Account<AuthorityData>>,
+    pub token_program: Option<Program<Token>>,
+    #[account(
+        associated_token::mint = mint,
+        associated_token::authority = authority,
+        associated_token::token_program = token_program,
+    )]
     pub token_account: Account<TokenAccount>,
 }

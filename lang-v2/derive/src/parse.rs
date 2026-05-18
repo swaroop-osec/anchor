@@ -1661,9 +1661,12 @@ pub fn parse_field(
             let token_program = &at.token_program;
             constraints.push(quote! {
                 {
-                    let __associated_token_mint = #mint.account().address();
-                    let __associated_token_authority = #authority.account().address();
-                    let __associated_token_token_program = #token_program.account().address();
+                    let __associated_token_mint =
+                        anchor_lang_v2::AccountAddress::account_address(&#mint);
+                    let __associated_token_authority =
+                        anchor_lang_v2::AccountAddress::account_address(&#authority);
+                    let __associated_token_token_program =
+                        anchor_lang_v2::AccountAddress::account_address(&#token_program);
 
                     if !anchor_lang_v2::address_eq(
                         #field_name.mint(),
