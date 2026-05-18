@@ -456,7 +456,7 @@ pub fn unverify_collection<'info>(
     collection_authority_record: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::UnverifyCollection {
-        collection: *ctx.accounts.metadata.address(),
+        collection: *ctx.accounts.collection.address(),
         collection_authority: *ctx.accounts.collection_authority.address(),
         collection_authority_record,
         collection_master_edition_account: *ctx
@@ -476,7 +476,7 @@ pub fn unverify_sized_collection_item<'info>(
     collection_authority_record: Option<Pubkey>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::UnverifySizedCollectionItem {
-        collection: *ctx.accounts.metadata.address(),
+        collection: *ctx.accounts.collection.address(),
         collection_authority: *ctx.accounts.collection_authority.address(),
         collection_authority_record,
         collection_master_edition_account: *ctx
