@@ -58,6 +58,10 @@ const MAX_DEPLOY_ATTEMPTS: u32 = 3;
 /// agave/programs/bpf_loader/src/lib.rs (UPGRADEABLE_LOADER_COMPUTE_UNITS).
 const WRITE_COMPUTE_UNIT_LIMIT: u32 = 3_000;
 
+/// Max seconds `wait_for_buffer_stable` polls before giving up and using
+/// the latest snapshot.
+const BUFFER_STABILIZE_MAX_WAIT_SECS: u64 = 60;
+
 /// If `--buffer` is absent, inject a per-program persistent path at
 /// `target/deploy/{program_name}-upgrade-buffer.json`. Creates the keypair
 /// file on first run; subsequent runs reuse it so a failed deploy/upgrade
@@ -213,6 +217,57 @@ fn fetch_buffer_program_data(
         data: account.data[header_size..].to_vec(),
         capacity,
     }))
+}
+
+/// Wait until two consecutive buffer fetches match — proves nothing's
+/// landing right now. Avoids re-sending chunks that prior in-flight txs
+/// are about to write
+fn wait_for_buffer_stable(
+    rpc_client: &RpcClient,
+    buffer_pubkey: &Pubkey,
+    expected_authority: &Pubkey,
+    max_wait_secs: u64,
+) -> Result<Option<ExistingBuffer>> {
+    let mut prev = fetch_buffer_program_data(rpc_client, buffer_pubkey, expected_authority)?;
+    // Fresh deploy — no buffer means nothing in flight; return immediately.
+    if prev.is_none() {
+        return Ok(None);
+    }
+    let start = std::time::Instant::now();
+    // First confirmation: back-to-back fetches with no sleep. Stable case
+    // (no in-flight activity) finishes in ~2× RPC round-trip (~600ms on
+    // devnet) — no wasted seconds when there's nothing to wait for.
+    let mut sleep_secs: u64 = 0;
+    let mut wait_notice_shown = false;
+    loop {
+        if sleep_secs > 0 {
+            thread::sleep(Duration::from_secs(sleep_secs));
+        }
+        let current = fetch_buffer_program_data(rpc_client, buffer_pubkey, expected_authority)?;
+        let stable = match (prev.as_ref(), current.as_ref()) {
+            (Some(p), Some(c)) => p.data == c.data && p.capacity == c.capacity,
+            (None, None) => true,
+            _ => false,
+        };
+        if stable {
+            return Ok(current);
+        }
+        if !wait_notice_shown {
+            println!(
+                "Buffer {} has in-flight writes from a prior run; waiting for state to stabilize \
+                 before resume (up to {}s)…",
+                buffer_pubkey, max_wait_secs
+            );
+            wait_notice_shown = true;
+        }
+        if start.elapsed().as_secs() >= max_wait_secs {
+            return Ok(current);
+        }
+        prev = current;
+        // After the back-to-back check confirmed activity, throttle to 3s
+        // between polls so we don't hammer the RPC while in-flight txs land.
+        sleep_secs = 3;
+    }
 }
 
 /// Close an existing buffer we own, refunding rent to `recipient`. Used when
@@ -837,11 +892,13 @@ pub fn program_deploy(
 
         let attempt_result: Result<()> = (|| {
             // Fetch existing buffer data — if Some, write_program_buffer skips
-            // CreateBuffer and only writes chunks that differ.
-            let existing = fetch_buffer_program_data(
+            // CreateBuffer and only writes chunks that differ. Waits for the
+            // buffer state to stabilize.
+            let existing = wait_for_buffer_stable(
                 &rpc_client,
                 &buffer_pubkey,
                 &upgrade_authority.pubkey(),
+                BUFFER_STABILIZE_MAX_WAIT_SECS,
             )?;
 
             // A persistent buffer from a previous run may have been created
@@ -1786,10 +1843,11 @@ pub fn program_upgrade(
 
         let attempt_result: Result<()> = (|| {
             // Fetch existing buffer state for diff-only resume
-            let existing = fetch_buffer_program_data(
+            let existing = wait_for_buffer_stable(
                 &rpc_client,
                 &buffer_pubkey,
                 &upgrade_authority_keypair.pubkey(),
+                BUFFER_STABILIZE_MAX_WAIT_SECS,
             )?;
 
             // Same size check as program_deploy — persistent buffer keypair
@@ -2490,6 +2548,8 @@ fn send_messages_in_batches(
     .map_err(|err| anyhow!("Data writes to account failed: {}", err))?
     .into_iter()
     .flatten()
+    // Drop AlreadyProcessed — tx landed via TPU fanout
+    .filter(|e| format!("{:?}", e) != "AlreadyProcessed")
     .collect::<Vec<_>>();
 
     if !transaction_errors.is_empty() {
