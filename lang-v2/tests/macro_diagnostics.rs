@@ -177,3 +177,29 @@ fn check() {
         &["SlotHashes", "SysvarId"],
     );
 }
+
+#[test]
+fn init_payer_must_be_mutable() {
+    compile_fail_case(
+        "init_payer_must_be_mutable",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[account]
+pub struct Data {
+    pub value: u64,
+}
+
+#[derive(Accounts)]
+pub struct Bad {
+    #[account(init, payer = payer, space = 8 + core::mem::size_of::<Data>())]
+    pub data: Account<Data>,
+    pub payer: Signer,
+    pub system_program: Program<System>,
+}
+"#,
+        &["the payer specified for an init constraint must be mutable"],
+    );
+}

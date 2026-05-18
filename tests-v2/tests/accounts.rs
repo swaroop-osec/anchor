@@ -202,6 +202,34 @@ fn initialize_can_reference_later_seed_account() {
 }
 
 #[test]
+fn initialize_rejects_payer_as_target_account() {
+    let (mut svm, payer) = setup();
+    let payer_before = svm.get_account(&payer.pubkey()).expect("payer exists");
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+
+    let result = call_raw(&mut svm, &payer, 33, metas);
+    let err = format!("{:?}", result.expect_err("payer-target init must fail").err);
+    assert!(
+        err.contains("InvalidArgument") || err.contains("invalid program argument"),
+        "expected InvalidArgument for payer-target init, got: {err}"
+    );
+
+    let payer_after = svm.get_account(&payer.pubkey()).expect("payer exists");
+    assert_eq!(
+        payer_after.owner, payer_before.owner,
+        "failed init must not reassign payer owner"
+    );
+    assert_eq!(
+        payer_after.data, payer_before.data,
+        "failed init must not allocate payer data"
+    );
+}
+
+#[test]
 fn initialize_later_seed_rejects_wrong_pda() {
     let (mut svm, payer) = setup();
     let wrong_counter = counter_pda();

@@ -571,6 +571,14 @@ pub mod accounts_test {
         ctx.accounts.counter.value = 999;
         Ok(())
     }
+
+    #[discrim = 33]
+    pub fn initialize_target_before_payer(
+        ctx: &mut Context<InitializeTargetBeforePayer>,
+    ) -> Result<()> {
+        ctx.accounts.counter.value = 11;
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -589,6 +597,15 @@ pub struct InitializeWithLaterSeed {
     #[account(init, payer = payer, seeds = [b"later-seed", payer.address().as_ref()], bump)]
     pub counter: Account<Counter>,
     #[account(mut)]
+    pub payer: Signer,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeTargetBeforePayer {
+    #[account(init, payer = payer, space = 8 + core::mem::size_of::<Counter>(), unsafe(dup))]
+    pub counter: Account<Counter>,
+    #[account(mut, unsafe(dup))]
     pub payer: Signer,
     pub system_program: Program<System>,
 }

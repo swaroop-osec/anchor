@@ -385,6 +385,10 @@ pub fn create_account(
     space: usize,
     owner: &Address,
 ) -> Result<(), ProgramError> {
+    if pinocchio::address::address_eq(payer.address(), target.address()) {
+        return Err(ProgramError::InvalidArgument);
+    }
+
     let required = rent_exempt_lamports(space)?;
     let current = target.lamports();
 
@@ -414,6 +418,10 @@ pub fn create_account_signed(
     owner: &Address,
     seeds: &[&[u8]],
 ) -> Result<(), ProgramError> {
+    if pinocchio::address::address_eq(payer.address(), target.address()) {
+        return Err(ProgramError::InvalidArgument);
+    }
+
     let required = rent_exempt_lamports(space)?;
     let current = target.lamports();
 

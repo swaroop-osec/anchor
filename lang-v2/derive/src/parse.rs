@@ -642,6 +642,9 @@ pub struct AccountField {
     /// client sends `program_id` as the address) should still silence the
     /// dup check; the derive keeps the gated per-field `get()` for those.
     pub contributes_mut_bit: bool,
+    /// The local payer field named by this field's `init`/`init_if_needed`
+    /// constraint, if present.
+    pub init_payer: Option<String>,
     // IDL metadata
     pub idl_writable: bool,
     /// True when this is a fresh-keypair init site (attrs: `init` or
@@ -1250,6 +1253,7 @@ pub fn parse_field(
             // into the parent's; they don't set a bit at the nested field's
             // own offset.
             contributes_mut_bit: false,
+            init_payer: None,
             idl_writable: false,
             idl_init_signer: false,
             idl_has_one: vec![],
@@ -1986,6 +1990,9 @@ pub fn parse_field(
     };
 
     let contributes_mut_bit = attrs.is_mut && !attrs.is_dup && !is_optional;
+    let init_payer = (attrs.is_init || attrs.is_init_if_needed)
+        .then(|| attrs.payer.as_ref().map(ToString::to_string))
+        .flatten();
 
     Ok(AccountField {
         name: field_name.clone(),
@@ -1999,6 +2006,7 @@ pub fn parse_field(
         is_optional,
         offset_expr,
         contributes_mut_bit,
+        init_payer,
         idl_writable,
         idl_init_signer,
         idl_has_one,
