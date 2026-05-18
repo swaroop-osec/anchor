@@ -1749,12 +1749,19 @@ fn process_handler(
             ) -> u64 {
                 #[cfg(not(feature = "no-log-ix-name"))]
                 anchor_lang_v2::msg!(#fn_name_log);
+
+                #[inline(always)]
+                fn __anchor_assert_no_ix_args(_: ()) {}
+
                 match anchor_lang_v2::run_handler::<#accounts_type>(
                     __program_id,
                     __cursor,
                     __ix_data,
                     __num_accounts,
-                    |__ctx, _ix_args| #mod_name::#fn_name(__ctx),
+                    |__ctx, __ix_args| {
+                        __anchor_assert_no_ix_args(__ix_args);
+                        #mod_name::#fn_name(__ctx)
+                    },
                 ) {
                     Ok(()) => 0,
                     Err(__e) => __e.into(),

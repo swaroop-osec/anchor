@@ -16,6 +16,7 @@ publish = false
 
 [dependencies]
 anchor-lang-v2 = {{ path = "{}" }}
+wincode = {{ version = "0.5", features = ["derive"] }}
 
 [workspace]
 "#,
@@ -156,6 +157,36 @@ pub mod bad_discriminator {
 pub struct Noop {}
 "#,
         &["`#[discrim = N]` value must be an integer literal"],
+    );
+}
+
+#[test]
+fn instruction_args_must_match_zero_arg_handler() {
+    compile_fail_case(
+        "instruction_args_without_handler_args",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod instruction_args_without_handler_args {
+    use super::*;
+
+    pub fn ix(ctx: &mut Context<Bad>) -> Result<()> {
+        let _ = ctx;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+#[instruction(value: u64)]
+pub struct Bad {
+    #[account(constraint = value > 0)]
+    pub data: UncheckedAccount,
+}
+"#,
+        &["expected `()`, found `(u64,)`"],
     );
 }
 
