@@ -964,6 +964,7 @@ proptest! {
     })]
 
     #[test]
+    #[ignore = "runs a 32k-case fuzz-style SPL v1/v2 equivalence pass; run explicitly with `-- --ignored`"]
     fn spl_v1_v2_strict_mint_has_equivalent_tx_results(
         case in mint_case_strategy(Operation::StrictMint, strict_owner_strategy()),
     ) {
@@ -972,6 +973,7 @@ proptest! {
     }
 
     #[test]
+    #[ignore = "runs a 32k-case fuzz-style SPL v1/v2 equivalence pass; run explicitly with `-- --ignored`"]
     fn spl_v1_v2_strict_token_account_has_equivalent_tx_results(
         case in token_account_case_strategy(Operation::StrictTokenAccount, strict_owner_strategy()),
     ) {
@@ -980,6 +982,7 @@ proptest! {
     }
 
     #[test]
+    #[ignore = "runs a 32k-case fuzz-style SPL v1/v2 equivalence pass; run explicitly with `-- --ignored`"]
     fn spl_v1_v2_interface_mint_has_equivalent_tx_results(
         case in mint_case_strategy(Operation::InterfaceMint, interface_owner_strategy()),
     ) {
@@ -988,6 +991,7 @@ proptest! {
     }
 
     #[test]
+    #[ignore = "runs a 32k-case fuzz-style SPL v1/v2 equivalence pass; run explicitly with `-- --ignored`"]
     fn spl_v1_v2_interface_token_account_has_equivalent_tx_results(
         case in token_account_case_strategy(Operation::InterfaceTokenAccount, interface_owner_strategy()),
     ) {
