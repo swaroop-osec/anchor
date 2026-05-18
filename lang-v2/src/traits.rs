@@ -208,6 +208,20 @@ impl<T: AccountAddress> AccountAddress for Option<T> {
     }
 }
 
+/// v1-compatible key projection for raw remaining-account views.
+#[cfg(feature = "compat")]
+pub trait Key {
+    fn key(&self) -> crate::solana_program::pubkey::Pubkey;
+}
+
+#[cfg(feature = "compat")]
+impl Key for AccountView {
+    #[inline(always)]
+    fn key(&self) -> crate::solana_program::pubkey::Pubkey {
+        *self.address()
+    }
+}
+
 /// Lamports related utility methods for accounts.
 pub trait Lamports: AsRef<AccountView> {
     /// Get the lamports of the account.
