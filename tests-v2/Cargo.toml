@@ -7,6 +7,10 @@ publish = false
 [lib]
 path = "src/lib.rs"
 
+[[test]]
+name = "equivalence_spl"
+path = "tests/equivalence/spl.rs"
+
 [dependencies]
 anchor-lang-v2 = { path = "../lang-v2" }
 account-meta-signer-overrides = { path = "programs/account-meta-signer-overrides" }
@@ -43,5 +47,10 @@ anyhow = "1"
 [dev-dependencies]
 anchor-spl-v2 = { path = "../spl-v2" }
 anchor-lang-idl-spec = { path = "../idl/spec", version = "0.1.0" }
+proptest = "1"
 solana-address = "2.0"
+solana-program-option = "3.1"
+solana-program-pack = "3.1"
 serde_json = "1"
+spl-token-2022-interface = "2.1"
+spl-token-group-interface = "0.7"
