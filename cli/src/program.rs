@@ -42,20 +42,10 @@ use {
     },
 };
 
-/// Outer retry cap on the full deploy/upgrade cycle (fetch buffer → write →
-/// final ix). Each attempt re-fetches on-chain buffer state for diff-only
-/// resume, so already-landed chunks aren't re-sent. Bounded small because
-/// beyond ~3 outer attempts failures are almost always persistent (wrong
-/// authority, fee floor, programdata too small) and more attempts just burn
-/// lamports. Inner per-batch resigning is governed by `max_sign_attempts`
-/// (default `DEFAULT_MAX_SIGN_ATTEMPTS`).
+/// Outer retry cap on the full deploy/upgrade cycle; inner per-batch resign is `max_sign_attempts`.
 const MAX_DEPLOY_ATTEMPTS: u32 = 3;
 
-/// CU limit for each buffer Write tx. Tight so priority-fee-per-CU stays
-/// competitive with mainnet contention. Actual tx cost: 2 × ComputeBudget ixs
-/// (150 each) + loader v3 Write (2,370) = 2,670. Sources:
-/// agave/programs/compute-budget/src/lib.rs (DEFAULT_COMPUTE_UNITS),
-/// agave/programs/bpf_loader/src/lib.rs (UPGRADEABLE_LOADER_COMPUTE_UNITS).
+/// Tight CU limit per Write tx (~2,670 actual + headroom) so priority-fee-per-CU is competitive.
 const WRITE_COMPUTE_UNIT_LIMIT: u32 = 3_000;
 
 /// Max seconds `wait_for_buffer_stable` polls before giving up and using
@@ -120,19 +110,14 @@ fn parse_skip_preflight_from_args(args: &[String]) -> bool {
     args.iter().any(|a| a == "--skip-preflight")
 }
 
-/// Parse the `--buffer <path>` keypair path. `add_recommended_deployment_solana_args`
-/// injects a temp keypair path if the user didn't supply one — that's where
-/// persistence across retries comes from.
+/// Parse `--buffer <path>` from solana_args; `ensure_buffer_keypair_arg` injects it when missing.
 fn parse_buffer_keypair_path_from_args(args: &[String]) -> Option<PathBuf> {
     args.windows(2)
         .find(|pair| pair[0] == "--buffer")
         .map(|pair| PathBuf::from(&pair[1]))
 }
 
-/// Read the persistent buffer keypair from the path in solana_args.
-/// The path is guaranteed to exist post-`add_recommended_deployment_solana_args`
-/// (which creates a new keypair if missing). Returns None only if the flag is
-/// absent entirely (e.g. caller did not augment).
+/// Load the persistent buffer keypair from the path in solana_args; `None` if `--buffer` absent.
 fn read_buffer_keypair_from_args(args: &[String]) -> Result<Option<Keypair>> {
     let Some(path) = parse_buffer_keypair_path_from_args(args) else {
         return Ok(None);
@@ -155,19 +140,7 @@ pub struct ExistingBuffer {
     pub capacity: usize,
 }
 
-/// Fetch the on-chain state of a buffer account. Returns:
-/// - `Ok(None)` only when the RPC confirms the account does not exist
-///   (first deploy, or buffer was closed)
-/// - `Ok(Some(_))` if it exists with a valid header and matching authority
-/// - `Err` for transport/RPC failures, or for accounts that exist but are
-///   malformed / wrong owner / wrong authority
-///
-/// We use `get_account_with_commitment` so transient RPC errors propagate as
-/// `Err` instead of being silently converted to "no buffer" — that conversion
-/// would push the caller onto the fresh `CreateBuffer` path and lose the
-/// partial writes the resume flow is trying to recover.
-///
-/// Mirrors agave's `fetch_buffer_program_data` (cli/src/program.rs).
+/// Fetch buffer body + capacity. `Ok(None)` only when RPC confirms absent; transport errors return `Err`.
 fn fetch_buffer_program_data(
     rpc_client: &RpcClient,
     buffer_pubkey: &Pubkey,
@@ -270,10 +243,7 @@ fn wait_for_buffer_stable(
     }
 }
 
-/// Close an existing buffer we own, refunding rent to `recipient`. Used when
-/// the persistent buffer keypair points at an on-chain account that is too
-/// small for the current binary — the next attempt will re-create it at the
-/// correct size.
+/// Close an undersized buffer we own so the next attempt re-creates it at the correct size.
 fn close_buffer_for_resize(
     rpc_client: &RpcClient,
     payer: &Keypair,
@@ -303,10 +273,7 @@ fn close_buffer_for_resize(
         &[payer, authority],
         blockhash,
     );
-    // Pin preflight commitment to confirmed so it matches the commitment of
-    // the just-fetched blockhash. Without this, preflight defaults to
-    // finalized on the RPC and rejects with "Blockhash not found" because the
-    // recent blockhash hasn't finalized yet.
+    // Pin preflight to confirmed — matches the blockhash commitment; finalized default rejects fresh blockhashes.
     rpc_client
         .send_and_confirm_transaction_with_spinner_and_config(
             &tx,
@@ -801,9 +768,8 @@ pub fn program_deploy(
 
     let program_id = loaded_program_keypair.pubkey();
 
-    // Inject persistent --buffer keypair path (per-program) so retries within
-    // a run AND across runs land on the same on-chain buffer. Skipped when
-    // user supplied --buffer or a bare pubkey via `buffer`.
+    // Inject per-program --buffer keypair so retries
+    // within and across runs share the same on-chain buffer.
     let solana_args = if buffer.is_some() {
         solana_args
     } else {
@@ -814,9 +780,8 @@ pub fn program_deploy(
         ensure_buffer_keypair_arg(solana_args, program_name_stem)?
     };
 
-    // Augment solana_args with recommended defaults (priority fees, max sign attempts).
-    // Pass program_id so the auto fee query reflects prior contention with this
-    // program (programdata is write-locked during upgrade).
+    // Augment with priority fees + max-sign-attempts;
+    // pass program_id so fee query reflects this program's contention.
     let solana_args =
         crate::add_recommended_deployment_solana_args(&rpc_client, solana_args, &[program_id])?;
 
@@ -1802,8 +1767,8 @@ pub fn program_upgrade(
         binary_path
     };
 
-    // Inject persistent --buffer keypair path (per-program) so retries within
-    // a run AND across runs land on the same on-chain buffer.
+    // Inject per-program --buffer keypair so retries
+    // within and across runs share the same on-chain buffer.
     let program_name_stem = Path::new(&program_filepath)
         .file_stem()
         .and_then(|s| s.to_str())
