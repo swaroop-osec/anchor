@@ -2,7 +2,7 @@ use {
     anchor_lang_v2::accounts::SysvarId,
     pinocchio::{
         address::Address,
-        sysvars::{clock::Clock, instructions::Instructions, rent::Rent, slot_hashes::SlotHashes},
+        sysvars::{clock::Clock, instructions::Instructions, rent::Rent},
     },
 };
 
@@ -19,10 +19,6 @@ fn sysvar_idl_addresses_match_well_known_accounts() {
     assert_eq!(
         <Instructions<&'static [u8]> as SysvarId>::IDL_ADDRESS,
         "Sysvar1nstructions1111111111111111111111111"
-    );
-    assert_eq!(
-        <SlotHashes<&'static [u8]> as SysvarId>::IDL_ADDRESS,
-        "SysvarS1otHashes111111111111111111111111111"
     );
 }
 

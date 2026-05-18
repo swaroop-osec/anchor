@@ -158,3 +158,22 @@ pub struct Noop {}
         &["`#[discrim = N]` value must be an integer literal"],
     );
 }
+
+#[test]
+fn slot_hashes_is_not_a_supported_sysvar_account() {
+    compile_fail_case(
+        "unsupported_slot_hashes_sysvar",
+        r#"
+use anchor_lang_v2::{accounts::Sysvar, pinocchio, AnchorAccount};
+
+type SlotHashes = pinocchio::sysvars::slot_hashes::SlotHashes<&'static [u8]>;
+
+fn assert_anchor_account<T: AnchorAccount>() {}
+
+fn check() {
+    assert_anchor_account::<Sysvar<SlotHashes>>();
+}
+"#,
+        &["SlotHashes", "SysvarId"],
+    );
+}

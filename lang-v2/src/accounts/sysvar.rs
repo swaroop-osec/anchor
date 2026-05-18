@@ -34,11 +34,6 @@ impl SysvarId for pinocchio::sysvars::rent::Rent {
     const IDL_ADDRESS: &'static str = "SysvarRent111111111111111111111111111111111";
 }
 
-impl<T: Deref<Target = [u8]>> SysvarId for pinocchio::sysvars::slot_hashes::SlotHashes<T> {
-    const SYSVAR_ID: Address = pinocchio::sysvars::slot_hashes::SLOTHASHES_ID;
-    const IDL_ADDRESS: &'static str = "SysvarS1otHashes111111111111111111111111111";
-}
-
 // FIXME: Add `EpochSchedule`: https://github.com/anza-xyz/pinocchio/pull/411
 
 /// Account wrapper for sysvars.
