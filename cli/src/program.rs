@@ -412,6 +412,7 @@ pub fn process_deploy(
     program_id: Option<Pubkey>,
     buffer: Option<Pubkey>,
     max_len: Option<usize>,
+    auto_extend: bool,
     verifiable: bool,
     no_idl: bool,
     make_final: bool,
@@ -428,6 +429,7 @@ pub fn process_deploy(
             program_id,
             buffer,
             max_len,
+            auto_extend,
             no_idl,
             make_final,
             solana_args,
@@ -493,6 +495,7 @@ pub fn process_deploy(
         program_id,
         buffer,
         max_len,
+        auto_extend,
         no_idl,
         make_final,
         solana_args,
@@ -544,10 +547,11 @@ fn deploy_workspace(
             Some(binary_path),
             None, // program_name - not needed since we have filepath
             program_keypair_filepath,
-            None, // upgrade_authority - uses wallet
-            None, // program_id - derived from keypair
-            None, // buffer
-            None, // max_len
+            None,  // upgrade_authority - uses wallet
+            None,  // program_id - derived from keypair
+            None,  // buffer
+            None,  // max_len
+            false, // auto_extend
             no_idl,
             make_final,
             solana_args.clone(),
@@ -569,6 +573,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             program_id,
             buffer,
             max_len,
+            auto_extend,
             no_idl,
             make_final,
             solana_args,
@@ -581,6 +586,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             program_id,
             buffer,
             max_len,
+            auto_extend,
             false, // verifiable
             no_idl,
             make_final,
@@ -633,6 +639,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             upgrade_authority,
             max_retries,
+            auto_extend,
             solana_args,
         } => program_upgrade(
             cfg_override,
@@ -642,6 +649,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             upgrade_authority,
             max_retries,
+            auto_extend,
             solana_args,
         ),
         ProgramCommand::Dump {
@@ -708,6 +716,7 @@ pub fn program_deploy(
     program_id: Option<Pubkey>,
     buffer: Option<Pubkey>,
     max_len: Option<usize>,
+    auto_extend: bool,
     no_idl: bool,
     make_final: bool,
     solana_args: Vec<String>,
@@ -935,6 +944,8 @@ pub fn program_deploy(
                     &payer,
                     &program_id,
                     &buffer_pubkey,
+                    program_data.len(),
+                    auto_extend,
                     &upgrade_authority,
                     priority_fee,
                     true, // skip_program_verification - done above
@@ -1284,12 +1295,104 @@ fn deploy_program(
     Ok(())
 }
 
+/// Extend programdata in-place if the new buffer exceeds the current allocation.
+fn auto_extend_program_data_if_needed(
+    rpc_client: &RpcClient,
+    payer: &Keypair,
+    program_id: &Pubkey,
+    program_len: usize,
+    auto_extend: bool,
+    upgrade_authority: &Keypair,
+    skip_preflight: bool,
+) -> Result<()> {
+    let programdata_metadata_size = UpgradeableLoaderState::size_of_programdata_metadata();
+
+    // Derive programdata pubkey and fetch its size.
+    let (programdata_pubkey, _) =
+        Pubkey::find_program_address(&[program_id.as_ref()], &bpf_loader_upgradeable_id::id());
+    let programdata_account = rpc_client.get_account(&programdata_pubkey).map_err(|e| {
+        anyhow!(
+            "Failed to fetch programdata {} for auto-extend check: {}",
+            programdata_pubkey,
+            e
+        )
+    })?;
+    let programdata_body_len = programdata_account
+        .data
+        .len()
+        .saturating_sub(programdata_metadata_size);
+    let required_programdata_len = UpgradeableLoaderState::size_of_programdata(program_len);
+    let required_programdata_body_len =
+        required_programdata_len.saturating_sub(programdata_metadata_size);
+
+    if required_programdata_body_len <= programdata_body_len {
+        return Ok(()); // already large enough
+    }
+
+    let additional_bytes = (required_programdata_body_len - programdata_body_len) as u32;
+    if !auto_extend {
+        bail!(
+            "Program data account is too small for this upgrade: current size is {} bytes, \
+             required size is {} bytes, needs {} more bytes. Re-run with `--auto-extend` to \
+             extend the program automatically before upgrade.",
+            programdata_body_len,
+            required_programdata_body_len,
+            additional_bytes
+        );
+    }
+
+    println!(
+        "Auto-extending program data by {} bytes ({} → {}) before upgrade…",
+        additional_bytes, programdata_body_len, required_programdata_body_len
+    );
+
+    let extend_ix =
+        loader_v3_instruction::extend_program(program_id, Some(&payer.pubkey()), additional_bytes);
+    let recent_blockhash = rpc_client.get_latest_blockhash()?;
+    let extend_tx = Transaction::new_signed_with_payer(
+        &[extend_ix],
+        Some(&payer.pubkey()),
+        &[payer, upgrade_authority],
+        recent_blockhash,
+    );
+    rpc_client
+        .send_and_confirm_transaction_with_spinner_and_config(
+            &extend_tx,
+            CommitmentConfig::confirmed(),
+            RpcSendTransactionConfig {
+                skip_preflight,
+                preflight_commitment: Some(CommitmentConfig::confirmed().commitment),
+                encoding: None,
+                max_retries: None,
+                min_context_slot: None,
+            },
+        )
+        .map_err(|e| anyhow!("Auto-extend failed: {}", e))?;
+
+    let extended_slot = rpc_client
+        .get_slot()
+        .map_err(|e| anyhow!("Failed to fetch slot after auto-extend: {}", e))?;
+    for _ in 0..20 {
+        let current_slot = rpc_client
+            .get_slot()
+            .map_err(|e| anyhow!("Failed to wait for next slot after auto-extend: {}", e))?;
+        if current_slot > extended_slot {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(400));
+    }
+
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn upgrade_program(
     rpc_client: &RpcClient,
     payer: &Keypair,
     program_id: &Pubkey,
     buffer: &Pubkey,
+    program_len: usize,
+    auto_extend: bool,
     upgrade_authority: &Keypair,
     priority_fee: Option<u64>,
     skip_program_verification: bool,
@@ -1302,6 +1405,18 @@ fn upgrade_program(
 
     // Verify the buffer account is valid
     verify_buffer_account(rpc_client, buffer, &upgrade_authority.pubkey())?;
+
+    // Auto-extend programdata if the new buffer's body is larger than the
+    // current programdata allocation.
+    auto_extend_program_data_if_needed(
+        rpc_client,
+        payer,
+        program_id,
+        program_len,
+        auto_extend,
+        upgrade_authority,
+        skip_preflight,
+    )?;
 
     println!("Sending upgrade transaction...");
 
@@ -1704,6 +1819,7 @@ pub fn program_upgrade(
     buffer: Option<Pubkey>,
     upgrade_authority: Option<String>,
     max_retries: u32,
+    auto_extend: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
@@ -1739,11 +1855,24 @@ pub fn program_upgrade(
 
     // Case 1: Using existing buffer (no retries needed)
     if let Some(buffer_pubkey) = buffer {
+        let buffer_account = rpc_client.get_account(&buffer_pubkey).map_err(|e| {
+            anyhow!(
+                "Failed to fetch buffer {} for upgrade length check: {}",
+                buffer_pubkey,
+                e
+            )
+        })?;
+        let buffer_program_len = buffer_account
+            .data
+            .len()
+            .saturating_sub(UpgradeableLoaderState::size_of_buffer_metadata());
         return upgrade_program(
             &rpc_client,
             &payer,
             &program_id,
             &buffer_pubkey,
+            buffer_program_len,
+            auto_extend,
             &upgrade_authority_keypair,
             priority_fee,
             true, // skip_program_verification - already done above
@@ -1862,6 +1991,8 @@ pub fn program_upgrade(
                 &payer,
                 &program_id,
                 &buffer_pubkey,
+                program_data.len(),
+                auto_extend,
                 &upgrade_authority_keypair,
                 priority_fee,
                 true, // skip_program_verification
