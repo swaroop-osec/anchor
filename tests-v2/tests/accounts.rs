@@ -56,6 +56,16 @@ fn borsh_counter_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"borsh-counter"], &program_id()).0
 }
 
+fn foreign_borsh_owner() -> Pubkey {
+    "Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u"
+        .parse()
+        .unwrap()
+}
+
+fn foreign_borsh_counter_disc() -> [u8; 8] {
+    [0x0f, 0xb0, 0x52, 0x48, 0x0a, 0xcc, 0x7d, 0x01]
+}
+
 const SYSTEM_SEED: &str = "anchor-v2-seed";
 const SYSTEM_TRANSFER_SEED: &str = "anchor-v2-transfer";
 const NONCE_ACCOUNT_LENGTH: usize = 80;
@@ -103,6 +113,23 @@ fn set_system_account(svm: &mut LiteSVM, address: Pubkey, lamports: u64, data_le
             lamports,
             data: vec![0u8; data_len],
             owner: solana_sdk_ids::system_program::ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .unwrap();
+}
+
+fn set_foreign_borsh_counter(svm: &mut LiteSVM, address: Pubkey, value: u64) {
+    let mut data = Vec::with_capacity(16);
+    data.extend_from_slice(&foreign_borsh_counter_disc());
+    data.extend_from_slice(&value.to_le_bytes());
+    svm.set_account(
+        address,
+        solana_account::Account {
+            lamports: 1_000_000,
+            data,
+            owner: foreign_borsh_owner(),
             executable: false,
             rent_epoch: 0,
         },
@@ -288,6 +315,32 @@ fn lamports_helpers_reject_underflow_and_preserve_balances() {
     let recipient_after = svm.get_account(&recipient.pubkey()).unwrap().lamports;
     assert_eq!(counter_after, counter_before);
     assert_eq!(recipient_after, recipient_before);
+}
+
+#[test]
+fn foreign_borsh_account_mutation_is_not_written_on_exit() {
+    let (mut svm, payer) = setup();
+    let foreign_counter = Pubkey::new_unique();
+    set_foreign_borsh_counter(&mut svm, foreign_counter, 42);
+
+    let metas = vec![AccountMeta::new(foreign_counter, false)];
+    send_instruction(&mut svm, program_id(), vec![32], metas, &payer, &[])
+        .expect("foreign-owned BorshAccount<T> should load and handler should succeed");
+
+    let account = svm
+        .get_account(&foreign_counter)
+        .expect("foreign counter still exists");
+    assert_eq!(account.owner, foreign_borsh_owner());
+    assert_eq!(
+        &account.data[..8],
+        &foreign_borsh_counter_disc(),
+        "discriminator should be unchanged"
+    );
+    let value = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
+    assert_eq!(
+        value, 42,
+        "generated exit must not serialize in-memory mutations into foreign-owned account data"
+    );
 }
 
 #[test]

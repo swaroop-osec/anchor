@@ -27,6 +27,7 @@ use {
 };
 
 const PROGRAM_ID: [u8; 32] = [0x42; 32];
+const FOREIGN_PROGRAM_ID: [u8; 32] = [0x24; 32];
 
 #[derive(SchemaRead, SchemaWrite, Default, Clone, PartialEq, Debug)]
 struct Counter {
@@ -44,8 +45,27 @@ impl Discriminator for Counter {
     const DISCRIMINATOR: &'static [u8] = &[0xff, 0xb0, 0x04, 0xf5, 0xbc, 0xfd, 0x7c, 0x19];
 }
 
+#[derive(SchemaRead, SchemaWrite, Default, Clone, PartialEq, Debug)]
+struct ForeignCounter {
+    value: u64,
+}
+
+impl Owner for ForeignCounter {
+    fn owner(_program_id: &Address) -> Address {
+        Address::new_from_array(FOREIGN_PROGRAM_ID)
+    }
+}
+
+impl Discriminator for ForeignCounter {
+    const DISCRIMINATOR: &'static [u8] = &[0x23, 0xaa, 0x41, 0x17, 0x83, 0x62, 0xdd, 0x09];
+}
+
 fn counter_disc() -> [u8; 8] {
     [0xff, 0xb0, 0x04, 0xf5, 0xbc, 0xfd, 0x7c, 0x19]
+}
+
+fn foreign_counter_disc() -> [u8; 8] {
+    [0x23, 0xaa, 0x41, 0x17, 0x83, 0x62, 0xdd, 0x09]
 }
 
 fn setup_counter_buf(buf: &mut AccountBuffer<256>, initial_value: u64) {
@@ -55,6 +75,16 @@ fn setup_counter_buf(buf: &mut AccountBuffer<256>, initial_value: u64) {
     buf.init([0xAA; 32], PROGRAM_ID, data_len, false, true, false);
     let mut data = [0u8; 16];
     data[..8].copy_from_slice(&counter_disc());
+    data[8..16].copy_from_slice(&initial_value.to_le_bytes());
+    buf.write_data(&data);
+    buf.set_lamports(1_000_000_000);
+}
+
+fn setup_foreign_counter_buf(buf: &mut AccountBuffer<256>, initial_value: u64) {
+    let data_len = 16;
+    buf.init([0xAA; 32], FOREIGN_PROGRAM_ID, data_len, false, true, false);
+    let mut data = [0u8; 16];
+    data[..8].copy_from_slice(&foreign_counter_disc());
     data[8..16].copy_from_slice(&initial_value.to_le_bytes());
     buf.write_data(&data);
     buf.set_lamports(1_000_000_000);
@@ -99,6 +129,44 @@ fn exit_writes_modified_in_memory_state_to_guard() {
     // Read back — the serialized value in the guard should be 999.
     let bytes = read_data_bytes(&buf, 8, 8);
     assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 999);
+}
+
+#[test]
+fn exit_skips_serialization_for_foreign_owned_account() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_foreign_counter_buf(&mut buf, 42);
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    {
+        let view = unsafe { buf.view() };
+        let mut acct =
+            unsafe { BorshAccount::<ForeignCounter>::load_mut(view, &program_id) }.unwrap();
+        assert_eq!(acct.value, 42);
+        acct.value = 999;
+        acct.exit().unwrap();
+    }
+
+    let bytes = read_data_bytes(&buf, 8, 8);
+    assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 42);
+}
+
+#[test]
+fn release_borrow_skips_serialization_for_foreign_owned_account() {
+    let mut buf = AccountBuffer::<256>::new();
+    setup_foreign_counter_buf(&mut buf, 42);
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    {
+        let view = unsafe { buf.view() };
+        let mut acct =
+            unsafe { BorshAccount::<ForeignCounter>::load_mut(view, &program_id) }.unwrap();
+        assert_eq!(acct.value, 42);
+        acct.value = 999;
+        acct.release_borrow().unwrap();
+    }
+
+    let bytes = read_data_bytes(&buf, 8, 8);
+    assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 42);
 }
 
 // -- 2. Stale detection: content-only change is NOT detected ---------

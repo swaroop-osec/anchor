@@ -18,6 +18,8 @@ declare_id!("Acc1111111111111111111111111111111111111111");
 
 const PROGRAM_OWNER: Address =
     Address::from_str_const("Acc1111111111111111111111111111111111111111");
+const FOREIGN_BORSH_OWNER: Address =
+    Address::from_str_const("Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u");
 const SYSTEM_SEED: &str = "anchor-v2-seed";
 const SYSTEM_TRANSFER_SEED: &str = "anchor-v2-transfer";
 
@@ -30,6 +32,26 @@ pub struct Counter {
 pub struct BorshCounter {
     pub value: u64,
 }
+
+#[derive(Clone, Default, SchemaRead, SchemaWrite)]
+pub struct ForeignBorshCounter {
+    pub value: u64,
+}
+
+impl Owner for ForeignBorshCounter {
+    fn owner(_program_id: &Address) -> Address {
+        FOREIGN_BORSH_OWNER
+    }
+}
+
+impl Discriminator for ForeignBorshCounter {
+    const DISCRIMINATOR: &'static [u8] = &[0x0f, 0xb0, 0x52, 0x48, 0x0a, 0xcc, 0x7d, 0x01];
+}
+
+// TODO: Support foreign-program owners directly in `#[account(borsh)]` so
+// tests and users do not need to hand-roll `Owner`, `Discriminator`, and IDL
+// metadata for foreign-owned Borsh accounts.
+impl anchor_lang_v2::IdlAccountType for ForeignBorshCounter {}
 
 #[program]
 pub mod accounts_test {
@@ -538,6 +560,17 @@ pub mod accounts_test {
         ctx.accounts.recipient.add_lamports(amount)?;
         Ok(())
     }
+
+    /// Mutates a foreign-owned `BorshAccount<T>` in memory. The generated exit
+    /// path must not serialize the mutation back to the account data because
+    /// the runtime owner is not this program.
+    #[discrim = 32]
+    pub fn mutate_foreign_borsh_counter(
+        ctx: &mut Context<MutateForeignBorshCounter>,
+    ) -> Result<()> {
+        ctx.accounts.counter.value = 999;
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -583,6 +616,12 @@ pub struct TransferFromBorshCounterWithLamportsHelpers {
     pub counter: BorshAccount<BorshCounter>,
     #[account(mut)]
     pub recipient: SystemAccount,
+}
+
+#[derive(Accounts)]
+pub struct MutateForeignBorshCounter {
+    #[account(mut)]
+    pub counter: BorshAccount<ForeignBorshCounter>,
 }
 
 #[derive(Accounts)]

@@ -55,6 +55,7 @@ where
     view: AccountView,
     data: T,
     borrow: SerializedAccountBorrow,
+    serialize_on_exit: bool,
     _serializer: PhantomData<S>,
 }
 
@@ -97,10 +98,26 @@ where
     /// this, `exit()` becomes a no-op until `reacquire_borrow_mut()` is
     /// called. Immutable / already-released borrows skip the commit.
     pub fn release_borrow(&mut self) -> Result<(), ProgramError> {
-        if let SerializedAccountBorrow::Mutable { ref mut guard } = self.borrow {
-            S::serialize(&self.data, &mut &mut guard[DISC_LEN..])?;
-        }
+        Self::serialize_current_owner(&self.data, &mut self.borrow, self.serialize_on_exit)?;
         self.borrow = SerializedAccountBorrow::Released;
+        Ok(())
+    }
+
+    fn should_serialize_for_program(view: &AccountView, program_id: &Address) -> bool {
+        view.owned_by(program_id)
+    }
+
+    fn serialize_current_owner(
+        data: &T,
+        borrow: &mut SerializedAccountBorrow,
+        serialize_on_exit: bool,
+    ) -> Result<(), ProgramError> {
+        if !serialize_on_exit {
+            return Ok(());
+        }
+        if let SerializedAccountBorrow::Mutable { ref mut guard } = borrow {
+            S::serialize(data, &mut &mut guard[DISC_LEN..])?;
+        }
         Ok(())
     }
 
@@ -133,6 +150,7 @@ where
             return Err(ProgramError::InvalidAccountData);
         }
         self.data = S::deserialize(&mut &data_ref[DISC_LEN..])?;
+        self.serialize_on_exit = Self::should_serialize_for_program(&self.view, program_id);
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
         self.borrow = SerializedAccountBorrow::Mutable { guard };
         Ok(())
@@ -205,6 +223,7 @@ where
             view,
             data,
             borrow: SerializedAccountBorrow::Immutable { _guard: guard },
+            serialize_on_exit: Self::should_serialize_for_program(&view, program_id),
             _serializer: PhantomData,
         })
     }
@@ -232,6 +251,7 @@ where
             view,
             data,
             borrow: SerializedAccountBorrow::Mutable { guard },
+            serialize_on_exit: Self::should_serialize_for_program(&view, program_id),
             _serializer: PhantomData,
         })
     }
@@ -297,9 +317,7 @@ where
             self.borrow = SerializedAccountBorrow::Released;
             self.reacquire_guard_only()?;
         }
-        if let SerializedAccountBorrow::Mutable { ref mut guard } = self.borrow {
-            S::serialize(&self.data, &mut &mut guard[DISC_LEN..])?;
-        }
+        Self::serialize_current_owner(&self.data, &mut self.borrow, self.serialize_on_exit)?;
         Ok(())
     }
 }
@@ -416,6 +434,7 @@ where
             view: *account,
             data,
             borrow: SerializedAccountBorrow::Mutable { guard },
+            serialize_on_exit: true,
             _serializer: PhantomData,
         })
     }

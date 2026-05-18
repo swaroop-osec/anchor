@@ -1716,6 +1716,11 @@ pub fn parse_field(
         if nc.namespace == "associated_token" {
             continue;
         }
+        // TODO: Improve diagnostics for missing SPL namespace imports.
+        // Today `token::...` / `mint::...` resolution failures point at the
+        // derive output. We want to keep the normal Rust E0433, but add a
+        // useful hint for importing `anchor_spl_v2::prelude::*` or the
+        // specific marker module.
         let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
         let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
         let value = &nc.value;
