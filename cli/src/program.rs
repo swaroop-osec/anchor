@@ -6,8 +6,14 @@ use {
     anchor_lang_idl::types::Idl,
     anyhow::{anyhow, bail, Result},
     cargo_metadata::{Metadata, MetadataCommand, Package, TargetKind},
-    solana_client::send_and_confirm_transactions_in_parallel::{
-        send_and_confirm_transactions_in_parallel_blocking_v2, SendAndConfirmConfigV2,
+    solana_cli_config::Config as SolanaCliConfig,
+    solana_client::{
+        connection_cache::ConnectionCache,
+        nonblocking::tpu_client::TpuClient as NonblockingTpuClient,
+        send_and_confirm_transactions_in_parallel::{
+            send_and_confirm_transactions_in_parallel_blocking_v2, SendAndConfirmConfigV2,
+        },
+        tpu_client::TpuClientConfig,
     },
     solana_commitment_config::CommitmentConfig,
     solana_compute_budget_interface::ComputeBudgetInstruction,
@@ -2430,12 +2436,49 @@ fn send_messages_in_batches(
     // Use parallel send and confirm function
     // Create a new RpcClient with the same URL and wrap in Arc for parallel processing
     let url = rpc_client.url();
-    let new_rpc_client = RpcClient::new_with_commitment(url, commitment);
+    let new_rpc_client = RpcClient::new_with_commitment(url.clone(), commitment);
     let rpc_client_arc = Arc::new(new_rpc_client);
+
+    // Construct a TPU client so chunk writes go directly to validator leaders
+    // via QUIC, bypassing the RPC node's send path.
+    //
+    // Failure-tolerant: if TPU construction errors (firewall blocks QUIC,
+    // websocket unreachable, etc.) we fall back to `None` and the parallel
+    // sender uses the RpcClient — slower but functional.
+    let tpu_client = {
+        let ws_url = SolanaCliConfig::compute_websocket_url(&url);
+        if ws_url.is_empty() {
+            None
+        } else {
+            match ConnectionCache::new_quic("anchor_program_deploy_tpu", 1) {
+                ConnectionCache::Quic(cache_inner) => {
+                    let inner_rpc = rpc_client_arc.get_inner_client().clone();
+                    let fut = NonblockingTpuClient::new_with_connection_cache(
+                        inner_rpc,
+                        &ws_url,
+                        TpuClientConfig::default(),
+                        cache_inner,
+                    );
+                    match rpc_client_arc.runtime().block_on(fut) {
+                        Ok(client) => Some(client),
+                        Err(e) => {
+                            eprintln!(
+                                "Note: TPU client construction failed ({}); falling back to RPC \
+                                 for chunk writes. This is slower but functional.",
+                                e
+                            );
+                            None
+                        }
+                    }
+                }
+                ConnectionCache::Udp(_) => None,
+            }
+        }
+    };
 
     let transaction_errors = send_and_confirm_transactions_in_parallel_blocking_v2(
         rpc_client_arc,
-        None,
+        tpu_client,
         messages,
         signers,
         SendAndConfirmConfigV2 {
