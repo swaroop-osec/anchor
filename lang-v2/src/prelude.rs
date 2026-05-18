@@ -51,6 +51,7 @@ pub use crate::{
     // Derive macros
     Accounts,
     // Core trait
+    AccountAddress,
     AnchorAccount,
     Bumps,
     // Context

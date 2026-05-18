@@ -13,6 +13,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "account-address-constraints"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "anchor-spl-v2",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "solana-program-error 3.0.0",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "account-meta-signer-overrides"
 version = "0.1.0"
 dependencies = [
@@ -9040,6 +9053,7 @@ dependencies = [
 name = "tests-v2"
 version = "0.1.0"
 dependencies = [
+ "account-address-constraints",
  "account-meta-signer-overrides",
  "accounts-test",
  "anchor-lang-idl-spec",

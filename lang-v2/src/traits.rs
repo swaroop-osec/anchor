@@ -182,6 +182,32 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     }
 }
 
+/// Account-like value that can provide its on-chain address.
+///
+/// This is intentionally implemented blanketly for every [`AnchorAccount`]:
+/// `AnchorAccount::account()` already exposes the underlying `AccountView`,
+/// so boxed and typed account wrappers can all be used uniformly as address
+/// field references in generated constraint code.
+pub trait AccountAddress {
+    fn account_address(&self) -> &Address;
+}
+
+impl<T: AnchorAccount> AccountAddress for T {
+    #[inline(always)]
+    fn account_address(&self) -> &Address {
+        self.account().address()
+    }
+}
+
+impl<T: AccountAddress> AccountAddress for Option<T> {
+    #[inline(always)]
+    fn account_address(&self) -> &Address {
+        self.as_ref()
+            .expect("optional account is None")
+            .account_address()
+    }
+}
+
 /// Lamports related utility methods for accounts.
 pub trait Lamports: AsRef<AccountView> {
     /// Get the lamports of the account.

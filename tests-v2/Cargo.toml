@@ -13,6 +13,7 @@ path = "tests/equivalence/spl.rs"
 
 [dependencies]
 anchor-lang-v2 = { path = "../lang-v2" }
+account-address-constraints = { path = "programs/account-address-constraints" }
 account-meta-signer-overrides = { path = "programs/account-meta-signer-overrides" }
 borsh-realloc = { path = "programs/borsh-realloc", features = ["cpi"] }
 callee = { path = "programs/callee", features = ["cpi"] }
