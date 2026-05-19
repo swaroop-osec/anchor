@@ -18,6 +18,7 @@ pub use crate::{
     create_program_address,
     // ID
     declare_id,
+    declare_program,
     emit,
     error_code,
     // Event

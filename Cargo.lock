@@ -2050,6 +2050,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
+name = "declare-program"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4374,6 +4382,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "program-interface"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
 ]
 
 [[package]]
@@ -9079,6 +9095,7 @@ dependencies = [
  "client-builders",
  "constraints",
  "custom-constraints",
+ "declare-program",
  "derives-test",
  "dispatch-remaining",
  "dup-mut",
@@ -9088,6 +9105,7 @@ dependencies = [
  "litesvm",
  "optional-accounts",
  "pinocchio",
+ "program-interface",
  "proptest",
  "seeds",
  "serde_json",

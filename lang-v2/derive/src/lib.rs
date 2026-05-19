@@ -14,8 +14,8 @@ use {
     proc_macro2::TokenStream as TokenStream2,
     quote::quote,
     syn::{
-        parse_macro_input, spanned::Spanned, Data, DeriveInput, Fields, FnArg, Ident, ItemMod,
-        ItemStruct, Pat, Type,
+        parse::Parser, parse_macro_input, spanned::Spanned, Data, DeriveInput, Expr, Fields, FnArg,
+        Ident, ItemMod, ItemStruct, Pat, Type,
     },
 };
 
@@ -115,7 +115,7 @@ fn nested_client_accounts_type(ty: &Type) -> Option<TokenStream2> {
         ),
         inner_ident.span(),
     );
-    Some(quote! { crate::#module_ident::#inner_ident })
+    Some(quote! { super::#module_ident::#inner_ident })
 }
 
 struct ArgsDeser {
@@ -1601,9 +1601,513 @@ fn diagnose_non_pod_field(ty: &Type, field_name: &str, struct_name: &str) -> Opt
 // ---------------------------------------------------------------------------
 
 #[proc_macro_attribute]
-pub fn program(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn program(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let config = match parse_program_config(attr) {
+        Ok(config) => config,
+        Err(err) => return TokenStream::from(err.to_compile_error()),
+    };
     let module = parse_macro_input!(item as ItemMod);
-    TokenStream::from(impl_program(&module))
+    TokenStream::from(impl_program(&module, &config))
+}
+
+#[proc_macro]
+pub fn declare_program(input: TokenStream) -> TokenStream {
+    let name = parse_macro_input!(input as Ident);
+    match impl_declare_program(&name) {
+        Ok(tokens) => TokenStream::from(tokens),
+        Err(err) => TokenStream::from(err.to_compile_error()),
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProgramMode {
+    Executable,
+    Interface,
+}
+
+struct ProgramConfig {
+    mode: ProgramMode,
+    program_id: Expr,
+}
+
+#[derive(Clone)]
+struct DiscrimAttr {
+    bytes: Vec<u8>,
+    span: proc_macro2::Span,
+}
+
+fn parse_program_config(attr: TokenStream) -> syn::Result<ProgramConfig> {
+    parse_program_config_tokens(TokenStream2::from(attr))
+}
+
+fn parse_program_config_tokens(attr: TokenStream2) -> syn::Result<ProgramConfig> {
+    let mut mode = ProgramMode::Executable;
+    let mut program_id = None;
+    let mut program_id_span = None;
+
+    if attr.is_empty() {
+        return Ok(ProgramConfig {
+            mode,
+            program_id: syn::parse_quote!(crate::ID),
+        });
+    }
+
+    let parser = syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated;
+    for meta in parser.parse2(attr)? {
+        match meta {
+            syn::Meta::Path(path) if path.is_ident("interface") => {
+                mode = ProgramMode::Interface;
+            }
+            syn::Meta::NameValue(nv) if nv.path.is_ident("program_id") => {
+                if program_id.is_some() {
+                    return Err(syn::Error::new(nv.path.span(), "duplicate `program_id`"));
+                }
+                program_id_span = Some(nv.path.span());
+                program_id = Some(nv.value);
+            }
+            other => {
+                return Err(syn::Error::new(
+                    other.span(),
+                    "unsupported `#[program]` argument; expected `interface` or `program_id = <expr>`",
+                ));
+            }
+        }
+    }
+
+    if mode == ProgramMode::Executable {
+        if let Some(span) = program_id_span {
+            return Err(syn::Error::new(
+                span,
+                "`program_id` is only supported with `#[program(interface, ...)]`",
+            ));
+        }
+    }
+
+    Ok(ProgramConfig {
+        mode,
+        program_id: program_id.unwrap_or_else(|| syn::parse_quote!(crate::ID)),
+    })
+}
+
+fn impl_declare_program(name: &Ident) -> syn::Result<TokenStream2> {
+    let idl = read_declare_program_idl(name)?;
+    gen_declared_program(name, &idl)
+}
+
+fn read_declare_program_idl(name: &Ident) -> syn::Result<serde_json::Value> {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|err| {
+        syn::Error::new(
+            name.span(),
+            format!("failed to read `CARGO_MANIFEST_DIR` for `declare_program!`: {err}"),
+        )
+    })?;
+    let manifest_dir = std::path::PathBuf::from(manifest_dir);
+    let idl_dir = manifest_dir
+        .ancestors()
+        .find_map(|ancestor| {
+            let candidate = ancestor.join("idls");
+            candidate.exists().then_some(candidate)
+        })
+        .ok_or_else(|| syn::Error::new(name.span(), "`idls` directory not found"))?;
+    let idl_path = idl_dir.join(name.to_string()).with_extension("json");
+    let idl = std::fs::read_to_string(&idl_path).map_err(|err| {
+        syn::Error::new(
+            name.span(),
+            format!("failed to read IDL `{}`: {err}", idl_path.display()),
+        )
+    })?;
+    serde_json::from_str(&idl).map_err(|err| {
+        syn::Error::new(
+            name.span(),
+            format!("failed to parse IDL `{}`: {err}", idl_path.display()),
+        )
+    })
+}
+
+fn gen_declared_program(name: &Ident, idl: &serde_json::Value) -> syn::Result<TokenStream2> {
+    let address = idl
+        .get("address")
+        .or_else(|| idl.pointer("/metadata/address"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| syn::Error::new(name.span(), "IDL is missing program address"))?;
+    let address_lit = syn::LitStr::new(address, name.span());
+    let instructions = idl
+        .get("instructions")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| syn::Error::new(name.span(), "IDL is missing instructions array"))?;
+
+    let types = gen_declare_program_types(idl)?;
+    let mut account_groups = std::collections::BTreeMap::<String, Vec<DeclareAccountField>>::new();
+    let mut handlers = Vec::new();
+    for ix in instructions {
+        let ix_name = json_str(ix, "name", name.span())?;
+        let ix_ident = Ident::new(&to_snake_case(ix_name), name.span());
+        let accounts_name = to_type_name(ix_name);
+        let accounts_ident = Ident::new(&accounts_name, name.span());
+        let accounts = ix
+            .get("accounts")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| {
+                syn::Error::new(
+                    name.span(),
+                    format!("instruction `{ix_name}` is missing accounts array"),
+                )
+            })?;
+        collect_declare_account_group(&accounts_name, accounts, &mut account_groups, name.span())?;
+
+        let discrim = ix
+            .get("discriminator")
+            .and_then(serde_json::Value::as_array)
+            .map(|values| parse_discriminator_array(values, name.span()))
+            .transpose()?
+            .unwrap_or_else(|| default_instruction_discriminator(&to_snake_case(ix_name)));
+        let discrim_tokens: Vec<_> = discrim.iter().map(|b| quote! { #b }).collect();
+
+        let args = ix
+            .get("args")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| {
+                syn::Error::new(
+                    name.span(),
+                    format!("instruction `{ix_name}` is missing args array"),
+                )
+            })?;
+        let mut arg_decls = Vec::new();
+        let mut arg_uses = Vec::new();
+        for arg in args {
+            let arg_name = json_str(arg, "name", name.span())?;
+            let arg_ident = Ident::new(&to_snake_case(arg_name), name.span());
+            let ty_value = arg.get("type").ok_or_else(|| {
+                syn::Error::new(
+                    name.span(),
+                    format!("argument `{arg_name}` is missing type"),
+                )
+            })?;
+            let ty = declare_idl_type_to_tokens(ty_value, name.span())?;
+            arg_decls.push(quote! { #arg_ident: #ty });
+            arg_uses.push(quote! { let _ = #arg_ident; });
+        }
+
+        handlers.push(quote! {
+            #[discrim = [#(#discrim_tokens),*]]
+            pub fn #ix_ident(_ctx: &mut anchor_lang_v2::Context<#accounts_ident>, #(#arg_decls),*) -> anchor_lang_v2::Result<()> {
+                #(#arg_uses)*
+                unreachable!()
+            }
+        });
+    }
+
+    let mut account_structs = Vec::new();
+    for (group_name, fields) in account_groups {
+        let group_ident = Ident::new(&group_name, name.span());
+        let field_tokens = fields.into_iter().map(|field| field.to_tokens());
+        account_structs.push(quote! {
+            #[derive(anchor_lang_v2::Accounts)]
+            pub struct #group_ident {
+                #(#field_tokens)*
+            }
+        });
+    }
+
+    let marker_name = Ident::new(&to_type_name(&name.to_string()), name.span());
+    Ok(quote! {
+        pub mod #name {
+            use super::*;
+
+            pub const ID: anchor_lang_v2::Address =
+                anchor_lang_v2::Address::from_str_const(#address_lit);
+
+            pub mod program {
+                pub struct #marker_name;
+
+                impl anchor_lang_v2::Id for #marker_name {
+                    fn id() -> anchor_lang_v2::Address {
+                        super::ID
+                    }
+                }
+            }
+
+            #(#types)*
+            #(#account_structs)*
+
+            #[anchor_lang_v2::program(interface, program_id = ID)]
+            pub mod __program {
+                use super::*;
+                #(#handlers)*
+            }
+        }
+    })
+}
+
+struct DeclareAccountField {
+    name: Ident,
+    ty: TokenStream2,
+    attrs: TokenStream2,
+}
+
+impl DeclareAccountField {
+    fn to_tokens(self) -> TokenStream2 {
+        let name = self.name;
+        let ty = self.ty;
+        let attrs = self.attrs;
+        quote! {
+            #attrs
+            pub #name: #ty,
+        }
+    }
+}
+
+fn collect_declare_account_group(
+    group_name: &str,
+    accounts: &[serde_json::Value],
+    groups: &mut std::collections::BTreeMap<String, Vec<DeclareAccountField>>,
+    span: proc_macro2::Span,
+) -> syn::Result<()> {
+    if groups.contains_key(group_name) {
+        return Ok(());
+    }
+
+    let mut fields = Vec::new();
+    for account in accounts {
+        let name = json_str(account, "name", span)?;
+        let ident = Ident::new(&to_snake_case(name), span);
+        if let Some(nested) = account
+            .get("accounts")
+            .and_then(serde_json::Value::as_array)
+        {
+            let nested_name = to_type_name(name);
+            collect_declare_account_group(&nested_name, nested, groups, span)?;
+            let nested_ident = Ident::new(&nested_name, span);
+            fields.push(DeclareAccountField {
+                name: ident,
+                ty: quote! { anchor_lang_v2::Nested<#nested_ident> },
+                attrs: quote! {},
+            });
+            continue;
+        }
+
+        let writable = account
+            .get("writable")
+            .or_else(|| account.get("isMut"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let signer = account
+            .get("signer")
+            .or_else(|| account.get("isSigner"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let optional = account
+            .get("optional")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+
+        let base_ty = if signer {
+            quote! { anchor_lang_v2::accounts::Signer }
+        } else {
+            quote! { anchor_lang_v2::accounts::UncheckedAccount }
+        };
+        let ty = if optional {
+            quote! { Option<#base_ty> }
+        } else {
+            base_ty
+        };
+        let attrs = if writable {
+            quote! { #[account(mut)] }
+        } else {
+            quote! {}
+        };
+        fields.push(DeclareAccountField {
+            name: ident,
+            ty,
+            attrs,
+        });
+    }
+
+    groups.insert(group_name.to_string(), fields);
+    Ok(())
+}
+
+fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenStream2>> {
+    let Some(types) = idl.get("types").and_then(serde_json::Value::as_array) else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for ty_def in types {
+        let name = json_str(ty_def, "name", proc_macro2::Span::call_site())?;
+        let ident = Ident::new(&to_type_name(name), proc_macro2::Span::call_site());
+        let type_obj = ty_def.get("type").ok_or_else(|| {
+            syn::Error::new(ident.span(), format!("type `{name}` is missing type body"))
+        })?;
+        let kind = json_str(type_obj, "kind", ident.span())?;
+        if kind != "struct" {
+            return Err(syn::Error::new(
+                ident.span(),
+                format!("declare_program! only supports struct types for now, got `{kind}`"),
+            ));
+        }
+        let fields = type_obj
+            .get("fields")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| {
+                syn::Error::new(
+                    ident.span(),
+                    format!("struct type `{name}` is missing fields"),
+                )
+            })?;
+        let mut field_tokens = Vec::new();
+        for field in fields {
+            let field_name = json_str(field, "name", ident.span())?;
+            let field_ident = Ident::new(&to_snake_case(field_name), ident.span());
+            let ty_value = field.get("type").ok_or_else(|| {
+                syn::Error::new(
+                    ident.span(),
+                    format!("field `{field_name}` is missing type"),
+                )
+            })?;
+            let ty = declare_idl_type_to_tokens(ty_value, ident.span())?;
+            field_tokens.push(quote! { pub #field_ident: #ty, });
+        }
+        out.push(quote! {
+            #[derive(Clone, anchor_lang_v2::wincode::SchemaWrite)]
+            pub struct #ident {
+                #(#field_tokens)*
+            }
+        });
+    }
+    Ok(out)
+}
+
+fn declare_idl_type_to_tokens(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    if let Some(s) = value.as_str() {
+        return Ok(match s {
+            "bool" => quote! { bool },
+            "u8" => quote! { u8 },
+            "i8" => quote! { i8 },
+            "u16" => quote! { u16 },
+            "i16" => quote! { i16 },
+            "u32" => quote! { u32 },
+            "i32" => quote! { i32 },
+            "u64" => quote! { u64 },
+            "i64" => quote! { i64 },
+            "u128" => quote! { u128 },
+            "i128" => quote! { i128 },
+            "bytes" => quote! { anchor_lang_v2::__alloc::vec::Vec<u8> },
+            "string" => quote! { anchor_lang_v2::__alloc::string::String },
+            "pubkey" => quote! { anchor_lang_v2::Address },
+            other => {
+                return Err(syn::Error::new(
+                    span,
+                    format!("unsupported IDL type string `{other}`"),
+                ))
+            }
+        });
+    }
+
+    if let Some(defined) = value.get("defined") {
+        let defined_name = if let Some(name) = defined.as_str() {
+            name
+        } else {
+            json_str(defined, "name", span)?
+        };
+        let ident = Ident::new(&to_type_name(defined_name), span);
+        return Ok(quote! { #ident });
+    }
+    if let Some(inner) = value.get("vec") {
+        let inner = declare_idl_type_to_tokens(inner, span)?;
+        return Ok(quote! { anchor_lang_v2::__alloc::vec::Vec<#inner> });
+    }
+    if let Some(inner) = value.get("option") {
+        let inner = declare_idl_type_to_tokens(inner, span)?;
+        return Ok(quote! { Option<#inner> });
+    }
+    if let Some(array) = value.get("array").and_then(serde_json::Value::as_array) {
+        if array.len() != 2 {
+            return Err(syn::Error::new(
+                span,
+                "IDL array type must have two elements",
+            ));
+        }
+        let inner = declare_idl_type_to_tokens(&array[0], span)?;
+        let len = array[1]
+            .as_u64()
+            .ok_or_else(|| syn::Error::new(span, "IDL array length must be an integer"))?
+            as usize;
+        return Ok(quote! { [#inner; #len] });
+    }
+
+    Err(syn::Error::new(
+        span,
+        format!("unsupported IDL type `{value}`"),
+    ))
+}
+
+fn json_str<'a>(
+    value: &'a serde_json::Value,
+    key: &str,
+    span: proc_macro2::Span,
+) -> syn::Result<&'a str> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| syn::Error::new(span, format!("IDL object is missing string field `{key}`")))
+}
+
+fn parse_discriminator_array(
+    values: &[serde_json::Value],
+    span: proc_macro2::Span,
+) -> syn::Result<Vec<u8>> {
+    if values.is_empty() {
+        return Err(syn::Error::new(span, "IDL discriminator must not be empty"));
+    }
+    values
+        .iter()
+        .map(|value| {
+            value
+                .as_u64()
+                .filter(|value| *value <= u8::MAX as u64)
+                .map(|value| value as u8)
+                .ok_or_else(|| syn::Error::new(span, "IDL discriminator values must be bytes"))
+        })
+        .collect()
+}
+
+fn default_instruction_discriminator(name: &str) -> Vec<u8> {
+    use sha2::Digest;
+    sha2::Sha256::digest(format!("global:{name}").as_bytes())[..8].to_vec()
+}
+
+fn to_snake_case(input: &str) -> String {
+    let mut out = String::new();
+    for (i, ch) in input.chars().enumerate() {
+        if ch == '-' || ch == ' ' {
+            out.push('_');
+        } else if ch.is_ascii_uppercase() {
+            if i != 0 {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn to_type_name(input: &str) -> String {
+    to_snake_case(input)
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect()
 }
 
 struct HandlerCodegen {
@@ -1670,22 +2174,37 @@ fn process_handler(
     handler: &syn::ItemFn,
     mod_name: &Ident,
     use_byte_disc: bool,
-    discrim_byte: Option<u8>,
+    discrim_bytes: Option<&[u8]>,
+    program_id: &Expr,
 ) -> HandlerCodegen {
     let fn_name = &handler.sig.ident;
     let fn_name_str = fn_name.to_string();
 
-    // Discriminator: 1-byte user-specified or 8-byte sha256 hash.
+    // Discriminator: explicit bytes for declared interfaces, 1-byte
+    // user-specified executable dispatch, or 8-byte sha256 hash by default.
     use sha2::Digest;
     let hash = sha2::Sha256::digest(format!("global:{fn_name_str}").as_bytes());
     let (disc_bytes_for_idl, disc_literal_bytes, disc_match_arm_pattern): (
         Vec<u8>,
         Vec<TokenStream2>,
         TokenStream2,
-    ) = if use_byte_disc {
-        let byte = discrim_byte
-            .expect("all-or-nothing discrim check guarantees Some when use_byte_disc is true");
-        (vec![byte], vec![quote! { #byte }], quote! { #byte })
+    ) = if let Some(discrim_bytes) = discrim_bytes {
+        let lits: Vec<_> = discrim_bytes.iter().map(|b| quote! { #b }).collect();
+        let match_arm = if use_byte_disc {
+            let byte = discrim_bytes[0];
+            quote! { #byte }
+        } else if discrim_bytes.len() == 8 {
+            let disc_u64 = u64::from_le_bytes(
+                discrim_bytes
+                    .try_into()
+                    .expect("checked length before u64 conversion"),
+            );
+            quote! { #disc_u64 }
+        } else {
+            // Non-executable interface mode does not emit dispatch arms.
+            quote! { _ }
+        };
+        (discrim_bytes.to_vec(), lits, match_arm)
     } else {
         let disc_bytes = &hash[..8];
         let disc_u64 = u64::from_le_bytes(
@@ -1854,7 +2373,7 @@ fn process_handler(
                 accounts: impl anchor_lang_v2::ToAccountMetas,
             ) -> anchor_lang_v2::solana_program::instruction::Instruction {
                 anchor_lang_v2::solana_program::instruction::Instruction::new_with_bytes(
-                    crate::ID,
+                    #program_id,
                     &<Self as anchor_lang_v2::InstructionData>::data(&self),
                     accounts.to_account_metas(None),
                 )
@@ -1945,7 +2464,7 @@ fn process_handler(
     }
 }
 
-fn impl_program(module: &ItemMod) -> TokenStream2 {
+fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
     let mod_name = &module.ident;
     let mod_vis = &module.vis;
     let content = match &module.content {
@@ -1972,9 +2491,10 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
     }
 
     // --- Parse #[discrim = N] attributes ---
-    // If any handler has #[discrim = N], all must. The byte value becomes
-    // the 1-byte discriminator instead of the default sha256("global:<name>")[..8].
-    let discrim_attrs: Vec<Option<(u8, proc_macro2::Span)>> = match handlers
+    // Executable programs preserve the existing all-or-nothing 1-byte custom
+    // discriminator mode. Interface-only code can carry exact IDL discriminator
+    // bytes with `#[discrim = [..]]` because it does not emit dispatch.
+    let discrim_attrs: Vec<Option<DiscrimAttr>> = match handlers
         .iter()
         .map(|h| parse_discrim_attr(h))
         .collect::<Result<Vec<_>, _>>()
@@ -1985,7 +2505,7 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
 
     let has_any_discrim = discrim_attrs.iter().any(|d| d.is_some());
     let has_all_discrim = discrim_attrs.iter().all(|d| d.is_some());
-    if has_any_discrim && !has_all_discrim {
+    if config.mode == ProgramMode::Executable && has_any_discrim && !has_all_discrim {
         // Point at the first handler missing #[discrim = N] for clarity.
         let missing = handlers
             .iter()
@@ -1999,14 +2519,24 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
         )
         .to_compile_error();
     }
-    let use_byte_disc = has_any_discrim;
+    let use_byte_disc = config.mode == ProgramMode::Executable && has_any_discrim;
 
-    if use_byte_disc {
+    if config.mode == ProgramMode::Executable && has_any_discrim {
         let mut seen: std::collections::HashMap<u8, proc_macro2::Span> =
             std::collections::HashMap::new();
         for (i, d) in discrim_attrs.iter().enumerate() {
-            let (byte, span) =
-                d.expect("all-or-nothing discrim check guarantees every entry is Some");
+            let d = d
+                .as_ref()
+                .expect("all-or-nothing discrim check guarantees every entry is Some");
+            if d.bytes.len() != 1 {
+                return syn::Error::new(
+                    d.span,
+                    "executable `#[program]` custom discriminators must be one byte; use `#[program(interface, ...)]` for arbitrary IDL discriminator bytes",
+                )
+                .to_compile_error();
+            }
+            let byte = d.bytes[0];
+            let span = d.span;
             if let Some(_first_span) = seen.insert(byte, span) {
                 return syn::Error::new(
                     span,
@@ -2018,13 +2548,40 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
                 .to_compile_error();
             }
         }
+    } else if config.mode == ProgramMode::Interface {
+        let mut seen: std::collections::HashMap<Vec<u8>, proc_macro2::Span> =
+            std::collections::HashMap::new();
+        for (i, d) in discrim_attrs.iter().enumerate() {
+            let Some(d) = d else { continue };
+            if let Some(_first_span) = seen.insert(d.bytes.clone(), d.span) {
+                return syn::Error::new(
+                    d.span,
+                    format!(
+                        "duplicate `#[discrim = ...]` on instruction `{}`",
+                        handlers[i].sig.ident
+                    ),
+                )
+                .to_compile_error();
+            }
+        }
     }
-    let discrim_attrs: Vec<Option<u8>> = discrim_attrs.iter().map(|d| d.map(|(b, _)| b)).collect();
+    let discrim_attrs: Vec<Option<Vec<u8>>> = discrim_attrs
+        .iter()
+        .map(|d| d.as_ref().map(|d| d.bytes.clone()))
+        .collect();
 
     let codegen: Vec<HandlerCodegen> = handlers
         .iter()
         .enumerate()
-        .map(|(i, h)| process_handler(h, mod_name, use_byte_disc, discrim_attrs[i]))
+        .map(|(i, h)| {
+            process_handler(
+                h,
+                mod_name,
+                use_byte_disc,
+                discrim_attrs[i].as_deref(),
+                &config.program_id,
+            )
+        })
         .collect();
     let handler_errors: Vec<_> = codegen.iter().filter_map(|c| c.error.as_ref()).collect();
     if !handler_errors.is_empty() {
@@ -2215,6 +2772,53 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
         })
         .collect();
 
+    let client_interface = quote! {
+        /// Client-side instruction structs for off-chain use.
+        pub mod instruction {
+            extern crate alloc;
+            use super::*;
+            use anchor_lang_v2::Discriminator as _;
+            #(#instruction_structs)*
+        }
+
+        /// Client-side accounts structs (re-exports) for off-chain use.
+        pub mod accounts {
+            #(#accounts_reexports)*
+        }
+
+        /// CPI module — gated on the `cpi` feature, on by convention when a
+        /// caller crate depends on this program for cross-program invocation.
+        /// `accounts::*` re-exports the auto-generated CPI accounts structs
+        /// (one per `#[derive(Accounts)]` Accounts struct, emitted as
+        /// `__cpi_accounts_<lowercase>` at this same scope). The free
+        /// functions wrap each instruction handler: pack args into the
+        /// matching `instruction::<Camel>` struct, serialize, and dispatch
+        /// through `CpiContext::invoke`.
+        #[cfg(feature = "cpi")]
+        pub mod cpi {
+            extern crate alloc;
+            use super::*;
+            use anchor_lang_v2::InstructionData as _;
+
+            pub mod accounts {
+                #(#cpi_accounts_reexports)*
+            }
+
+            #(#cpi_wrappers)*
+        }
+    };
+
+    if config.mode == ProgramMode::Interface {
+        return quote! {
+            #mod_vis mod #mod_name {
+                #(#other_items)*
+                #(#handlers)*
+            }
+
+            #client_interface
+        };
+    }
+
     quote! {
         #mod_vis mod #mod_name {
             #(#other_items)*
@@ -2315,39 +2919,7 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
             #(#handler_wrappers)*
         }
 
-        /// Client-side instruction structs for off-chain use.
-        pub mod instruction {
-            extern crate alloc;
-            use super::*;
-            use anchor_lang_v2::Discriminator as _;
-            #(#instruction_structs)*
-        }
-
-        /// Client-side accounts structs (re-exports) for off-chain use.
-        pub mod accounts {
-            #(#accounts_reexports)*
-        }
-
-        /// CPI module — gated on the `cpi` feature, on by convention when a
-        /// caller crate depends on this program for cross-program invocation.
-        /// `accounts::*` re-exports the auto-generated CPI accounts structs
-        /// (one per `#[derive(Accounts)]` Accounts struct, emitted as
-        /// `__cpi_accounts_<lowercase>` at this same scope). The free
-        /// functions wrap each instruction handler: pack args into the
-        /// matching `instruction::<Camel>` struct, serialize, and dispatch
-        /// through `CpiContext::invoke`.
-        #[cfg(feature = "cpi")]
-        pub mod cpi {
-            extern crate alloc;
-            use super::*;
-            use anchor_lang_v2::InstructionData as _;
-
-            pub mod accounts {
-                #(#cpi_accounts_reexports)*
-            }
-
-            #(#cpi_wrappers)*
-        }
+        #client_interface
 
         // IDL generation: prints structured output consumed by `anchor idl build`.
         // The CLI runs `cargo test __anchor_private_print_idl --features idl-build`
@@ -3221,10 +3793,10 @@ pub fn error_code(args: TokenStream, input: TokenStream) -> TokenStream {
     error_code::expand(args, input)
 }
 
-/// Parse the optional `#[discrim = N]` attribute on a handler fn.
-/// Returns `Ok(Some((byte, span)))` if present, `Ok(None)` if absent,
+/// Parse the optional `#[discrim = ...]` attribute on a handler fn.
+/// Returns `Ok(Some(...))` if present, `Ok(None)` if absent,
 /// or `Err` with a properly-spanned diagnostic on malformed input.
-fn parse_discrim_attr(handler: &syn::ItemFn) -> syn::Result<Option<(u8, proc_macro2::Span)>> {
+fn parse_discrim_attr(handler: &syn::ItemFn) -> syn::Result<Option<DiscrimAttr>> {
     for attr in &handler.attrs {
         if let syn::Meta::NameValue(nv) = &attr.meta {
             if nv.path.is_ident("discrim") {
@@ -3240,11 +3812,44 @@ fn parse_discrim_attr(handler: &syn::ItemFn) -> syn::Result<Option<(u8, proc_mac
                             "`#[discrim = N]` value must fit in a u8 (0..=255)",
                         )
                     })?;
-                    return Ok(Some((byte, span)));
+                    return Ok(Some(DiscrimAttr {
+                        bytes: vec![byte],
+                        span,
+                    }));
+                }
+                if let syn::Expr::Array(array) = &nv.value {
+                    if array.elems.is_empty() {
+                        return Err(syn::Error::new(
+                            array.span(),
+                            "`#[discrim = [...]]` must contain at least one byte",
+                        ));
+                    }
+
+                    let mut bytes = Vec::with_capacity(array.elems.len());
+                    for elem in &array.elems {
+                        let syn::Expr::Lit(syn::ExprLit {
+                            lit: syn::Lit::Int(lit),
+                            ..
+                        }) = elem
+                        else {
+                            return Err(syn::Error::new(
+                                elem.span(),
+                                "`#[discrim = [...]]` values must be integer literals",
+                            ));
+                        };
+                        bytes.push(lit.base10_parse::<u8>().map_err(|_| {
+                            syn::Error::new(
+                                lit.span(),
+                                "`#[discrim = [...]]` values must fit in a u8 (0..=255)",
+                            )
+                        })?);
+                    }
+
+                    return Ok(Some(DiscrimAttr { bytes, span }));
                 }
                 return Err(syn::Error::new(
                     span,
-                    "`#[discrim = N]` value must be an integer literal",
+                    "`#[discrim = ...]` value must be an integer literal or byte array literal",
                 ));
             }
         }
@@ -3410,8 +4015,9 @@ mod tests {
             }
         };
         let mod_name: syn::Ident = syn::parse_quote!(my_program);
+        let program_id: syn::Expr = syn::parse_quote!(crate::ID);
 
-        let generated = process_handler(&handler, &mod_name, false, None);
+        let generated = process_handler(&handler, &mod_name, false, None, &program_id);
         let wrapper = generated.wrapper.to_string();
 
         assert!(
@@ -3421,6 +4027,79 @@ mod tests {
         assert!(
             wrapper.contains("impl < 'ix > __AnchorIxArgCoerce < 'ix > for ()"),
             "expected missing-#[instruction] fallback impl in wrapper: {wrapper}"
+        );
+    }
+
+    #[test]
+    fn program_attrs_parse_interface_program_id() {
+        let config = parse_program_config_tokens(quote!(interface, program_id = super::ID))
+            .expect("program attrs should parse");
+        let program_id = &config.program_id;
+
+        assert!(config.mode == ProgramMode::Interface);
+        assert_eq!(quote!(#program_id).to_string(), "super :: ID");
+    }
+
+    #[test]
+    fn program_attrs_reject_program_id_without_interface() {
+        let err = match parse_program_config_tokens(quote!(program_id = super::ID)) {
+            Ok(_) => panic!("program_id without interface unexpectedly parsed"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains("only supported with"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn program_interface_mode_emits_client_surface_only() {
+        let module: syn::ItemMod = syn::parse_quote! {
+            pub mod external_program {
+                use super::*;
+
+                #[discrim = [1, 2, 3, 4]]
+                pub fn do_it(ctx: &mut Context<MyAccounts>, amount: u64) -> Result<()> {
+                    let _ = (ctx, amount);
+                    unreachable!()
+                }
+            }
+        };
+        let config = ProgramConfig {
+            mode: ProgramMode::Interface,
+            program_id: syn::parse_quote!(super::ID),
+        };
+
+        let generated = impl_program(&module, &config).to_string();
+
+        assert!(
+            generated.contains("pub mod instruction"),
+            "expected instruction module: {generated}"
+        );
+        assert!(
+            generated.contains("pub mod accounts"),
+            "expected accounts module: {generated}"
+        );
+        assert!(
+            generated.contains("pub mod cpi"),
+            "expected cpi module: {generated}"
+        );
+        assert!(
+            generated.contains("super :: ID"),
+            "expected custom program id in instruction builder: {generated}"
+        );
+        assert!(
+            generated.contains("1u8") && generated.contains("2u8"),
+            "expected explicit discriminator bytes in instruction builder: {generated}"
+        );
+        assert!(
+            !generated.contains("__anchor_dispatch"),
+            "interface mode must not emit executable dispatch: {generated}"
+        );
+        assert!(
+            !generated.contains("default_allocator"),
+            "interface mode must not emit entrypoint runtime: {generated}"
         );
     }
 }

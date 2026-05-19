@@ -165,8 +165,8 @@ pub use solana_instruction::account_meta::AccountMeta;
 pub use {
     accounts::{AccountInitialize, SlabInit},
     anchor_derive_accounts_v2::{
-        access_control, account, constant, emit, error_code, event, pod_wrapper, program, Accounts,
-        InitSpace,
+        access_control, account, constant, declare_program, emit, error_code, event, pod_wrapper,
+        program, Accounts, InitSpace,
     },
     bytemuck,
     context::{Bumps, Context},
