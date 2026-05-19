@@ -930,7 +930,32 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     );
     let cpi_unsupported = fields.iter().any(|f| f.is_optional);
     let cpi_accounts_mod = if cpi_unsupported {
-        quote! {}
+        quote! {
+            #[cfg(feature = "cpi")]
+            pub mod #cpi_mod_name {
+                compile_error!(
+                    "CPI account generation for `Option<_>` accounts is not supported yet"
+                );
+                pub struct #name<'a> {
+                    #[doc(hidden)]
+                    pub _phantom: ::core::marker::PhantomData<&'a ()>,
+                }
+                impl<'a> anchor_lang_v2::ToCpiAccounts<'a> for #name<'a> {
+                    fn to_instruction_accounts(
+                        &self,
+                    ) -> alloc::vec::Vec<
+                        anchor_lang_v2::pinocchio::instruction::InstructionAccount<'a>,
+                    > {
+                        alloc::vec::Vec::new()
+                    }
+                    fn to_cpi_handles(
+                        &self,
+                    ) -> alloc::vec::Vec<anchor_lang_v2::CpiHandle<'a>> {
+                        alloc::vec::Vec::new()
+                    }
+                }
+            }
+        }
     } else {
         let cpi_field_decls: Vec<_> = fields
             .iter()

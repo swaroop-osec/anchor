@@ -215,6 +215,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "alt-cpi"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "anchor-attribute-access-control"
 version = "2.0.0"
 dependencies = [
@@ -2058,6 +2066,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "declare-program-surface"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2473,6 +2489,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "external-cpi"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2853,6 +2877,14 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "hash-cpi"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
 ]
 
 [[package]]
@@ -9096,6 +9128,7 @@ dependencies = [
  "constraints",
  "custom-constraints",
  "declare-program",
+ "declare-program-surface",
  "derives-test",
  "dispatch-remaining",
  "dup-mut",

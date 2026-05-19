@@ -15,6 +15,10 @@ members = [
     "spl-v2",
     "tests-v2",
     "tests-v2/programs/*",
+    "tests-v2/programs/declare-program/programs/alt-cpi",
+    "tests-v2/programs/declare-program/programs/external-cpi",
+    "tests-v2/programs/declare-program/programs/hash-cpi",
+    "tests-v2/programs/declare-program/programs/surface-client",
     "tests-v2/programs/equivalence/spl/v1",
     "tests-v2/programs/equivalence/spl/v2",
 ]

@@ -1,6 +1,10 @@
 use std::{fs, path::PathBuf, process::Command};
 
 fn compile_fail_case(name: &str, source: &str, snippets: &[&str]) {
+    compile_fail_case_with_features(name, source, &[], snippets);
+}
+
+fn compile_fail_case_with_features(name: &str, source: &str, features: &[&str], snippets: &[&str]) {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let crate_dir = manifest_dir.join("target/compile-fail").join(name);
     let src_dir = crate_dir.join("src");
@@ -35,9 +39,14 @@ cpi = []
     .unwrap();
     fs::write(src_dir.join("lib.rs"), source).unwrap();
 
-    let output = Command::new("cargo")
-        .args(["check", "--offline", "--manifest-path"])
-        .arg(crate_dir.join("Cargo.toml"))
+    let mut command = Command::new("cargo");
+    command.args(["check", "--offline", "--manifest-path"]);
+    command.arg(crate_dir.join("Cargo.toml"));
+    if !features.is_empty() {
+        command.arg("--features");
+        command.arg(features.join(","));
+    }
+    let output = command
         .output()
         .unwrap_or_else(|err| panic!("failed to run cargo check for {name}: {err}"));
 
@@ -158,6 +167,39 @@ pub fn build_cpi<'a>(
 }
 "#,
         &["cpi"],
+    );
+}
+
+#[test]
+fn program_interface_cpi_rejects_optional_accounts_clearly() {
+    compile_fail_case_with_features(
+        "program_interface_optional_cpi",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+const EXTERNAL_ID: Address =
+    Address::from_str_const("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
+
+#[derive(Accounts)]
+pub struct Maybe {
+    pub required: UncheckedAccount,
+    pub optional: Option<UncheckedAccount>,
+}
+
+#[program(interface, program_id = EXTERNAL_ID)]
+pub mod program_interface_optional_cpi {
+    use super::*;
+
+    #[discrim = [1]]
+    pub fn maybe(ctx: &mut Context<Maybe>) -> Result<()> {
+        let _ = ctx;
+        unreachable!()
+    }
+}
+"#,
+        &["cpi"],
+        &["CPI account generation for `Option<_>` accounts is not supported yet"],
     );
 }
 
