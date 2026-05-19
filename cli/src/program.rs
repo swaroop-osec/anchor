@@ -26,8 +26,14 @@ use {
     solana_packet::PACKET_DATA_SIZE,
     solana_pubkey::Pubkey,
     solana_rpc_client::rpc_client::RpcClient,
-    solana_rpc_client_api::config::RpcSendTransactionConfig,
-    solana_sdk_ids::bpf_loader_upgradeable as bpf_loader_upgradeable_id,
+    solana_rpc_client_api::{
+        config::{RpcSendTransactionConfig, RpcSimulateTransactionConfig},
+        response::RpcSimulateTransactionResult,
+    },
+    solana_sdk_ids::{
+        bpf_loader_upgradeable as bpf_loader_upgradeable_id,
+        compute_budget as compute_budget_program_id,
+    },
     solana_signature::Signature,
     solana_signer::{EncodableKey, Signer},
     solana_transaction::Transaction,
@@ -2372,11 +2378,92 @@ pub fn calculate_max_chunk_size(baseline_msg: Message) -> usize {
     PACKET_DATA_SIZE.saturating_sub(tx_size).saturating_sub(1)
 }
 
+fn set_compute_unit_limit_ix_data(message: &mut Message, ix_index: usize, compute_unit_limit: u32) {
+    let ix = &mut message.instructions[ix_index];
+    let program_id = message.account_keys[ix.program_id_index as usize];
+    assert_eq!(program_id, compute_budget_program_id::id());
+    ix.data = ComputeBudgetInstruction::set_compute_unit_limit(compute_unit_limit).data;
+}
+
+fn simulate_write_compute_unit_limit(
+    rpc_client: &RpcClient,
+    message: &Message,
+    fee_payer_signer: &dyn Signer,
+    write_signer: &dyn Signer,
+) -> Result<u32> {
+    let blockhash = rpc_client.get_latest_blockhash()?;
+    let mut message = message.clone();
+    message.recent_blockhash = blockhash;
+    let mut transaction = Transaction::new_unsigned(message);
+    transaction.try_sign(&[fee_payer_signer, write_signer], blockhash)?;
+
+    let RpcSimulateTransactionResult {
+        err,
+        units_consumed,
+        ..
+    } = rpc_client
+        .simulate_transaction_with_config(
+            &transaction,
+            RpcSimulateTransactionConfig {
+                sig_verify: false,
+                replace_recent_blockhash: true,
+                commitment: Some(CommitmentConfig::processed()),
+                ..RpcSimulateTransactionConfig::default()
+            },
+        )?
+        .value;
+
+    if let Some(err) = err {
+        bail!("Write transaction simulation failed: {err:?}");
+    }
+
+    let units_consumed = units_consumed
+        .ok_or_else(|| anyhow!("Write transaction simulation did not return units_consumed"))?;
+    units_consumed
+        .try_into()
+        .map_err(|_| anyhow!("Simulated write CU limit exceeds u32"))
+}
+
+fn simulate_and_update_write_compute_unit_limit(
+    rpc_client: &RpcClient,
+    mut write_messages: Vec<Message>,
+    fee_payer_signer: &dyn Signer,
+    write_signer: &dyn Signer,
+) -> Result<Vec<Message>> {
+    if write_messages.is_empty() {
+        return Ok(write_messages);
+    }
+
+    let compute_unit_limit_ix_index = usize::from(write_messages[0].instructions.len() == 3);
+    let compute_unit_limit = match simulate_write_compute_unit_limit(
+        rpc_client,
+        &write_messages[0],
+        fee_payer_signer,
+        write_signer,
+    ) {
+        Ok(compute_unit_limit) => compute_unit_limit,
+        Err(err) => {
+            eprintln!(
+                "Note: write transaction simulation failed ({}); keeping placeholder compute unit \
+                 limit.",
+                err
+            );
+            return Ok(write_messages);
+        }
+    };
+
+    for message in &mut write_messages {
+        set_compute_unit_limit_ix_data(message, compute_unit_limit_ix_index, compute_unit_limit);
+    }
+
+    Ok(write_messages)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn send_deploy_messages(
     rpc_client: &RpcClient,
     initial_message: Option<Message>,
-    write_messages: Vec<Message>,
+    mut write_messages: Vec<Message>,
     final_message: Option<Message>,
     fee_payer_signer: &dyn Signer,
     initial_signer: Option<&dyn Signer>,
@@ -2421,6 +2508,13 @@ pub fn send_deploy_messages(
 
     if !write_messages.is_empty() {
         if let Some(write_signer) = write_signer {
+            write_messages = simulate_and_update_write_compute_unit_limit(
+                rpc_client,
+                write_messages,
+                fee_payer_signer,
+                write_signer,
+            )?;
+
             send_messages_in_batches(
                 rpc_client,
                 &write_messages,
