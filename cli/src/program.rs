@@ -418,7 +418,6 @@ pub fn process_deploy(
     program_id: Option<Pubkey>,
     buffer: Option<Pubkey>,
     max_len: Option<usize>,
-    auto_extend: bool,
     use_rpc: bool,
     verifiable: bool,
     no_idl: bool,
@@ -436,7 +435,6 @@ pub fn process_deploy(
             program_id,
             buffer,
             max_len,
-            auto_extend,
             use_rpc,
             no_idl,
             make_final,
@@ -503,7 +501,6 @@ pub fn process_deploy(
         program_id,
         buffer,
         max_len,
-        auto_extend,
         use_rpc,
         no_idl,
         make_final,
@@ -560,7 +557,6 @@ fn deploy_workspace(
             None,  // program_id - derived from keypair
             None,  // buffer
             None,  // max_len
-            false, // auto_extend
             false, // use_rpc
             no_idl,
             make_final,
@@ -583,7 +579,6 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             program_id,
             buffer,
             max_len,
-            auto_extend,
             use_rpc,
             no_idl,
             make_final,
@@ -597,7 +592,6 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             program_id,
             buffer,
             max_len,
-            auto_extend,
             use_rpc,
             false, // verifiable
             no_idl,
@@ -651,7 +645,6 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             upgrade_authority,
             max_retries,
-            auto_extend,
             use_rpc,
             solana_args,
         } => program_upgrade(
@@ -662,7 +655,6 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             upgrade_authority,
             max_retries,
-            auto_extend,
             use_rpc,
             solana_args,
         ),
@@ -730,7 +722,6 @@ pub fn program_deploy(
     program_id: Option<Pubkey>,
     buffer: Option<Pubkey>,
     max_len: Option<usize>,
-    auto_extend: bool,
     use_rpc: bool,
     no_idl: bool,
     make_final: bool,
@@ -961,7 +952,6 @@ pub fn program_deploy(
                     &program_id,
                     &buffer_pubkey,
                     program_data.len(),
-                    auto_extend,
                     &upgrade_authority,
                     priority_fee,
                     true, // skip_program_verification - done above
@@ -1317,7 +1307,6 @@ fn auto_extend_program_data_if_needed(
     payer: &Keypair,
     program_id: &Pubkey,
     program_len: usize,
-    auto_extend: bool,
     upgrade_authority: &Keypair,
     skip_preflight: bool,
 ) -> Result<()> {
@@ -1346,17 +1335,6 @@ fn auto_extend_program_data_if_needed(
     }
 
     let additional_bytes = (required_programdata_body_len - programdata_body_len) as u32;
-    if !auto_extend {
-        bail!(
-            "Program data account is too small for this upgrade: current size is {} bytes, \
-             required size is {} bytes, needs {} more bytes. Re-run with `--auto-extend` to \
-             extend the program automatically before upgrade.",
-            programdata_body_len,
-            required_programdata_body_len,
-            additional_bytes
-        );
-    }
-
     println!(
         "Auto-extending program data by {} bytes ({} → {}) before upgrade…",
         additional_bytes, programdata_body_len, required_programdata_body_len
@@ -1408,7 +1386,6 @@ fn upgrade_program(
     program_id: &Pubkey,
     buffer: &Pubkey,
     program_len: usize,
-    auto_extend: bool,
     upgrade_authority: &Keypair,
     priority_fee: Option<u64>,
     skip_program_verification: bool,
@@ -1429,7 +1406,6 @@ fn upgrade_program(
         payer,
         program_id,
         program_len,
-        auto_extend,
         upgrade_authority,
         skip_preflight,
     )?;
@@ -1836,7 +1812,6 @@ pub fn program_upgrade(
     buffer: Option<Pubkey>,
     upgrade_authority: Option<String>,
     max_retries: u32,
-    auto_extend: bool,
     use_rpc: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
@@ -1890,7 +1865,6 @@ pub fn program_upgrade(
             &program_id,
             &buffer_pubkey,
             buffer_program_len,
-            auto_extend,
             &upgrade_authority_keypair,
             priority_fee,
             true, // skip_program_verification - already done above
@@ -2011,7 +1985,6 @@ pub fn program_upgrade(
                 &program_id,
                 &buffer_pubkey,
                 program_data.len(),
-                auto_extend,
                 &upgrade_authority_keypair,
                 priority_fee,
                 true, // skip_program_verification

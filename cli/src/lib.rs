@@ -506,9 +506,6 @@ pub enum ProgramCommand {
         /// Maximum transaction length (BPF loader upgradeable limit)
         #[clap(long)]
         max_len: Option<usize>,
-        /// Automatically extend the program data account before upgrade if needed
-        #[clap(long)]
-        auto_extend: bool,
         /// Send write transactions through RPC instead of TPU.
         #[clap(long)]
         use_rpc: bool,
@@ -602,9 +599,6 @@ pub enum ProgramCommand {
         /// Max times to retry on failure
         #[clap(long, default_value = "0")]
         max_retries: u32,
-        /// Automatically extend the program data account before upgrade if needed
-        #[clap(long)]
-        auto_extend: bool,
         /// Send write transactions through RPC instead of TPU.
         #[clap(long)]
         use_rpc: bool,
@@ -4332,7 +4326,6 @@ fn deploy(
                 None,  // program_id - derived from program_keypair
                 None,  // buffer
                 None,  // max_len
-                false, // auto_extend
                 false, // use_rpc
                 no_idl,
                 false, // make_final
@@ -4363,7 +4356,6 @@ fn upgrade(
         None, // buffer
         None, // upgrade_authority - uses wallet from config
         max_retries,
-        false, // auto_extend
         false, // use_rpc
         solana_args,
     )
