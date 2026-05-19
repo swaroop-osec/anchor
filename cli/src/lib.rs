@@ -509,6 +509,9 @@ pub enum ProgramCommand {
         /// Automatically extend the program data account before upgrade if needed
         #[clap(long)]
         auto_extend: bool,
+        /// Send write transactions through RPC instead of TPU.
+        #[clap(long)]
+        use_rpc: bool,
         /// Don't upload IDL during deployment (IDL is uploaded by default)
         #[clap(long)]
         no_idl: bool,
@@ -602,6 +605,9 @@ pub enum ProgramCommand {
         /// Automatically extend the program data account before upgrade if needed
         #[clap(long)]
         auto_extend: bool,
+        /// Send write transactions through RPC instead of TPU.
+        #[clap(long)]
+        use_rpc: bool,
         /// Additional arguments to configure deployment (e.g., --with-compute-unit-price 1000)
         #[clap(required = false, last = true)]
         solana_args: Vec<String>,
@@ -4327,6 +4333,7 @@ fn deploy(
                 None,  // buffer
                 None,  // max_len
                 false, // auto_extend
+                false, // use_rpc
                 no_idl,
                 false, // make_final
                 solana_args.clone(),
@@ -4357,6 +4364,7 @@ fn upgrade(
         None, // upgrade_authority - uses wallet from config
         max_retries,
         false, // auto_extend
+        false, // use_rpc
         solana_args,
     )
 }

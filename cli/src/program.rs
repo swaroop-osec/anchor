@@ -413,6 +413,7 @@ pub fn process_deploy(
     buffer: Option<Pubkey>,
     max_len: Option<usize>,
     auto_extend: bool,
+    use_rpc: bool,
     verifiable: bool,
     no_idl: bool,
     make_final: bool,
@@ -430,6 +431,7 @@ pub fn process_deploy(
             buffer,
             max_len,
             auto_extend,
+            use_rpc,
             no_idl,
             make_final,
             solana_args,
@@ -496,6 +498,7 @@ pub fn process_deploy(
         buffer,
         max_len,
         auto_extend,
+        use_rpc,
         no_idl,
         make_final,
         solana_args,
@@ -552,6 +555,7 @@ fn deploy_workspace(
             None,  // buffer
             None,  // max_len
             false, // auto_extend
+            false, // use_rpc
             no_idl,
             make_final,
             solana_args.clone(),
@@ -574,6 +578,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             max_len,
             auto_extend,
+            use_rpc,
             no_idl,
             make_final,
             solana_args,
@@ -587,6 +592,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             buffer,
             max_len,
             auto_extend,
+            use_rpc,
             false, // verifiable
             no_idl,
             make_final,
@@ -640,6 +646,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             upgrade_authority,
             max_retries,
             auto_extend,
+            use_rpc,
             solana_args,
         } => program_upgrade(
             cfg_override,
@@ -650,6 +657,7 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             upgrade_authority,
             max_retries,
             auto_extend,
+            use_rpc,
             solana_args,
         ),
         ProgramCommand::Dump {
@@ -717,6 +725,7 @@ pub fn program_deploy(
     buffer: Option<Pubkey>,
     max_len: Option<usize>,
     auto_extend: bool,
+    use_rpc: bool,
     no_idl: bool,
     make_final: bool,
     solana_args: Vec<String>,
@@ -934,6 +943,7 @@ pub fn program_deploy(
                     send_config,
                     priority_fee,
                     max_sign_attempts,
+                    use_rpc,
                     existing_data,
                 )?;
             }
@@ -1529,6 +1539,7 @@ fn program_write_buffer(
         },
         None,
         DEFAULT_MAX_SIGN_ATTEMPTS,
+        false,
         None,
     )?;
 
@@ -1820,6 +1831,7 @@ pub fn program_upgrade(
     upgrade_authority: Option<String>,
     max_retries: u32,
     auto_extend: bool,
+    use_rpc: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
@@ -1983,6 +1995,7 @@ pub fn program_upgrade(
                 send_config,
                 priority_fee,
                 max_sign_attempts,
+                use_rpc,
                 existing_data,
             )?;
 
@@ -2370,6 +2383,7 @@ pub fn send_deploy_messages(
     write_signer: Option<&dyn Signer>,
     final_signers: Option<&[&dyn Signer]>,
     max_sign_attempts: usize,
+    use_rpc: bool,
     commitment: CommitmentConfig,
     send_transaction_config: RpcSendTransactionConfig,
 ) -> Result<Option<Signature>> {
@@ -2412,6 +2426,7 @@ pub fn send_deploy_messages(
                 &write_messages,
                 &[fee_payer_signer, write_signer],
                 max_sign_attempts,
+                use_rpc,
                 commitment,
                 send_transaction_config,
             )?;
@@ -2456,6 +2471,7 @@ pub fn write_program_buffer(
     send_transaction_config: RpcSendTransactionConfig,
     priority_fee: Option<u64>,
     max_sign_attempts: usize,
+    use_rpc: bool,
     existing_buffer_data: Option<Vec<u8>>,
 ) -> Result<Pubkey> {
     let buffer_pubkey = buffer_keypair.pubkey();
@@ -2521,6 +2537,7 @@ pub fn write_program_buffer(
         Some(payer),
         None,
         max_sign_attempts,
+        use_rpc,
         commitment,
         send_transaction_config,
     )?;
@@ -2584,6 +2601,7 @@ fn send_messages_in_batches(
     messages: &[Message],
     signers: &[&dyn Signer],
     max_sign_attempts: usize,
+    use_rpc: bool,
     commitment: CommitmentConfig,
     send_config: RpcSendTransactionConfig,
 ) -> Result<()> {
@@ -2599,7 +2617,9 @@ fn send_messages_in_batches(
     // Failure-tolerant: if TPU construction errors (firewall blocks QUIC,
     // websocket unreachable, etc.) we fall back to `None` and the parallel
     // sender uses the RpcClient — slower but functional.
-    let tpu_client = {
+    let tpu_client = if use_rpc {
+        None
+    } else {
         let ws_url = SolanaCliConfig::compute_websocket_url(&url);
         if ws_url.is_empty() {
             None
