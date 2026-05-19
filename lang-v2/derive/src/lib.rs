@@ -14,8 +14,8 @@ use {
     proc_macro2::TokenStream as TokenStream2,
     quote::quote,
     syn::{
-        parse_macro_input, spanned::Spanned, Data, DeriveInput, Fields, FnArg, Ident, ItemMod, Pat,
-        Type,
+        parse_macro_input, spanned::Spanned, Data, DeriveInput, Fields, FnArg, Ident, ItemMod,
+        ItemStruct, Pat, Type,
     },
 };
 
@@ -2150,6 +2150,53 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
                 ::core::slice::from_raw_parts(__ix_data_ptr.add(8), __ix_data_len - 8);
         }
     };
+    let event_cpi_dispatch = {
+        #[cfg(feature = "event-cpi")]
+        {
+            quote! {
+                // Reserve the full event-CPI tag before user dispatch. A custom
+                // 1-byte discriminator can overlap the first tag byte, but it
+                // must not intercept self-CPI event instructions.
+                if __ix_data_len >= 8 {
+                    let __event_disc: u64 = u64::from_le_bytes(
+                        *(__ix_data_ptr as *const [u8; 8])
+                    );
+                    if __event_disc == anchor_lang_v2::event::EVENT_IX_TAG {
+                        if __num < 1 {
+                            return anchor_lang_v2::Error::from(
+                                anchor_lang_v2::ErrorCode::AccountNotEnoughKeys,
+                            ).into();
+                        }
+                        let mut __cursor = anchor_lang_v2::AccountCursor::new(__input, __lookup);
+                        let __event_authority = __cursor.next();
+                        if !__event_authority.is_signer() {
+                            return anchor_lang_v2::Error::from(
+                                anchor_lang_v2::ErrorCode::ConstraintSigner,
+                            ).into();
+                        }
+                        let (__expected_event_authority, _) =
+                            anchor_lang_v2::find_program_address(
+                                &[b"__event_authority"],
+                                __program_id,
+                            );
+                        if !anchor_lang_v2::address_eq(
+                            __event_authority.address(),
+                            &__expected_event_authority,
+                        ) {
+                            return anchor_lang_v2::Error::from(
+                                anchor_lang_v2::ErrorCode::ConstraintSeeds,
+                            ).into();
+                        }
+                        return 0;
+                    }
+                }
+            }
+        }
+        #[cfg(not(feature = "event-cpi"))]
+        {
+            quote! {}
+        }
+    };
 
     // Strip #[discrim = N] attributes from handler outputs so rustc
     // doesn't complain about an unknown attribute.
@@ -2245,9 +2292,11 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
                 return __e.into();
             }
 
+            let __num = *(__input as *const u64) as usize;
+            #event_cpi_dispatch
+
             // Parse the discriminator.
             #disc_parse
-            let __num = *(__input as *const u64) as usize;
 
             let mut __cursor = anchor_lang_v2::AccountCursor::new(__input, __lookup);
 
@@ -2904,6 +2953,117 @@ pub fn emit(input: TokenStream) -> TokenStream {
     TokenStream::from(quote! {
         {
             anchor_lang_v2::sol_log_data(&[&anchor_lang_v2::Event::data(&#data)]);
+        }
+    })
+}
+
+/// Emits an event via self-CPI so indexers can recover it from instruction data
+/// instead of logs. Requires `#[event_cpi]` on the handler's accounts struct
+/// and a local handler variable named `ctx`, matching Anchor v1.
+#[proc_macro]
+pub fn emit_cpi(input: TokenStream) -> TokenStream {
+    let event_struct: proc_macro2::TokenStream = input.into();
+    TokenStream::from(quote! {
+        {
+            struct __AnchorEventCpiAccounts<'a> {
+                event_authority: anchor_lang_v2::CpiHandle<'a>,
+            }
+
+            impl<'a> anchor_lang_v2::ToCpiAccounts<'a> for __AnchorEventCpiAccounts<'a> {
+                fn to_instruction_accounts(
+                    &self,
+                ) -> anchor_lang_v2::__alloc::vec::Vec<
+                    anchor_lang_v2::pinocchio::instruction::InstructionAccount<'a>
+                > {
+                    let mut __accounts = anchor_lang_v2::__alloc::vec::Vec::with_capacity(1);
+                    __accounts.push(
+                        anchor_lang_v2::pinocchio::instruction::InstructionAccount::readonly_signer(
+                            self.event_authority.address(),
+                        ),
+                    );
+                    __accounts
+                }
+
+                fn to_cpi_handles(
+                    &self,
+                ) -> anchor_lang_v2::__alloc::vec::Vec<anchor_lang_v2::CpiHandle<'a>> {
+                    let mut __handles = anchor_lang_v2::__alloc::vec::Vec::with_capacity(1);
+                    __handles.push(self.event_authority);
+                    __handles
+                }
+            }
+
+            let __event_authority =
+                anchor_lang_v2::AnchorAccount::cpi_handle(&ctx.accounts.event_authority);
+            let __event_data = anchor_lang_v2::Event::data(&#event_struct);
+            let mut __ix_data = anchor_lang_v2::__alloc::vec::Vec::with_capacity(
+                anchor_lang_v2::event::EVENT_IX_TAG_LE.len() + __event_data.len(),
+            );
+            __ix_data.extend_from_slice(anchor_lang_v2::event::EVENT_IX_TAG_LE);
+            __ix_data.extend_from_slice(&__event_data);
+
+            let __event_authority_bump = [ctx.bumps.event_authority];
+            let __event_authority_seeds: &[&[u8]] =
+                &[b"__event_authority", __event_authority_bump.as_ref()];
+            let __event_authority_signers: &[&[&[u8]]] = &[__event_authority_seeds];
+            anchor_lang_v2::CpiContext::new_with_signer(
+                ctx.program_id,
+                __AnchorEventCpiAccounts { event_authority: __event_authority },
+                __event_authority_signers,
+            ).invoke(&__ix_data);
+        }
+    })
+}
+
+/// Adds the self-CPI event authority accounts expected by `emit_cpi!`.
+///
+/// The injected shape intentionally mirrors Anchor v1's user-facing API, but
+/// uses a normal v2 seeds constraint so `ctx.bumps.event_authority` is available
+/// without making `declare_id!` synthesize an extra constant.
+#[proc_macro_attribute]
+pub fn event_cpi(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    let accounts_struct = parse_macro_input!(input as ItemStruct);
+    let ItemStruct {
+        attrs,
+        vis,
+        struct_token,
+        ident,
+        generics,
+        fields,
+        semi_token,
+    } = accounts_struct;
+
+    if semi_token.is_some() {
+        return syn::Error::new(
+            ident.span(),
+            "`#[event_cpi]` only supports accounts structs with named fields",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let fields = match fields {
+        Fields::Named(fields) => fields.named,
+        _ => {
+            return syn::Error::new(
+                ident.span(),
+                "`#[event_cpi]` only supports accounts structs with named fields",
+            )
+            .to_compile_error()
+            .into()
+        }
+    };
+
+    TokenStream::from(quote! {
+        #(#attrs)*
+        #vis #struct_token #ident #generics {
+            #fields
+
+            /// CHECK: Only the event authority can invoke self-CPI
+            #[account(seeds = [b"__event_authority"], bump)]
+            pub event_authority: anchor_lang_v2::accounts::UncheckedAccount,
+            /// CHECK: Kept for v1-compatible account ordering and IDL shape
+            pub program: anchor_lang_v2::accounts::UncheckedAccount,
         }
     })
 }

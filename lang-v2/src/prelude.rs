@@ -2,6 +2,8 @@
 
 #[cfg(feature = "compat")]
 pub use crate::solana_program::pubkey::Pubkey;
+#[cfg(feature = "compat")]
+pub use crate::AccountViewCompat;
 pub use crate::{
     access_control,
     account,
@@ -42,6 +44,8 @@ pub use crate::{
     sha256,
     sol_log_data,
     system_program,
+    // Core trait
+    AccountAddress,
     // Constraints
     AccountConstraint,
     // Loader & dispatch
@@ -50,8 +54,6 @@ pub use crate::{
     AccountMeta as AnchorAccountMeta,
     // Derive macros
     Accounts,
-    // Core trait
-    AccountAddress,
     AnchorAccount,
     Bumps,
     // Context
@@ -84,10 +86,10 @@ pub use crate::{
     ToCpiAccounts,
     TryAccounts,
 };
+#[cfg(feature = "event-cpi")]
+pub use crate::{emit_cpi, event_cpi};
 #[cfg(feature = "compat")]
 pub use crate::{err, error, pubkey};
-#[cfg(feature = "compat")]
-pub use crate::AccountViewCompat;
 // Re-export pinocchio sysvar types and trait for use with Sysvar<T>
 pub use pinocchio::sysvars::Sysvar as PinocchioSysvar;
 pub use {

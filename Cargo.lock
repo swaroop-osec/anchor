@@ -2432,6 +2432,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-cpi-test"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "solana-program-error 3.0.0",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "event-listener"
 version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9070,6 +9082,7 @@ dependencies = [
  "derives-test",
  "dispatch-remaining",
  "dup-mut",
+ "event-cpi-test",
  "init-space-usability",
  "ix-macro",
  "litesvm",

@@ -23,6 +23,7 @@ constraints = { path = "programs/constraints" }
 custom-constraints = { path = "programs/custom-constraints", features = ["cpi"] }
 dispatch-remaining = { path = "programs/dispatch-remaining" }
 dup-mut = { path = "programs/dup-mut" }
+event-cpi-test = { path = "programs/event-cpi" }
 init-space-usability = { path = "programs/init-space-usability" }
 ix-macro = { path = "programs/ix-macro" }
 optional-accounts = { path = "programs/optional-accounts" }
