@@ -80,9 +80,9 @@ describe("coder.instructions", () => {
         () =>
           coder.instruction.encode(
             "setPassThresholdBps",
-            1000 as unknown as object,
+            1000 as unknown as object
           ),
-        /expected an object with fields \{ passThresholdBps \}, got number/,
+        /expected an object with fields \{ passThresholdBps \}, got number/
       );
     });
 
@@ -91,9 +91,9 @@ describe("coder.instructions", () => {
         () =>
           coder.instruction.encode(
             "setPassThresholdBps",
-            null as unknown as object,
+            null as unknown as object
           ),
-        /got null/,
+        /got null/
       );
     });
 
@@ -103,7 +103,7 @@ describe("coder.instructions", () => {
           coder.instruction.encode("setPassThresholdBps", [
             1000,
           ] as unknown as object),
-        /got array/,
+        /got array/
       );
     });
 
@@ -114,7 +114,7 @@ describe("coder.instructions", () => {
             // typo: missing trailing `s`
             passThresholdBp: 1000,
           } as any),
-        /missing field `passThresholdBps`/,
+        /missing field `passThresholdBps`/
       );
     });
 
@@ -128,7 +128,7 @@ describe("coder.instructions", () => {
 
     test("instructions with no args skip validation", () => {
       assert.doesNotThrow(() =>
-        coder.instruction.encode("noArgs", {} as object),
+        coder.instruction.encode("noArgs", {} as object)
       );
     });
   });
