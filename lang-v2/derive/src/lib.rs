@@ -2220,6 +2220,23 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
             __input: *mut u8,
             __ix_data_ptr: *const u8,
         ) -> u64 {
+            let mut __lookup: [::core::mem::MaybeUninit<anchor_lang_v2::AccountView>;
+                __ANCHOR_MAX_ACCOUNTS] =
+                [const { ::core::mem::MaybeUninit::uninit() }; __ANCHOR_MAX_ACCOUNTS];
+
+            __anchor_dispatch_internal(
+                __input,
+                __ix_data_ptr,
+                __lookup.as_mut_ptr() as *mut anchor_lang_v2::AccountView,
+            )
+        }
+
+        #[inline(never)]
+        unsafe fn __anchor_dispatch_internal(
+            __input: *mut u8,
+            __ix_data_ptr: *const u8,
+            __lookup: *mut anchor_lang_v2::AccountView,
+        ) -> u64 {
             let __ix_data_len = *(__ix_data_ptr.sub(8) as *const u64) as usize;
             let __program_id: &anchor_lang_v2::Address =
                 &*(__ix_data_ptr.add(__ix_data_len) as *const anchor_lang_v2::Address);
@@ -2232,13 +2249,7 @@ fn impl_program(module: &ItemMod) -> TokenStream2 {
             #disc_parse
             let __num = *(__input as *const u64) as usize;
 
-            let mut __lookup: [::core::mem::MaybeUninit<anchor_lang_v2::AccountView>;
-                __ANCHOR_MAX_ACCOUNTS] =
-                [const { ::core::mem::MaybeUninit::uninit() }; __ANCHOR_MAX_ACCOUNTS];
-            let mut __cursor = anchor_lang_v2::AccountCursor::new(
-                __input,
-                __lookup.as_mut_ptr() as *mut anchor_lang_v2::AccountView,
-            );
+            let mut __cursor = anchor_lang_v2::AccountCursor::new(__input, __lookup);
 
             // Each dispatch arm returns u64 directly (0 = success).
             match __disc {
