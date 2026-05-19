@@ -484,6 +484,7 @@ pub fn process_deploy(
             cfg_override,
             None, // program_name - deploy all
             program_keypair,
+            use_rpc,
             verifiable,
             no_idl,
             make_final,
@@ -513,6 +514,7 @@ fn deploy_workspace(
     cfg_override: &ConfigOverride,
     program_name: Option<String>,
     program_keypair: Option<PathBuf>,
+    use_rpc: bool,
     verifiable: bool,
     no_idl: bool,
     make_final: bool,
@@ -553,11 +555,11 @@ fn deploy_workspace(
             Some(binary_path),
             None, // program_name - not needed since we have filepath
             program_keypair_filepath,
-            None,  // upgrade_authority - uses wallet
-            None,  // program_id - derived from keypair
-            None,  // buffer
-            None,  // max_len
-            false, // use_rpc
+            None, // upgrade_authority - uses wallet
+            None, // program_id - derived from keypair
+            None, // buffer
+            None, // max_len
+            use_rpc,
             no_idl,
             make_final,
             solana_args.clone(),
