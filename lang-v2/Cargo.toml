@@ -40,10 +40,11 @@ const-rent = []
 # Enables the `anchor_lang_v2::testing` module: stack-backed mock pinocchio
 # types (`AccountView`, SBF input buffer) used by the `tests/` integration
 # tests + Miri witnesses. Also enables `const-rent` so host-side tests can
-# exercise rent-dependent helpers without SVM sysvar support.
+# exercise rent-dependent helpers without SVM sysvar support, and `compat`
+# so tests can cover the v1-style raw remaining-account shims.
 # Off by default so production BPF binaries never ship the scaffold.
 # `cargo test -p anchor-lang-v2 --features testing`.
-testing = ["const-rent"]
+testing = ["const-rent", "compat"]
 
 [dependencies]
 anchor-derive-accounts-v2 = { path = "./derive", version = "2.0.0" }
@@ -80,6 +81,7 @@ check-cfg = [
     'cfg(target_os, values("solana"))',
     'cfg(feature, values("idl-build"))',
     'cfg(kani)',
+    'cfg(miri)',
 ]
 
 # Integration tests that exercise `unsafe` paths via the `testing`

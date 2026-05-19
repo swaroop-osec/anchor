@@ -1,12 +1,15 @@
 use {
     core::ops::Deref,
     pinocchio::{
-        account::{AccountView, Ref, RefMut},
+        account::AccountView,
         address::Address,
         instruction::InstructionAccount,
     },
     solana_program_error::{ProgramError, ProgramResult},
 };
+
+#[cfg(feature = "compat")]
+use pinocchio::account::{Ref, RefMut};
 
 /// Zero-cost CPI handle that borrows an anchor account at the Rust level.
 ///

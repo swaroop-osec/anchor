@@ -175,7 +175,7 @@ coverage-v2-html: $(COVERAGE_DIR)/combined.lcov
 	genhtml $(COVERAGE_DIR)/combined.lcov \
 		--output-directory $(COVERAGE_HTML) \
 		--prefix $(PWD) \
-		--ignore-errors source,unmapped,category \
+		--ignore-errors source,unmapped,category,range \
 		--quiet
 
 $(COVERAGE_DIR)/combined.lcov: coverage-v2-merge
