@@ -17,6 +17,7 @@ use {
     },
     solana_commitment_config::CommitmentConfig,
     solana_compute_budget_interface::ComputeBudgetInstruction,
+    solana_feature_gate_interface::Feature,
     solana_instruction::Instruction,
     solana_keypair::Keypair,
     solana_loader_v3_interface::{
@@ -32,7 +33,7 @@ use {
     },
     solana_sdk_ids::{
         bpf_loader_upgradeable as bpf_loader_upgradeable_id,
-        compute_budget as compute_budget_program_id,
+        compute_budget as compute_budget_program_id, feature as feature_program_id,
     },
     solana_signature::Signature,
     solana_signer::{EncodableKey, Signer},
@@ -57,6 +58,19 @@ const WRITE_COMPUTE_UNIT_LIMIT: u32 = 3_000;
 /// Max seconds `wait_for_buffer_stable` polls before giving up and using
 /// the latest snapshot.
 const BUFFER_STABILIZE_MAX_WAIT_SECS: u64 = 60;
+
+mod local_feature_ids {
+    solana_pubkey::declare_id!("2oMRZEDWT2tqtYMofhmmfQ8SsjqUFzT6sYXppQDavxwz");
+}
+
+fn is_feature_active(rpc_client: &RpcClient, feature_id: &Pubkey) -> bool {
+    rpc_client
+        .get_account(feature_id)
+        .ok()
+        .filter(|account| account.owner == feature_program_id::id())
+        .and_then(|account| bincode::deserialize::<Feature>(&account.data).ok())
+        .is_some_and(|feature| feature.activated_at.is_some())
+}
 
 /// If `--buffer` is absent, inject a per-program persistent path at
 /// `target/deploy/{program_name}-upgrade-buffer.json`. Creates the keypair
@@ -1340,13 +1354,27 @@ fn auto_extend_program_data_if_needed(
         additional_bytes, programdata_body_len, required_programdata_body_len
     );
 
-    let extend_ix =
-        loader_v3_instruction::extend_program(program_id, Some(&payer.pubkey()), additional_bytes);
+    let extend_program_checked_active = is_feature_active(rpc_client, &local_feature_ids::id());
+    let extend_ix = if extend_program_checked_active {
+        loader_v3_instruction::extend_program_checked(
+            program_id,
+            &upgrade_authority.pubkey(),
+            Some(&payer.pubkey()),
+            additional_bytes,
+        )
+    } else {
+        loader_v3_instruction::extend_program(program_id, Some(&payer.pubkey()), additional_bytes)
+    };
     let recent_blockhash = rpc_client.get_latest_blockhash()?;
+    let extend_signers: Vec<&Keypair> = if extend_program_checked_active {
+        vec![payer, upgrade_authority]
+    } else {
+        vec![payer]
+    };
     let extend_tx = Transaction::new_signed_with_payer(
         &[extend_ix],
         Some(&payer.pubkey()),
-        &[payer, upgrade_authority],
+        &extend_signers,
         recent_blockhash,
     );
     rpc_client

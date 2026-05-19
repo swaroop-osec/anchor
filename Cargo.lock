@@ -224,6 +224,7 @@ dependencies = [
  "solana-commitment-config",
  "solana-compute-budget-interface",
  "solana-faucet",
+ "solana-feature-gate-interface",
  "solana-instruction",
  "solana-keypair",
  "solana-loader-v3-interface",
