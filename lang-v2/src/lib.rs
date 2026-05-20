@@ -19,6 +19,7 @@ pub mod idl_build;
 pub mod loader;
 pub mod pod;
 pub mod prelude;
+mod program;
 pub mod programs;
 pub mod system_program;
 #[cfg(feature = "testing")]
@@ -222,7 +223,7 @@ pub mod solana_program {
     }
 
     pub mod program {
-        pub use solana_cpi::*;
+        pub use crate::program::*;
     }
 }
 

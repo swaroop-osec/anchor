@@ -680,7 +680,8 @@ impl IntoInstructionData for solana_instruction::Instruction {
 }
 
 fn return_data_from(program: &Address) -> Vec<u8> {
-    let (return_program, data) = solana_cpi::get_return_data().expect("missing return data");
+    let (return_program, data) =
+        anchor_lang_v2::solana_program::program::get_return_data().expect("missing return data");
     assert_eq!(
         return_program.to_bytes().as_slice(),
         program.as_ref(),
