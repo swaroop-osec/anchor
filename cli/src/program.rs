@@ -510,6 +510,7 @@ pub fn process_deploy(
 }
 
 /// Deploy all programs in workspace using native implementation
+#[allow(clippy::too_many_arguments)]
 fn deploy_workspace(
     cfg_override: &ConfigOverride,
     program_name: Option<String>,
