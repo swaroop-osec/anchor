@@ -1,6 +1,6 @@
 import { bs58, utf8 } from "./utils/bytes/index.js";
 import { inflate, ungzip } from "pako";
-import camelCase from "camelcase";
+import { toCamelCase } from "./utils/case.js";
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 
@@ -524,7 +524,7 @@ export function convertIdlToCamelCase<I extends Idl>(idl: I) {
   const toCamelCase = (s: any) =>
     s
       .split(".")
-      .map((part: any) => camelCase(part, { locale: false }))
+      .map((part: any) => toCamelCase(part))
       .join(".");
 
   const recursivelyConvertNamesToCamelCase = (obj: Record<string, any>) => {
