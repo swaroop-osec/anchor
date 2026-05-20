@@ -285,6 +285,16 @@ export class Program<IDL extends Idl = Idl> {
       instruction: IdlInstruction
     ) => CustomAccountResolver<IDL> | undefined
   ) {
+    if (provider instanceof PublicKey || typeof provider === "string") {
+      throw new Error(
+        "`new Program(idl, programId, provider)` was removed in Anchor 0.30. " +
+          "The program id is now read from `idl.address`, so the constructor " +
+          "is `new Program(idl, provider?, coder?)`. " +
+          "If your IDL was generated before 0.30 and lacks `address`, set " +
+          "`idl.address = '<programId>'` before passing it in."
+      );
+    }
+
     // Fields.
     this._idl = convertIdlToCamelCase(idl);
     this._rawIdl = idl;
