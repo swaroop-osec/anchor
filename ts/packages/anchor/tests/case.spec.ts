@@ -1,4 +1,14 @@
 import { toCamelCase } from "../src/utils/case";
+import { convertIdlToCamelCase, Idl } from "../src/idl";
+
+// `structuredClone` ships natively in Node 17+, but jest 27's node test
+// environment doesn't expose it on `globalThis`. Anchor's runtime targets
+// Node >= 17, so polyfilling here just unblocks the test harness — the
+// production code path uses the real built-in.
+if (typeof (globalThis as any).structuredClone !== "function") {
+  (globalThis as any).structuredClone = (v: unknown) =>
+    JSON.parse(JSON.stringify(v));
+}
 
 // The npm `camelcase` library treats a digit followed by a letter as a word
 // boundary (e.g. `a1bReceive` -> `a1BReceive`), but the Rust-side IDL
@@ -46,5 +56,46 @@ describe("toCamelCase", () => {
   test("handles single word and empty input", () => {
     expect(toCamelCase("initialize")).toBe("initialize");
     expect(toCamelCase("")).toBe("");
+  });
+});
+
+describe("convertIdlToCamelCase", () => {
+  // Regression guard: an earlier iteration of #3043's fix introduced a
+  // local helper named `toCamelCase` inside `convertIdlToCamelCase` that
+  // shadowed the imported `toCamelCase`, turning its self-reference into
+  // infinite recursion. Anchor's full CI matrix (tests/sysvars, escrow,
+  // misc, ...) blew the call stack with `at toCamelCase (idl.js:210)`
+  // repeated. The helper is now `toCamelCasePath` — this test exercises
+  // every code path that fans into it and asserts it terminates.
+  test("camelCases dot-separated paths without recursing forever", () => {
+    const idl: Idl = {
+      address: "Test111111111111111111111111111111111111111",
+      metadata: { name: "test", version: "0.0.0", spec: "0.1.0" },
+      instructions: [
+        {
+          name: "do_thing",
+          discriminator: [0, 0, 0, 0, 0, 0, 0, 0],
+          args: [],
+          accounts: [
+            {
+              name: "my_pda",
+              pda: {
+                seeds: [{ kind: "account", path: "my_account.field" } as any],
+              },
+              relations: ["other_account", "another_one"],
+            } as any,
+          ],
+        },
+      ],
+    };
+
+    const out = convertIdlToCamelCase(idl);
+
+    expect(out.instructions[0].name).toBe("doThing");
+    const acct = out.instructions[0].accounts[0] as any;
+    expect(acct.name).toBe("myPda");
+    // The split-on-`.` wrapper must camelCase each segment in isolation.
+    expect(acct.pda.seeds[0].path).toBe("myAccount.field");
+    expect(acct.relations).toEqual(["otherAccount", "anotherOne"]);
   });
 });
