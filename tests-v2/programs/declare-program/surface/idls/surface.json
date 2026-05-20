@@ -1,7 +1,7 @@
 {
+  "address": "D9t6cEFPTDWmTZfcikokLbnuuyeJT6oXnpEbyXB45LU2",
   "metadata": {
     "name": "surface",
-    "address": "D9t6cEFPTDWmTZfcikokLbnuuyeJT6oXnpEbyXB45LU2",
     "version": "0.1.0",
     "spec": "0.1.0",
     "description": "declare_program broad client surface fixture"
@@ -9,6 +9,7 @@
   "instructions": [
     {
       "name": "noAccounts",
+      "discriminator": [235, 2, 155, 160, 177, 167, 169, 207],
       "accounts": [],
       "args": []
     },
@@ -18,11 +19,11 @@
       "accounts": [
         {
           "name": "legacySigner",
-          "isSigner": true
+          "signer": true
         },
         {
           "name": "legacyWritable",
-          "isMut": true
+          "writable": true
         }
       ],
       "args": [
@@ -133,19 +134,25 @@
         {
           "name": "byString",
           "type": {
-            "defined": "SurfaceArgs"
+            "defined": {
+              "name": "SurfaceArgs"
+            }
           }
         },
         {
           "name": "byEnum",
           "type": {
-            "defined": "SurfaceMode"
+            "defined": {
+              "name": "SurfaceMode"
+            }
           }
         },
         {
           "name": "byTuple",
           "type": {
-            "defined": "TupleFlag"
+            "defined": {
+              "name": "TupleFlag"
+            }
           }
         }
       ]
@@ -206,7 +213,9 @@
             "fields": [
               "u64",
               {
-                "defined": "TupleFlag"
+                "defined": {
+                  "name": "TupleFlag"
+                }
               }
             ]
           },
@@ -220,7 +229,9 @@
               {
                 "name": "args",
                 "type": {
-                  "defined": "SurfaceArgs"
+                  "defined": {
+                    "name": "SurfaceArgs"
+                  }
                 }
               }
             ]

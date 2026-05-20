@@ -1761,16 +1761,25 @@ fn read_declare_program_idl(name: &Ident) -> syn::Result<serde_json::Value> {
         })
         .ok_or_else(|| syn::Error::new(name.span(), "`idls` directory not found"))?;
     let idl_path = idl_dir.join(name.to_string()).with_extension("json");
-    let idl = std::fs::read_to_string(&idl_path).map_err(|err| {
+    let idl = std::fs::read(&idl_path).map_err(|err| {
         syn::Error::new(
             name.span(),
             format!("failed to read IDL `{}`: {err}", idl_path.display()),
         )
     })?;
-    serde_json::from_str(&idl).map_err(|err| {
+    let idl = anchor_lang_idl::convert::convert_idl(&idl).map_err(|err| {
         syn::Error::new(
             name.span(),
             format!("failed to parse IDL `{}`: {err}", idl_path.display()),
+        )
+    })?;
+    serde_json::to_value(idl).map_err(|err| {
+        syn::Error::new(
+            name.span(),
+            format!(
+                "failed to normalize IDL `{}` after parsing: {err}",
+                idl_path.display()
+            ),
         )
     })
 }
@@ -1786,6 +1795,7 @@ fn gen_declared_program(name: &Ident, idl: &serde_json::Value) -> syn::Result<To
         .get("instructions")
         .and_then(serde_json::Value::as_array)
         .ok_or_else(|| syn::Error::new(name.span(), "IDL is missing instructions array"))?;
+    validate_declare_program_discriminators(idl, name.span())?;
 
     let types = gen_declare_program_types(idl)?;
     let type_idents = gen_declare_program_type_idents(idl)?;
@@ -1973,6 +1983,72 @@ fn gen_declare_program_errors(
             }
         }
     })
+}
+
+fn validate_declare_program_discriminators(
+    idl: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<()> {
+    let instructions = idl
+        .get("instructions")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|ix| {
+            let name = json_str(ix, "name", span)?;
+            let discriminator = ix
+                .get("discriminator")
+                .and_then(serde_json::Value::as_array)
+                .map(|values| parse_discriminator_array(values, span))
+                .transpose()?
+                .unwrap_or_else(|| default_instruction_discriminator(&to_snake_case(name)));
+            Ok((name.to_string(), discriminator))
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+    validate_discriminator_prefixes("instructions", &instructions, span)?;
+
+    for section in ["accounts", "events"] {
+        let discriminators = idl
+            .get(section)
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|item| {
+                let name = match json_str(item, "name", span) {
+                    Ok(name) => name,
+                    Err(err) => return Some(Err(err)),
+                };
+                let discriminator = item.get("discriminator")?.as_array()?;
+                Some(
+                    parse_discriminator_array(discriminator, span)
+                        .map(|discriminator| (name.to_string(), discriminator)),
+                )
+            })
+            .collect::<syn::Result<Vec<_>>>()?;
+        validate_discriminator_prefixes(section, &discriminators, span)?;
+    }
+
+    Ok(())
+}
+
+fn validate_discriminator_prefixes(
+    section: &str,
+    discriminators: &[(String, Vec<u8>)],
+    span: proc_macro2::Span,
+) -> syn::Result<()> {
+    for (outer_name, outer_disc) in discriminators {
+        for (inner_name, inner_disc) in discriminators {
+            if outer_name != inner_name && outer_disc.starts_with(inner_disc) {
+                return Err(syn::Error::new(
+                    span,
+                    format!(
+                        "Ambiguous discriminators for {section} `{outer_name}` and `{inner_name}`"
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 struct DeclareAccountField {

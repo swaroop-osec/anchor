@@ -1,7 +1,7 @@
 {
+  "address": "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw",
   "metadata": {
     "name": "serialization",
-    "address": "4wBqpZM9xaSheZzJSMawUKKwhdpChKbZ5eu5ky4Vigw",
     "version": "0.1.0",
     "spec": "0.1.0",
     "description": "generic declare_program serialization fixture"
@@ -15,7 +15,9 @@
         {
           "name": "data",
           "type": {
-            "defined": "ImplicitBorshAccount"
+            "defined": {
+              "name": "ImplicitBorshAccount"
+            }
           }
         }
       ]
@@ -28,7 +30,9 @@
         {
           "name": "data",
           "type": {
-            "defined": "ExplicitBorshAccount"
+            "defined": {
+              "name": "ExplicitBorshAccount"
+            }
           }
         }
       ]

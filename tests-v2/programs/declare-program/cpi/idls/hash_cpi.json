@@ -9,6 +9,7 @@
   "instructions": [
     {
       "name": "initialize",
+      "discriminator": [175, 175, 109, 31, 13, 152, 155, 237],
       "accounts": [
         {
           "name": "payer",
@@ -31,6 +32,7 @@
     },
     {
       "name": "apply",
+      "discriminator": [248, 243, 145, 24, 105, 50, 162, 225],
       "accounts": [
         {
           "name": "data",

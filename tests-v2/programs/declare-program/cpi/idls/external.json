@@ -9,6 +9,7 @@
   "instructions": [
     {
       "name": "defaultDisc",
+      "discriminator": [113, 228, 29, 105, 50, 82, 109, 96],
       "accounts": [],
       "args": []
     },

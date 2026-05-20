@@ -1,7 +1,9 @@
 {
   "address": "BF748KR4UhPq7xbhFQYd7yFKmh5UYdqed9GbD6oZvEyu",
   "metadata": {
-    "name": "return_callee"
+    "name": "return_callee",
+    "version": "0.1.0",
+    "spec": "0.1.0"
   },
   "instructions": [
     {
@@ -40,7 +42,9 @@
         { "name": "bonus", "type": "u16" }
       ],
       "returns": {
-        "defined": "ReturnPayload"
+        "defined": {
+          "name": "ReturnPayload"
+        }
       }
     },
     {
@@ -91,7 +95,9 @@
         { "name": "base", "type": "u64" }
       ],
       "returns": {
-        "defined": "ReturnPayload"
+        "defined": {
+          "name": "ReturnPayload"
+        }
       }
     },
     {
@@ -106,7 +112,9 @@
         { "name": "bonus", "type": "u16" }
       ],
       "returns": {
-        "defined": "ReturnPayload"
+        "defined": {
+          "name": "ReturnPayload"
+        }
       }
     }
   ],

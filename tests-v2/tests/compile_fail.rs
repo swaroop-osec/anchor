@@ -230,8 +230,8 @@ pub fn build_cpi<'a>(
 }
 
 #[test]
-fn program_interface_cpi_rejects_optional_accounts_clearly() {
-    compile_fail_case_with_features(
+fn program_interface_cpi_optional_accounts_compile() {
+    compile_pass_case(
         "program_interface_optional_cpi",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -258,7 +258,6 @@ pub mod program_interface_optional_cpi {
 }
 "#,
         &["cpi"],
-        &["CPI account generation for `Option<_>` accounts is not supported yet"],
     );
 }
 
@@ -349,16 +348,75 @@ fn declare_program_invalid_json_fails_clearly() {
 }
 
 #[test]
+fn declare_program_legacy_idl_conversion_compiles() {
+    compile_pass_case_with_files(
+        "declare_program_legacy_idl_conversion",
+        r#"
+use anchor_lang_v2::{prelude::*, Event as _};
+
+declare_program!(legacy);
+
+pub fn build_ix(authority: Address, data: Address, owner: Address) -> anchor_lang_v2::solana_program::instruction::Instruction {
+    let _event_data = legacy::events::LegacyEvent { value: 7 }.data();
+    let _constant = legacy::constants::LEGACY_BYTES;
+    let _error = legacy::error::LegacyError::LegacyError as u32;
+    legacy::instruction::DoIt { amount: 5, owner }
+        .to_instruction(legacy::accounts::DoIt { authority, data })
+}
+"#,
+        &[],
+        &[(
+            "idls/legacy.json",
+            r#"{
+  "version": "0.1.0",
+  "name": "legacy",
+  "metadata": {
+    "address": "11111111111111111111111111111111"
+  },
+  "instructions": [
+    {
+      "name": "doIt",
+      "accounts": [
+        { "name": "authority", "isMut": false, "isSigner": true },
+        { "name": "data", "isMut": true, "isSigner": false }
+      ],
+      "args": [
+        { "name": "amount", "type": "u64" },
+        { "name": "owner", "type": "publicKey" }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "LegacyEvent",
+      "fields": [
+        { "name": "value", "type": "u64", "index": false }
+      ]
+    }
+  ],
+  "errors": [
+    { "code": 6000, "name": "LegacyError", "msg": "legacy error" }
+  ],
+  "constants": [
+    { "name": "LEGACY_BYTES", "type": "bytes", "value": "[1, 2]" }
+  ]
+}"#,
+        )],
+    );
+}
+
+#[test]
 fn declare_program_missing_accounts_array_fails_clearly() {
     declare_program_compile_fail_case(
         "declare_program_missing_accounts_array",
         r#"{
   "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [
-    { "name": "ix", "args": [] }
+    { "name": "ix", "discriminator": [1], "args": [] }
   ]
 }"#,
-        &["instruction `ix` is missing accounts array"],
+        &["missing field `accounts`"],
     );
 }
 
@@ -368,6 +426,7 @@ fn declare_program_rejects_invalid_discriminator_byte() {
         "declare_program_invalid_discriminator_byte",
         r#"{
   "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [
     {
       "name": "ix",
@@ -377,7 +436,7 @@ fn declare_program_rejects_invalid_discriminator_byte() {
     }
   ]
 }"#,
-        &["IDL discriminator values must be bytes"],
+        &["invalid value: integer `300`, expected u8"],
     );
 }
 
@@ -387,6 +446,7 @@ fn declare_program_rejects_empty_discriminator() {
         "declare_program_empty_discriminator",
         r#"{
   "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [
     {
       "name": "ix",
@@ -401,16 +461,89 @@ fn declare_program_rejects_empty_discriminator() {
 }
 
 #[test]
+fn declare_program_rejects_instruction_discriminator_prefix_overlap() {
+    declare_program_compile_fail_case(
+        "declare_program_instruction_discriminator_prefix_overlap",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [
+    {
+      "name": "short",
+      "discriminator": [1, 2],
+      "accounts": [],
+      "args": []
+    },
+    {
+      "name": "long",
+      "discriminator": [1, 2, 3],
+      "accounts": [],
+      "args": []
+    }
+  ]
+}"#,
+        &["Ambiguous discriminators for instructions `long` and `short`"],
+    );
+}
+
+#[test]
+fn declare_program_rejects_account_discriminator_prefix_overlap() {
+    declare_program_compile_fail_case(
+        "declare_program_account_discriminator_prefix_overlap",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "accounts": [
+    {
+      "name": "ShortAccount",
+      "discriminator": [7]
+    },
+    {
+      "name": "LongAccount",
+      "discriminator": [7, 8]
+    }
+  ]
+}"#,
+        &["Ambiguous discriminators for accounts `LongAccount` and `ShortAccount`"],
+    );
+}
+
+#[test]
+fn declare_program_rejects_event_discriminator_prefix_overlap() {
+    declare_program_compile_fail_case(
+        "declare_program_event_discriminator_prefix_overlap",
+        r#"{
+  "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
+  "instructions": [],
+  "events": [
+    {
+      "name": "ShortEvent",
+      "discriminator": [9, 9]
+    },
+    {
+      "name": "LongEvent",
+      "discriminator": [9, 9, 9]
+    }
+  ]
+}"#,
+        &["Ambiguous discriminators for events `LongEvent` and `ShortEvent`"],
+    );
+}
+
+#[test]
 fn declare_program_missing_args_array_fails_clearly() {
     declare_program_compile_fail_case(
         "declare_program_missing_args_array",
         r#"{
   "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [
-    { "name": "ix", "accounts": [] }
+    { "name": "ix", "discriminator": [1], "accounts": [] }
   ]
 }"#,
-        &["instruction `ix` is missing args array"],
+        &["missing field `args`"],
     );
 }
 
@@ -420,9 +553,11 @@ fn declare_program_rejects_unsupported_argument_type() {
         "declare_program_unsupported_argument_type",
         r#"{
   "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [
     {
       "name": "ix",
+      "discriminator": [1],
       "accounts": [],
       "args": [
         { "name": "amount", "type": "u256" }
@@ -440,12 +575,13 @@ fn declare_program_rejects_error_without_u32_code() {
         "declare_program_error_without_code",
         r#"{
   "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [],
   "errors": [
     { "name": "bad" }
   ]
 }"#,
-        &["IDL error `bad` is missing a u32 code"],
+        &["missing field `code`"],
     );
 }
 
@@ -455,6 +591,7 @@ fn declare_program_rejects_bad_constant_byte_length() {
         "declare_program_bad_constant_byte_length",
         r#"{
   "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [],
   "constants": [
     {
@@ -474,6 +611,7 @@ fn declare_program_rejects_bytemuck_enum_type() {
         "declare_program_bytemuck_enum",
         r#"{
   "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [],
   "types": [
     {
@@ -512,6 +650,7 @@ pub fn use_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
             "idls/bad.json",
             r#"{
   "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [
     {
       "name": "ix",
@@ -548,6 +687,7 @@ pub fn misuse_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
             "idls/bad.json",
             r#"{
   "address": "11111111111111111111111111111111",
+  "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [
     {
       "name": "ix",
