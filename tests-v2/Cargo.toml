@@ -24,6 +24,7 @@ custom-constraints = { path = "programs/custom-constraints", features = ["cpi"] 
 declare-program-constants = { path = "programs/declare-program/constants" }
 declare-program-cpi = { path = "programs/declare-program/cpi", features = ["cpi"] }
 declare-program-errors = { path = "programs/declare-program/errors" }
+declare-program-events = { path = "programs/declare-program/events" }
 declare-program-optional = { path = "programs/declare-program/optional", features = ["cpi"] }
 declare-program-returns = { path = "programs/declare-program/returns", features = ["cpi"] }
 declare-program-serialization = { path = "programs/declare-program/serialization" }

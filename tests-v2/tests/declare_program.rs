@@ -4,6 +4,8 @@ mod cpi;
 mod constants;
 #[path = "../src/declare-program/errors.rs"]
 mod errors;
+#[path = "../src/declare-program/events.rs"]
+mod events;
 #[path = "../src/declare-program/optional.rs"]
 mod optional;
 #[path = "../src/declare-program/returns.rs"]

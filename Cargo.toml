@@ -43,6 +43,7 @@ members = [
     "tests-v2/programs/declare-program/cpi/programs/external-cpi",
     "tests-v2/programs/declare-program/cpi/programs/hash-cpi",
     "tests-v2/programs/declare-program/errors",
+    "tests-v2/programs/declare-program/events",
     "tests-v2/programs/declare-program/optional",
     "tests-v2/programs/declare-program/optional/programs/optional-callee",
     "tests-v2/programs/declare-program/returns",

@@ -2081,6 +2081,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "declare-program-events"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "declare-program-optional"
 version = "0.1.0"
 dependencies = [
@@ -9201,6 +9209,7 @@ dependencies = [
  "declare-program-constants",
  "declare-program-cpi",
  "declare-program-errors",
+ "declare-program-events",
  "declare-program-optional",
  "declare-program-returns",
  "declare-program-serialization",

@@ -1793,6 +1793,7 @@ fn gen_declared_program(name: &Ident, idl: &serde_json::Value) -> syn::Result<To
         .iter()
         .map(|ident| quote! { pub use super::#ident; });
     let constants = gen_declare_program_constants(idl)?;
+    let events = gen_declare_program_events(idl)?;
     let errors = gen_declare_program_errors(idl, name.span())?;
     let mut account_groups = std::collections::BTreeMap::<String, Vec<DeclareAccountField>>::new();
     let mut handlers = Vec::new();
@@ -1897,6 +1898,7 @@ fn gen_declared_program(name: &Ident, idl: &serde_json::Value) -> syn::Result<To
             pub mod constants {
                 #(#constants)*
             }
+            #events
             #errors
             #(#account_structs)*
 
@@ -2439,6 +2441,177 @@ fn gen_declare_program_constants(idl: &serde_json::Value) -> syn::Result<Vec<Tok
         });
     }
     Ok(out)
+}
+
+fn gen_declare_program_events(idl: &serde_json::Value) -> syn::Result<TokenStream2> {
+    let Some(events) = idl.get("events").and_then(serde_json::Value::as_array) else {
+        return Ok(quote! {
+            pub mod events {
+                use super::*;
+            }
+        });
+    };
+
+    let type_defs: std::collections::BTreeMap<_, _> = idl
+        .get("types")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|ty_def| {
+            let name = ty_def.get("name")?.as_str()?;
+            Some((name, ty_def))
+        })
+        .collect();
+
+    let mut event_reexports = Vec::new();
+    let mut impls = Vec::new();
+    let mut parser_variants = Vec::new();
+    let mut parser_branches = Vec::new();
+    let span = proc_macro2::Span::call_site();
+
+    for event in events {
+        let name = json_str(event, "name", span)?;
+        let ident = Ident::new(&to_type_name(name), span);
+        let discriminator = event
+            .get("discriminator")
+            .and_then(serde_json::Value::as_array)
+            .map(|values| parse_discriminator_array(values, span))
+            .transpose()?
+            .ok_or_else(|| {
+                syn::Error::new(
+                    span,
+                    format!("event `{name}` is missing discriminator in `{event}`"),
+                )
+            })?;
+        let discriminator = discriminator.iter().map(|byte| quote! { #byte });
+        let ty_def = type_defs.get(name).copied().ok_or_else(|| {
+            syn::Error::new(
+                span,
+                format!("event `{name}` is missing matching type definition"),
+            )
+        })?;
+        let serialization = declare_type_serialization(ty_def, span)?;
+
+        event_reexports.push(quote! { pub use super::#ident; });
+        parser_variants.push(quote! { #ident(super::events::#ident) });
+
+        let event_impl = if serialization.is_bytemuck() {
+            quote! {
+                impl anchor_lang_v2::Event for #ident {
+                    fn data(&self) -> anchor_lang_v2::__alloc::vec::Vec<u8> {
+                        let disc = <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR;
+                        let payload = anchor_lang_v2::bytemuck::bytes_of(self);
+                        let mut data =
+                            anchor_lang_v2::__alloc::vec::Vec::with_capacity(disc.len() + payload.len());
+                        data.extend_from_slice(disc);
+                        data.extend_from_slice(payload);
+                        data
+                    }
+                }
+            }
+        } else {
+            quote! {
+                impl anchor_lang_v2::Event for #ident {
+                    fn data(&self) -> anchor_lang_v2::__alloc::vec::Vec<u8> {
+                        let disc = <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR;
+                        let mut data =
+                            anchor_lang_v2::__alloc::vec::Vec::with_capacity(disc.len() + 256);
+                        data.extend_from_slice(disc);
+                        anchor_lang_v2::wincode::config::serialize_into(
+                            &mut data,
+                            self,
+                            anchor_lang_v2::BORSH_CONFIG,
+                        )
+                        .expect("declared event serialization cannot fail for derived SchemaWrite types");
+                        data
+                    }
+                }
+            }
+        };
+
+        impls.push(quote! {
+            impl anchor_lang_v2::Discriminator for #ident {
+                const DISCRIMINATOR: &'static [u8] = &[#(#discriminator),*];
+            }
+
+            #event_impl
+        });
+
+        let parser_body = if serialization.is_bytemuck() {
+            quote! {
+                let payload = &value[<super::events::#ident as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len()..];
+                let expected = core::mem::size_of::<super::events::#ident>();
+                if payload.len() != expected {
+                    return Err(anchor_lang_v2::Error::InvalidInstructionData);
+                }
+                return Ok(Self::#ident(
+                    anchor_lang_v2::bytemuck::pod_read_unaligned(payload)
+                ));
+            }
+        } else {
+            quote! {
+                let mut payload = &value[<super::events::#ident as anchor_lang_v2::Discriminator>::DISCRIMINATOR.len()..];
+                let decoded =
+                    <super::events::#ident as anchor_lang_v2::wincode::SchemaRead<
+                        '_,
+                        anchor_lang_v2::BorshConfig,
+                    >>::get(&mut payload)
+                    .map_err(|_| anchor_lang_v2::Error::InvalidInstructionData)?;
+                if !payload.is_empty() {
+                    return Err(anchor_lang_v2::Error::InvalidInstructionData);
+                }
+                return Ok(Self::#ident(decoded));
+            }
+        };
+        parser_branches.push(quote! {
+            if value.starts_with(
+                <super::events::#ident as anchor_lang_v2::Discriminator>::DISCRIMINATOR,
+            ) {
+                #parser_body
+            }
+        });
+    }
+
+    let parser_mod = if parser_variants.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            pub mod parsers {
+                use super::*;
+
+                pub enum Event {
+                    #(#parser_variants,)*
+                }
+
+                impl Event {
+                    pub fn parse(data: &[u8]) -> anchor_lang_v2::Result<Self> {
+                        Self::try_from(data)
+                    }
+                }
+
+                impl core::convert::TryFrom<&[u8]> for Event {
+                    type Error = anchor_lang_v2::Error;
+
+                    fn try_from(value: &[u8]) -> anchor_lang_v2::Result<Self> {
+                        #(#parser_branches)*
+                        Err(anchor_lang_v2::Error::InvalidArgument)
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(quote! {
+        pub mod events {
+            use super::*;
+
+            #(#event_reexports)*
+        }
+
+        #(#impls)*
+
+        #parser_mod
+    })
 }
 
 fn gen_declare_program_constant(
