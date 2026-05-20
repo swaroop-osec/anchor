@@ -35,6 +35,19 @@ describe("toCamelCase", () => {
     expect(toCamelCase("myA1bParam")).toBe("myA1bParam");
   });
 
+  test("digit-then-uppercase only splits when preceded by lowercase", () => {
+    expect(toCamelCase("A1B")).toBe("a1b"); // not "a1B"
+    expect(toCamelCase("XML1B")).toBe("xml1b"); // not "xml1B"
+    expect(toCamelCase("A1b")).toBe("a1b");
+    // Sanity: the lowercase-preceded case still splits.
+    expect(toCamelCase("a1B")).toBe("a1B");
+  });
+
+  test("acronym + digit + uppercase + lowercase still splits", () => {
+    expect(toCamelCase("XML1Http")).toBe("xml1Http"); // not "xml1http"
+    expect(toCamelCase("X1Foo")).toBe("x1Foo"); // not "x1foo"
+  });
+
   test("handles leading and trailing digits", () => {
     expect(toCamelCase("foo123")).toBe("foo123");
     expect(toCamelCase("foo_123")).toBe("foo123");

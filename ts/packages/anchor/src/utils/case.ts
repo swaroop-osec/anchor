@@ -10,8 +10,8 @@ export function toCamelCase(input: string): string {
 
   const spaced = input
     .replace(/[^A-Za-z0-9]+/g, " ")
-    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .replace(/([a-z][\d]*)([A-Z])/g, "$1 $2")
+    .replace(/([A-Z][A-Z\d]*)([A-Z][a-z])/g, "$1 $2")
     .trim();
 
   if (!spaced) return "";
