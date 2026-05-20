@@ -537,7 +537,6 @@ pub struct CreateMetadataAccountsV3<'info> {
     pub payer: CpiHandle<'info>,
     pub update_authority: CpiHandle<'info>,
     pub system_program: CpiHandle<'info>,
-    pub rent: CpiHandle<'info>,
 }
 
 pub struct UpdateMetadataAccountsV2<'info> {
@@ -740,8 +739,7 @@ impl_cpi_accounts!(CreateMetadataAccountsV3 {
     mint_authority,
     payer,
     update_authority,
-    system_program,
-    rent
+    system_program
 });
 impl_cpi_accounts!(UpdateMetadataAccountsV2 {
     metadata,
