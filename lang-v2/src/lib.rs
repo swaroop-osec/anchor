@@ -3,7 +3,6 @@
 //! `#![no_std]` compatible.
 
 #![no_std]
-
 extern crate alloc;
 
 pub mod accounts;
@@ -171,7 +170,7 @@ pub use {
     },
     bytemuck,
     context::{Bumps, Context},
-    context_cpi::CpiContext,
+    context_cpi::{invoke_signed_fixed, CpiContext},
     cpi::{
         create_account, create_account_signed, create_program_address,
         find_and_verify_program_address, find_and_verify_program_address_skip_curve,

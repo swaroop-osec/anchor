@@ -838,11 +838,31 @@ pub fn transfer_checked<'a>(
     decimals: u8,
 ) -> Result<(), ProgramError> {
     validate_token_program(ctx.program)?;
-    ctx.invoke(&encode_amount_decimals_ix(
-        DISC_TRANSFER_CHECKED,
-        amount,
-        decimals,
-    ));
+    let data = encode_amount_decimals_ix(DISC_TRANSFER_CHECKED, amount, decimals);
+    if ctx.remaining_accounts.is_empty() {
+        let accounts = ctx.accounts;
+        let instruction_accounts = [
+            InstructionAccount::writable(accounts.from.address()),
+            InstructionAccount::new(accounts.mint.address(), false, false),
+            InstructionAccount::writable(accounts.to.address()),
+            InstructionAccount::readonly_signer(accounts.authority.address()),
+        ];
+        let handles = [
+            accounts.from,
+            accounts.mint,
+            accounts.to,
+            accounts.authority,
+        ];
+        anchor_lang_v2::invoke_signed_fixed(
+            ctx.program,
+            &data,
+            &instruction_accounts,
+            &handles,
+            ctx.signer_seeds,
+        );
+    } else {
+        ctx.invoke(&data);
+    }
     Ok(())
 }
 
