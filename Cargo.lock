@@ -2058,7 +2058,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
-name = "declare-program"
+name = "declare-program-cpi"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
+name = "declare-program-errors"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
+name = "declare-program-optional"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
+name = "declare-program-returns"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
+name = "declare-program-serialization"
 version = "0.1.0"
 dependencies = [
  "anchor-lang-v2",
@@ -4142,6 +4174,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "optional-callee"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
 name = "pairing"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4896,6 +4936,14 @@ dependencies = [
  "serde",
  "thiserror 1.0.69",
  "tower-service",
+]
+
+[[package]]
+name = "return-callee"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
 ]
 
 [[package]]
@@ -9127,7 +9175,11 @@ dependencies = [
  "client-builders",
  "constraints",
  "custom-constraints",
- "declare-program",
+ "declare-program-cpi",
+ "declare-program-errors",
+ "declare-program-optional",
+ "declare-program-returns",
+ "declare-program-serialization",
  "declare-program-surface",
  "derives-test",
  "dispatch-remaining",

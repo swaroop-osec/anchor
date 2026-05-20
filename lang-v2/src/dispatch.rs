@@ -57,13 +57,13 @@ pub trait TryAccounts: Bumps + Sized {
 /// constraint checking.  The residual cursor (past the declared accounts)
 /// is handed to `Context` for lazy `remaining_accounts()` access.
 #[inline(always)]
-pub fn run_handler<'a, T: TryAccounts>(
+pub fn run_handler<'a, T: TryAccounts, R>(
     program_id: &'a Address,
     cursor: &'a mut AccountCursor,
     ix_data: &'a [u8],
     num_accounts: usize,
-    handler: impl FnOnce(&mut Context<'a, T>, T::IxArgs<'a>) -> Result<(), ProgramError>,
-) -> Result<(), ProgramError> {
+    handler: impl FnOnce(&mut Context<'a, T>, T::IxArgs<'a>) -> Result<R, ProgramError>,
+) -> Result<R, ProgramError> {
     if num_accounts < T::HEADER_SIZE {
         return Err(crate::ErrorCode::AccountNotEnoughKeys.into());
     }
@@ -86,7 +86,7 @@ pub fn run_handler<'a, T: TryAccounts>(
     };
     let remaining_num = (num_accounts - T::HEADER_SIZE) as u8;
     let mut ctx = Context::new(program_id, ctx_accounts, bumps, cursor, remaining_num);
-    handler(&mut ctx, ix_args)?;
+    let result = handler(&mut ctx, ix_args)?;
     ctx.accounts.exit_accounts()?;
-    Ok(())
+    Ok(result)
 }

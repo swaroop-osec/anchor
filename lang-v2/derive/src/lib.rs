@@ -23,7 +23,7 @@ use {
 // #[derive(Accounts)]
 // ---------------------------------------------------------------------------
 
-#[proc_macro_derive(Accounts, attributes(account, instruction))]
+#[proc_macro_derive(Accounts, attributes(account, instruction, accounts_program_id))]
 pub fn derive_accounts(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     TokenStream::from(impl_accounts(&input))
@@ -218,9 +218,33 @@ fn parse_instruction_attrs(attrs: &[syn::Attribute]) -> syn::Result<Vec<(Ident, 
     Ok(result)
 }
 
+/// Parse the internal `#[accounts_program_id(expr)]` override used by
+/// `declare_program!` for generated account structs. Ordinary user-written
+/// `#[derive(Accounts)]` structs continue to default to the current crate's ID.
+fn parse_accounts_program_id_attr(attrs: &[syn::Attribute]) -> syn::Result<Expr> {
+    let mut program_id = None;
+    for attr in attrs {
+        if !attr.path().is_ident("accounts_program_id") {
+            continue;
+        }
+        if program_id.is_some() {
+            return Err(syn::Error::new(
+                attr.span(),
+                "duplicate `accounts_program_id` attribute",
+            ));
+        }
+        program_id = Some(attr.parse_args::<Expr>()?);
+    }
+    Ok(program_id.unwrap_or_else(|| syn::parse_quote!(crate::ID)))
+}
+
 fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     let name = &input.ident;
     let bumps_name = syn::Ident::new(&format!("{name}Bumps"), name.span());
+    let accounts_program_id = match parse_accounts_program_id_attr(&input.attrs) {
+        Ok(program_id) => program_id,
+        Err(err) => return err.to_compile_error(),
+    };
 
     // Bail with a properly-spanned diagnostic on unsupported shapes.
     let named_fields = match &input.data {
@@ -708,7 +732,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                         Some(quote! {
                             let #ident = {
                                 let (__addr, _) = anchor_lang_v2::find_program_address(
-                                    &[#(#seed_exprs),*], &crate::ID,
+                                    &[#(#seed_exprs),*], &#accounts_program_id,
                                 );
                                 Some(__addr)
                             };
@@ -716,7 +740,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                     } else {
                         Some(quote! {
                             let (#ident, _) = anchor_lang_v2::find_program_address(
-                                &[#(#seed_exprs),*], &crate::ID,
+                                &[#(#seed_exprs),*], &#accounts_program_id,
                             );
                         })
                     }
@@ -758,7 +782,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                             is_signer: #signer_expr,
                         }),
                         None => __metas.push(anchor_lang_v2::AccountMeta {
-                            pubkey: crate::ID,
+                            pubkey: #accounts_program_id,
                             is_writable: false,
                             is_signer: false,
                         }),
@@ -838,7 +862,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 pub fn #fn_name(#(#params),*) -> (anchor_lang_v2::Address, u8) {
                     anchor_lang_v2::find_program_address(
                         &[#(#seed_exprs),*],
-                        &crate::ID,
+                        &#accounts_program_id,
                     )
                 }
             })
@@ -892,7 +916,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                             is_signer: #signer_expr,
                         }),
                         None => __metas.push(anchor_lang_v2::AccountMeta {
-                            pubkey: crate::ID,
+                            pubkey: #accounts_program_id,
                             is_writable: false,
                             is_signer: false,
                         }),
@@ -918,45 +942,18 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     // `CpiHandle<'a>` fields and a `ToCpiAccounts<'a>` impl driven by each
     // field's compile-time writable / signer flags. `Nested<T>` fields hold
     // T's generated CPI accounts struct and flatten through `ToCpiAccounts`,
-    // matching the account ordering used by `TryAccounts`. Skipped when the
-    // Accounts struct contains `Option<_>` fields — those need sentinel
-    // fallback logic that this codegen pass does not yet handle. The
-    // `#[program]` macro re-exports the resulting type under
+    // matching the account ordering used by `TryAccounts`. Optional accounts
+    // are emitted as `Option<CpiHandle<'a>>`; `None` emits the program-id
+    // sentinel account meta and omits the handle, matching the callee's
+    // optional-account parser.
+    // The `#[program]` macro re-exports the resulting type under
     // `cpi::accounts::<name>` and synthesizes the per-instruction wrapper
     // functions.
     let cpi_mod_name = syn::Ident::new(
         &format!("__cpi_accounts_{}", name.to_string().to_lowercase()),
         name.span(),
     );
-    let cpi_unsupported = fields.iter().any(|f| f.is_optional);
-    let cpi_accounts_mod = if cpi_unsupported {
-        quote! {
-            #[cfg(feature = "cpi")]
-            pub mod #cpi_mod_name {
-                compile_error!(
-                    "CPI account generation for `Option<_>` accounts is not supported yet"
-                );
-                pub struct #name<'a> {
-                    #[doc(hidden)]
-                    pub _phantom: ::core::marker::PhantomData<&'a ()>,
-                }
-                impl<'a> anchor_lang_v2::ToCpiAccounts<'a> for #name<'a> {
-                    fn to_instruction_accounts(
-                        &self,
-                    ) -> alloc::vec::Vec<
-                        anchor_lang_v2::pinocchio::instruction::InstructionAccount<'a>,
-                    > {
-                        alloc::vec::Vec::new()
-                    }
-                    fn to_cpi_handles(
-                        &self,
-                    ) -> alloc::vec::Vec<anchor_lang_v2::CpiHandle<'a>> {
-                        alloc::vec::Vec::new()
-                    }
-                }
-            }
-        }
-    } else {
+    let cpi_accounts_mod = {
         let cpi_field_decls: Vec<_> = fields
             .iter()
             .map(|f| {
@@ -972,6 +969,8 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                         n.span(),
                     );
                     quote! { pub #n: super::#inner_mod::#inner_ident<'a> }
+                } else if f.is_optional {
+                    quote! { pub #n: ::core::option::Option<anchor_lang_v2::CpiHandle<'a>> }
                 } else {
                     quote! { pub #n: anchor_lang_v2::CpiHandle<'a> }
                 }
@@ -996,12 +995,33 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                     (false, true) => quote! { readonly_signer },
                     (false, false) => quote! { readonly },
                 };
-                quote! {
-                    __accounts.push(
-                        anchor_lang_v2::pinocchio::instruction::InstructionAccount::#ctor(
-                            self.#n.address(),
-                        ),
-                    );
+                if f.is_optional {
+                    quote! {
+                        match &self.#n {
+                            ::core::option::Option::Some(__account) => {
+                                __accounts.push(
+                                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::#ctor(
+                                        __account.address(),
+                                    ),
+                                );
+                            }
+                            ::core::option::Option::None => {
+                                __accounts.push(
+                                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::readonly(
+                                        &#accounts_program_id,
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                } else {
+                    quote! {
+                        __accounts.push(
+                            anchor_lang_v2::pinocchio::instruction::InstructionAccount::#ctor(
+                                self.#n.address(),
+                            ),
+                        );
+                    }
                 }
             })
             .collect();
@@ -1012,6 +1032,12 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 if parse::is_nested_type(&f.ty) {
                     quote! {
                         __handles.extend(anchor_lang_v2::ToCpiAccounts::to_cpi_handles(&self.#n));
+                    }
+                } else if f.is_optional {
+                    quote! {
+                        if let ::core::option::Option::Some(__account) = self.#n {
+                            __handles.push(__account);
+                        }
                     }
                 } else {
                     quote! { __handles.push(self.#n); }
@@ -1762,6 +1788,12 @@ fn gen_declared_program(name: &Ident, idl: &serde_json::Value) -> syn::Result<To
         .ok_or_else(|| syn::Error::new(name.span(), "IDL is missing instructions array"))?;
 
     let types = gen_declare_program_types(idl)?;
+    let type_idents = gen_declare_program_type_idents(idl)?;
+    let type_reexports = type_idents
+        .iter()
+        .map(|ident| quote! { pub use super::#ident; });
+    let constants = gen_declare_program_constants(idl)?;
+    let errors = gen_declare_program_errors(idl, name.span())?;
     let mut account_groups = std::collections::BTreeMap::<String, Vec<DeclareAccountField>>::new();
     let mut handlers = Vec::new();
     for ix in instructions {
@@ -1812,10 +1844,15 @@ fn gen_declared_program(name: &Ident, idl: &serde_json::Value) -> syn::Result<To
             arg_decls.push(quote! { #arg_ident: #ty });
             arg_uses.push(quote! { let _ = #arg_ident; });
         }
+        let return_ty = ix
+            .get("returns")
+            .map(|ty| declare_idl_type_to_tokens(ty, name.span()))
+            .transpose()?
+            .unwrap_or_else(|| quote! { () });
 
         handlers.push(quote! {
             #[discrim = [#(#discrim_tokens),*]]
-            pub fn #ix_ident(_ctx: &mut anchor_lang_v2::Context<#accounts_ident>, #(#arg_decls),*) -> anchor_lang_v2::Result<()> {
+            pub fn #ix_ident(_ctx: &mut anchor_lang_v2::Context<#accounts_ident>, #(#arg_decls),*) -> anchor_lang_v2::Result<#return_ty> {
                 #(#arg_uses)*
                 unreachable!()
             }
@@ -1828,6 +1865,7 @@ fn gen_declared_program(name: &Ident, idl: &serde_json::Value) -> syn::Result<To
         let field_tokens = fields.into_iter().map(|field| field.to_tokens());
         account_structs.push(quote! {
             #[derive(anchor_lang_v2::Accounts)]
+            #[accounts_program_id(ID)]
             pub struct #group_ident {
                 #(#field_tokens)*
             }
@@ -1853,12 +1891,83 @@ fn gen_declared_program(name: &Ident, idl: &serde_json::Value) -> syn::Result<To
             }
 
             #(#types)*
+            pub mod types {
+                #(#type_reexports)*
+            }
+            pub mod constants {
+                #(#constants)*
+            }
+            #errors
             #(#account_structs)*
 
             #[anchor_lang_v2::program(interface, program_id = ID)]
             pub mod __program {
                 use super::*;
                 #(#handlers)*
+            }
+        }
+    })
+}
+
+fn gen_declare_program_errors(
+    idl: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    let Some(errors) = idl.get("errors").and_then(serde_json::Value::as_array) else {
+        return Ok(quote! {
+            pub mod error {
+                use super::*;
+            }
+        });
+    };
+
+    if errors.is_empty() {
+        return Ok(quote! {
+            pub mod error {
+                use super::*;
+            }
+        });
+    }
+
+    let program_name = idl
+        .pointer("/metadata/name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("DeclaredProgram");
+    let enum_ident = Ident::new(&format!("{}Error", to_type_name(program_name)), span);
+    let mut variants = Vec::new();
+    for error in errors {
+        let name = json_str(error, "name", span)?;
+        let ident = Ident::new(&to_type_name(name), span);
+        let code = error
+            .get("code")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|code| *code <= u32::MAX as u64)
+            .ok_or_else(|| {
+                syn::Error::new(
+                    span,
+                    format!("IDL error `{name}` is missing a u32 code in `{error}`"),
+                )
+            })? as u32;
+        let msg = error
+            .get("msg")
+            .and_then(serde_json::Value::as_str)
+            .map(|msg| {
+                let msg_lit = syn::LitStr::new(msg, span);
+                quote! { #[msg(#msg_lit)] }
+            });
+        variants.push(quote! {
+            #msg
+            #ident = #code,
+        });
+    }
+
+    Ok(quote! {
+        pub mod error {
+            use super::*;
+
+            #[anchor_lang_v2::error_code(offset = 0)]
+            pub enum #enum_ident {
+                #(#variants)*
             }
         }
     })
@@ -1956,50 +2065,354 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
     let Some(types) = idl.get("types").and_then(serde_json::Value::as_array) else {
         return Ok(Vec::new());
     };
+    let account_discriminators: std::collections::BTreeMap<_, _> = idl
+        .get("accounts")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|account| {
+            let name = account.get("name")?.as_str()?;
+            let discriminator = account.get("discriminator")?.as_array()?;
+            Some((name, discriminator))
+        })
+        .collect();
     let mut out = Vec::new();
     for ty_def in types {
         let name = json_str(ty_def, "name", proc_macro2::Span::call_site())?;
         let ident = Ident::new(&to_type_name(name), proc_macro2::Span::call_site());
+        let serialization = declare_type_serialization(ty_def, ident.span())?;
+        let discriminator = account_discriminators.get(name).copied();
+        let discriminator_impl = if let Some(discriminator) = discriminator {
+            let bytes: Vec<_> = discriminator
+                .iter()
+                .map(|value| {
+                    let byte = value.as_u64().ok_or_else(|| {
+                        syn::Error::new(
+                            ident.span(),
+                            format!("account `{name}` discriminator entries must be integers"),
+                        )
+                    })?;
+                    if byte > u8::MAX as u64 {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            format!("account `{name}` discriminator entry `{byte}` exceeds u8"),
+                        ));
+                    }
+                    Ok(byte as u8)
+                })
+                .collect::<syn::Result<_>>()?;
+            let bytes = bytes.iter().map(|byte| quote! { #byte });
+            quote! {
+                impl anchor_lang_v2::Owner for #ident {
+                    fn owner(_program_id: &anchor_lang_v2::Address) -> anchor_lang_v2::Address {
+                        ID
+                    }
+                }
+
+                impl anchor_lang_v2::Discriminator for #ident {
+                    const DISCRIMINATOR: &'static [u8] = &[#(#bytes),*];
+                }
+            }
+        } else {
+            quote! {}
+        };
         let type_obj = ty_def.get("type").ok_or_else(|| {
             syn::Error::new(ident.span(), format!("type `{name}` is missing type body"))
         })?;
         let kind = json_str(type_obj, "kind", ident.span())?;
-        if kind != "struct" {
-            return Err(syn::Error::new(
-                ident.span(),
-                format!("declare_program! only supports struct types for now, got `{kind}`"),
-            ));
-        }
-        let fields = type_obj
-            .get("fields")
-            .and_then(serde_json::Value::as_array)
-            .ok_or_else(|| {
-                syn::Error::new(
-                    ident.span(),
-                    format!("struct type `{name}` is missing fields"),
-                )
-            })?;
-        let mut field_tokens = Vec::new();
-        for field in fields {
-            let field_name = json_str(field, "name", ident.span())?;
-            let field_ident = Ident::new(&to_snake_case(field_name), ident.span());
-            let ty_value = field.get("type").ok_or_else(|| {
-                syn::Error::new(
-                    ident.span(),
-                    format!("field `{field_name}` is missing type"),
-                )
-            })?;
-            let ty = declare_idl_type_to_tokens(ty_value, ident.span())?;
-            field_tokens.push(quote! { pub #field_ident: #ty, });
-        }
-        out.push(quote! {
-            #[derive(Clone, anchor_lang_v2::wincode::SchemaWrite)]
-            pub struct #ident {
-                #(#field_tokens)*
+        match kind {
+            "struct" => {
+                let fields = type_obj
+                    .get("fields")
+                    .and_then(serde_json::Value::as_array)
+                    .ok_or_else(|| {
+                        syn::Error::new(
+                            ident.span(),
+                            format!("struct type `{name}` is missing fields"),
+                        )
+                    })?;
+                let fields = gen_declare_program_type_fields(fields, ident.span(), true)?;
+                let pod_impls = serialization
+                    .is_bytemuck()
+                    .then(|| gen_declare_program_pod_impls(&ident, &fields))
+                    .unwrap_or_default();
+                out.push(match fields {
+                    DeclareTypeFields::Named { fields, .. } if serialization.is_bytemuck() => quote! {
+                        #[derive(Clone, Copy)]
+                        #[repr(C)]
+                        pub struct #ident {
+                            #(#fields)*
+                        }
+                        #pod_impls
+                        #discriminator_impl
+                    },
+                    DeclareTypeFields::Named { fields, .. } => quote! {
+                        #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                        pub struct #ident {
+                            #(#fields)*
+                        }
+                        #discriminator_impl
+                    },
+                    DeclareTypeFields::Tuple { fields, .. } if serialization.is_bytemuck() => quote! {
+                        #[derive(Clone, Copy)]
+                        #[repr(C)]
+                        pub struct #ident(#(#fields),*);
+                        #pod_impls
+                        #discriminator_impl
+                    },
+                    DeclareTypeFields::Tuple { fields, .. } => quote! {
+                        #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                        pub struct #ident(#(#fields),*);
+                        #discriminator_impl
+                    },
+                });
             }
-        });
+            "enum" => {
+                if serialization.is_bytemuck() {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!("declare_program! does not support bytemuck enum type `{name}`"),
+                    ));
+                }
+                let variants = type_obj
+                    .get("variants")
+                    .and_then(serde_json::Value::as_array)
+                    .ok_or_else(|| {
+                        syn::Error::new(
+                            ident.span(),
+                            format!("enum type `{name}` is missing variants"),
+                        )
+                    })?;
+                let mut variant_tokens = Vec::new();
+                for variant in variants {
+                    let variant_name = json_str(variant, "name", ident.span())?;
+                    let variant_ident = Ident::new(variant_name, ident.span());
+                    let Some(fields) = variant.get("fields") else {
+                        variant_tokens.push(quote! { #variant_ident, });
+                        continue;
+                    };
+                    let fields = fields.as_array().ok_or_else(|| {
+                        syn::Error::new(
+                            ident.span(),
+                            format!("variant `{variant_name}` fields must be an array"),
+                        )
+                    })?;
+                    match gen_declare_program_type_fields(fields, ident.span(), false)? {
+                        DeclareTypeFields::Named { fields, .. } => {
+                            variant_tokens.push(quote! { #variant_ident { #(#fields)* }, });
+                        }
+                        DeclareTypeFields::Tuple { fields, .. } => {
+                            variant_tokens.push(quote! { #variant_ident(#(#fields),*), });
+                        }
+                    }
+                }
+                out.push(quote! {
+                    #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                    pub enum #ident {
+                        #(#variant_tokens)*
+                    }
+                    #discriminator_impl
+                });
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    format!("declare_program! only supports struct and enum types for now, got `{kind}`"),
+                ));
+            }
+        }
     }
     Ok(out)
+}
+
+#[derive(Clone, Copy)]
+enum DeclareTypeSerialization {
+    Borsh,
+    Bytemuck,
+    BytemuckUnsafe,
+}
+
+impl DeclareTypeSerialization {
+    fn is_bytemuck(self) -> bool {
+        matches!(self, Self::Bytemuck | Self::BytemuckUnsafe)
+    }
+}
+
+fn declare_type_serialization(
+    ty_def: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<DeclareTypeSerialization> {
+    match ty_def
+        .get("serialization")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("borsh")
+    {
+        "borsh" => Ok(DeclareTypeSerialization::Borsh),
+        "bytemuck" => Ok(DeclareTypeSerialization::Bytemuck),
+        "bytemuckunsafe" | "bytemuckUnsafe" => Ok(DeclareTypeSerialization::BytemuckUnsafe),
+        other => Err(syn::Error::new(
+            span,
+            format!("unsupported IDL type serialization `{other}`"),
+        )),
+    }
+}
+
+fn gen_declare_program_type_idents(idl: &serde_json::Value) -> syn::Result<Vec<Ident>> {
+    let mut names = std::collections::BTreeSet::new();
+    for section in ["accounts", "types"] {
+        if let Some(items) = idl.get(section).and_then(serde_json::Value::as_array) {
+            for item in items {
+                names.insert(json_str(item, "name", proc_macro2::Span::call_site())?.to_string());
+            }
+        }
+    }
+    Ok(names
+        .into_iter()
+        .map(|name| Ident::new(&to_type_name(&name), proc_macro2::Span::call_site()))
+        .collect())
+}
+
+fn gen_declare_program_constants(idl: &serde_json::Value) -> syn::Result<Vec<TokenStream2>> {
+    let Some(constants) = idl.get("constants").and_then(serde_json::Value::as_array) else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for constant in constants {
+        let name = json_str(constant, "name", proc_macro2::Span::call_site())?;
+        let ident = Ident::new(name, proc_macro2::Span::call_site());
+        let ty_value = constant.get("type").ok_or_else(|| {
+            syn::Error::new(ident.span(), format!("constant `{name}` is missing type"))
+        })?;
+        let value = json_str(constant, "value", ident.span())?;
+        out.push(gen_declare_program_constant(&ident, ty_value, value)?);
+    }
+    Ok(out)
+}
+
+fn gen_declare_program_constant(
+    ident: &Ident,
+    ty_value: &serde_json::Value,
+    value: &str,
+) -> syn::Result<TokenStream2> {
+    let span = ident.span();
+    if ty_value.as_str() == Some("bytes") {
+        let bytes = parse_declare_program_byte_array(value, span)?;
+        let len = bytes.len();
+        let bytes = bytes.iter().map(|b| quote! { #b });
+        return Ok(quote! { pub const #ident: [u8; #len] = [#(#bytes),*]; });
+    }
+
+    if let Some(array) = ty_value.get("array").and_then(serde_json::Value::as_array) {
+        if array.len() == 2 && array[0].as_str() == Some("u8") {
+            let len = array[1]
+                .as_u64()
+                .ok_or_else(|| syn::Error::new(span, "IDL array length must be an integer"))?
+                as usize;
+            let bytes = parse_declare_program_byte_array(value, span)?;
+            if bytes.len() != len {
+                return Err(syn::Error::new(
+                    span,
+                    format!(
+                        "constant `{ident}` has {} bytes, expected {len}",
+                        bytes.len()
+                    ),
+                ));
+            }
+            let bytes = bytes.iter().map(|b| quote! { #b });
+            return Ok(quote! { pub const #ident: [u8; #len] = [#(#bytes),*]; });
+        }
+    }
+
+    let ty = declare_idl_type_to_tokens(ty_value, span)?;
+    let expr: Expr = syn::parse_str(value)
+        .map_err(|err| syn::Error::new(span, format!("failed to parse constant value: {err}")))?;
+    Ok(quote! { pub const #ident: #ty = #expr; })
+}
+
+fn parse_declare_program_byte_array(value: &str, span: proc_macro2::Span) -> syn::Result<Vec<u8>> {
+    let value = value.trim();
+    let value = value
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .ok_or_else(|| syn::Error::new(span, "byte-array constant value must be `[u8, ...]`"))?;
+    if value.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    value
+        .split(',')
+        .map(|part| {
+            part.trim()
+                .parse::<u8>()
+                .map_err(|err| syn::Error::new(span, format!("invalid byte constant: {err}")))
+        })
+        .collect()
+}
+
+enum DeclareTypeFields {
+    Named {
+        fields: Vec<TokenStream2>,
+        tys: Vec<TokenStream2>,
+    },
+    Tuple {
+        fields: Vec<TokenStream2>,
+        tys: Vec<TokenStream2>,
+    },
+}
+
+fn gen_declare_program_pod_impls(ident: &Ident, fields: &DeclareTypeFields) -> TokenStream2 {
+    let field_types = match fields {
+        DeclareTypeFields::Named { tys, .. } | DeclareTypeFields::Tuple { tys, .. } => tys,
+    };
+    quote! {
+        const _: fn() = || {
+            fn assert_pod<T: anchor_lang_v2::bytemuck::Pod>() {}
+            #( assert_pod::<#field_types>(); )*
+        };
+        const _: () = assert!(
+            core::mem::size_of::<#ident>() == 0 #(+ core::mem::size_of::<#field_types>())*,
+            "declared bytemuck type has padding bytes"
+        );
+        unsafe impl anchor_lang_v2::bytemuck::Pod for #ident {}
+        unsafe impl anchor_lang_v2::bytemuck::Zeroable for #ident {}
+    }
+}
+
+fn gen_declare_program_type_fields(
+    fields: &[serde_json::Value],
+    span: proc_macro2::Span,
+    public: bool,
+) -> syn::Result<DeclareTypeFields> {
+    let visibility = public.then(|| quote! { pub });
+    if fields.iter().all(serde_json::Value::is_object) {
+        let mut field_tokens = Vec::new();
+        let mut field_tys = Vec::new();
+        for field in fields {
+            let field_name = json_str(field, "name", span)?;
+            let field_ident = Ident::new(&to_snake_case(field_name), span);
+            let ty_value = field.get("type").ok_or_else(|| {
+                syn::Error::new(span, format!("field `{field_name}` is missing type"))
+            })?;
+            let ty = declare_idl_type_to_tokens(ty_value, span)?;
+            field_tokens.push(quote! { #visibility #field_ident: #ty, });
+            field_tys.push(ty);
+        }
+        Ok(DeclareTypeFields::Named {
+            fields: field_tokens,
+            tys: field_tys,
+        })
+    } else {
+        let mut field_tokens = Vec::new();
+        let mut field_tys = Vec::new();
+        for field in fields {
+            let ty = declare_idl_type_to_tokens(field, span)?;
+            field_tokens.push(quote! { #visibility #ty });
+            field_tys.push(ty);
+        }
+        Ok(DeclareTypeFields::Tuple {
+            fields: field_tokens,
+            tys: field_tys,
+        })
+    }
 }
 
 fn declare_idl_type_to_tokens(
@@ -2077,7 +2490,12 @@ fn json_str<'a>(
     value
         .get(key)
         .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| syn::Error::new(span, format!("IDL object is missing string field `{key}`")))
+        .ok_or_else(|| {
+            syn::Error::new(
+                span,
+                format!("IDL object is missing string field `{key}` in `{value}`"),
+            )
+        })
 }
 
 fn parse_discriminator_array(
@@ -2154,6 +2572,7 @@ struct HandlerCodegen {
     idl_name: String,
     idl_disc: String,
     idl_args: String,
+    idl_returns_json: String,
     /// Pre-rendered `,"docs":[...]` fragment (including the leading comma
     /// separator) that gets spliced into the per-instruction IDL JSON
     /// between `"name"` and `"discriminator"`. Empty string when the
@@ -2162,6 +2581,7 @@ struct HandlerCodegen {
     idl_accounts_type: TokenStream2,
     /// Original (non-lifetime-transformed) arg types for min-length computation.
     arg_types: Vec<Type>,
+    return_type: Option<Type>,
 }
 
 impl HandlerCodegen {
@@ -2188,10 +2608,59 @@ impl HandlerCodegen {
             idl_name: fn_name.to_string(),
             idl_disc: "[]".to_string(),
             idl_args: "[]".to_string(),
+            idl_returns_json: String::new(),
             idl_docs_json: String::new(),
             idl_accounts_type: quote! { () },
             arg_types: Vec::new(),
+            return_type: None,
         }
+    }
+}
+
+fn is_unit_type(ty: &Type) -> bool {
+    matches!(ty, Type::Tuple(tuple) if tuple.elems.is_empty())
+}
+
+fn extract_result_return_type(output: &syn::ReturnType) -> syn::Result<Option<Type>> {
+    let syn::ReturnType::Type(_, ty) = output else {
+        return Ok(None);
+    };
+
+    let Type::Path(type_path) = &**ty else {
+        return Err(syn::Error::new(
+            ty.span(),
+            "handler return type must be `Result<T>`",
+        ));
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return Err(syn::Error::new(
+            ty.span(),
+            "handler return type must be `Result<T>`",
+        ));
+    };
+    if segment.ident != "Result" {
+        return Err(syn::Error::new(
+            ty.span(),
+            "handler return type must be `Result<T>`",
+        ));
+    }
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return Err(syn::Error::new(
+            ty.span(),
+            "handler return type must be `Result<T>`",
+        ));
+    };
+    let Some(syn::GenericArgument::Type(return_ty)) = args.args.first() else {
+        return Err(syn::Error::new(
+            ty.span(),
+            "handler return type must be `Result<T>`",
+        ));
+    };
+
+    if is_unit_type(return_ty) {
+        Ok(None)
+    } else {
+        Ok(Some(return_ty.clone()))
     }
 }
 
@@ -2204,6 +2673,31 @@ fn process_handler(
 ) -> HandlerCodegen {
     let fn_name = &handler.sig.ident;
     let fn_name_str = fn_name.to_string();
+    let return_type = match extract_result_return_type(&handler.sig.output) {
+        Ok(return_ty) => return_ty,
+        Err(err) => return HandlerCodegen::error(handler, err),
+    };
+    let return_ty = return_type
+        .as_ref()
+        .map(|return_ty| quote! { #return_ty })
+        .unwrap_or_else(|| quote! { () });
+    let returns_value = return_type.is_some();
+    let idl_returns_json = return_type
+        .as_ref()
+        .map(|return_ty| format!(",\"returns\":{}", idl::rust_type_to_idl(return_ty)))
+        .unwrap_or_default();
+    let set_return_data = returns_value.then(|| {
+        quote! {
+            let mut __return_data = anchor_lang_v2::__alloc::vec::Vec::with_capacity(256);
+            anchor_lang_v2::wincode::config::serialize_into(
+                &mut __return_data,
+                &__result,
+                anchor_lang_v2::BORSH_CONFIG,
+            )
+                .expect("return data serialization failed");
+            anchor_lang_v2::pinocchio::cpi::set_return_data(&__return_data);
+        }
+    });
 
     // Discriminator: explicit bytes for declared interfaces, 1-byte
     // user-specified executable dispatch, or 8-byte sha256 hash by default.
@@ -2297,7 +2791,7 @@ fn process_handler(
                 #[inline(always)]
                 fn __anchor_assert_no_ix_args(_: ()) {}
 
-                match anchor_lang_v2::run_handler::<#accounts_type>(
+                match anchor_lang_v2::run_handler::<#accounts_type, #return_ty>(
                     __program_id,
                     __cursor,
                     __ix_data,
@@ -2307,7 +2801,10 @@ fn process_handler(
                         #mod_name::#fn_name(__ctx)
                     },
                 ) {
-                    Ok(()) => 0,
+                    Ok(__result) => {
+                        #set_return_data
+                        0
+                    },
                     Err(__e) => __e.into(),
                 }
             }
@@ -2346,7 +2843,7 @@ fn process_handler(
                     }
                 }
 
-                match anchor_lang_v2::run_handler::<#accounts_type>(
+                match anchor_lang_v2::run_handler::<#accounts_type, #return_ty>(
                     __program_id,
                     __cursor,
                     __ix_data,
@@ -2357,7 +2854,10 @@ fn process_handler(
                         #mod_name::#fn_name(__ctx, #(#extra_arg_names),*)
                     },
                 ) {
-                    Ok(()) => 0,
+                    Ok(__result) => {
+                        #set_return_data
+                        0
+                    },
                     Err(__e) => __e.into(),
                 }
             }
@@ -2444,11 +2944,24 @@ fn process_handler(
         } else {
             (quote! { <'a> }, quote! {})
         };
+        let (ret_ty, ret_value) = if returns_value {
+            (
+                quote! { -> anchor_lang_v2::Result<Return<#return_ty>> },
+                quote! {
+                    Ok(Return {
+                        program: *__ctx.program,
+                        phantom: core::marker::PhantomData,
+                    })
+                },
+            )
+        } else {
+            (quote! {}, quote! {})
+        };
         quote! {
             pub fn #fn_name #lt_decl(
                 __ctx: anchor_lang_v2::CpiContext<'a, accounts::#accounts_type<'a>>,
                 #(#extra_arg_names: #extra_arg_types,)*
-            ) {
+            ) #ret_ty {
                 let __ix = super::instruction::#ix_struct_name #ix_lt_use_local {
                     #(#extra_arg_names,)*
                 };
@@ -2457,6 +2970,7 @@ fn process_handler(
                     as anchor_lang_v2::InstructionData
                 >::data(&__ix);
                 __ctx.invoke(&__data);
+                #ret_value
             }
         }
     };
@@ -2483,9 +2997,11 @@ fn process_handler(
         idl_name: fn_name_str,
         idl_disc: idl::disc_json(&disc_bytes_for_idl),
         idl_args: idl::build_args_json(&extra_args),
+        idl_returns_json,
         idl_docs_json,
         idl_accounts_type: quote! { #accounts_type },
         arg_types: extra_args.iter().map(|(_, t)| (*t).clone()).collect(),
+        return_type,
     }
 }
 
@@ -2640,6 +3156,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
     let idl_ix_names: Vec<_> = codegen.iter().map(|c| &c.idl_name).collect();
     let idl_ix_discs: Vec<_> = codegen.iter().map(|c| &c.idl_disc).collect();
     let idl_ix_args: Vec<_> = codegen.iter().map(|c| &c.idl_args).collect();
+    let idl_ix_returns: Vec<_> = codegen.iter().map(|c| &c.idl_returns_json).collect();
     let idl_ix_docs: Vec<_> = codegen.iter().map(|c| &c.idl_docs_json).collect();
     let idl_accounts_types: Vec<_> = codegen.iter().map(|c| &c.idl_accounts_type).collect();
     // One `Vec<Type>` per handler, for the ix-arg transitive IDL walker.
@@ -2650,6 +3167,18 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
     // flow through (with the blanket no-op impls for non-`IdlType` types).
     let ix_arg_types_per_handler: Vec<&Vec<Type>> = codegen.iter().map(|c| &c.arg_types).collect();
     let all_ix_arg_types: Vec<_> = codegen.iter().map(|c| &c.arg_types).collect();
+    let ix_return_type_registers: Vec<_> = codegen
+        .iter()
+        .filter_map(|c| c.return_type.as_ref())
+        .map(|return_type| {
+            quote! {
+                <#return_type as anchor_lang_v2::IdlAccountType>::__register_idl_deps(
+                    &mut accounts_entries,
+                    &mut types_entries,
+                );
+            }
+        })
+        .collect();
 
     // Generate disc parsing code based on mode.
     // Returns u64 error code on failure (not Err) since __anchor_dispatch
@@ -2797,6 +3326,14 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         })
         .collect();
 
+    let interface_account_reexports = if config.mode == ProgramMode::Interface {
+        quote! { pub use super::*; }
+    } else {
+        quote! {}
+    };
+
+    let cpi_cfg =
+        (config.mode != ProgramMode::Interface).then(|| quote! { #[cfg(feature = "cpi")] });
     let client_interface = quote! {
         /// Client-side instruction structs for off-chain use.
         pub mod instruction {
@@ -2808,6 +3345,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
 
         /// Client-side accounts structs (re-exports) for off-chain use.
         pub mod accounts {
+            #interface_account_reexports
             #(#accounts_reexports)*
         }
 
@@ -2819,11 +3357,39 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
         /// functions wrap each instruction handler: pack args into the
         /// matching `instruction::<Camel>` struct, serialize, and dispatch
         /// through `CpiContext::invoke`.
-        #[cfg(feature = "cpi")]
+        #cpi_cfg
         pub mod cpi {
             extern crate alloc;
             use super::*;
             use anchor_lang_v2::InstructionData as _;
+
+            pub struct Return<T> {
+                program: anchor_lang_v2::Address,
+                phantom: core::marker::PhantomData<T>,
+            }
+
+            impl<T> Return<T>
+            where
+                T: for<'de> anchor_lang_v2::wincode::SchemaRead<
+                    'de,
+                    anchor_lang_v2::BorshConfig,
+                    Dst = T,
+                >,
+            {
+                pub fn get(&self) -> T {
+                    let __return_data =
+                        anchor_lang_v2::pinocchio::cpi::get_return_data().unwrap();
+                    assert!(
+                        anchor_lang_v2::address_eq(__return_data.program_id(), &self.program),
+                        "return data program id mismatch"
+                    );
+                    anchor_lang_v2::wincode::config::deserialize(
+                        __return_data.as_slice(),
+                        anchor_lang_v2::BORSH_CONFIG,
+                    )
+                        .unwrap()
+                }
+            }
 
             pub mod accounts {
                 #(#cpi_accounts_reexports)*
@@ -2967,12 +3533,13 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 let instructions = vec![
                     #(
                         format!(
-                            "{{\"name\":\"{}\"{},\"discriminator\":{},\"accounts\":{},\"args\":{}}}",
+                            "{{\"name\":\"{}\"{},\"discriminator\":{},\"accounts\":{},\"args\":{}{} }}",
                             #idl_ix_names,
                             #idl_ix_docs,
                             #idl_ix_discs,
                             #idl_accounts_types::__idl_accounts(),
                             #idl_ix_args,
+                            #idl_ix_returns,
                         )
                     ),*
                 ];
@@ -3012,6 +3579,7 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                         );
                     )*
                 )*
+                #(#ix_return_type_registers)*
                 accounts_entries.sort();
                 accounts_entries.dedup();
                 types_entries.sort();

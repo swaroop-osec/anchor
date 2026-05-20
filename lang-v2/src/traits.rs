@@ -27,6 +27,22 @@ pub struct CpiHandle<'a> {
 }
 
 impl<'a> CpiHandle<'a> {
+    #[inline(always)]
+    pub fn readonly(view: &'a AccountView) -> Self {
+        Self {
+            view,
+            writable: false,
+        }
+    }
+
+    #[inline(always)]
+    pub fn writable(view: &'a AccountView) -> Self {
+        Self {
+            view,
+            writable: true,
+        }
+    }
+
     /// The account's on-chain address.
     ///
     /// Returns a reference with the inner `'a` lifetime so callers can

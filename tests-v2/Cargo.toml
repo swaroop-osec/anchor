@@ -21,8 +21,12 @@ caller = { path = "programs/caller", features = ["cpi"] }
 client-builders = { path = "programs/client-builders" }
 constraints = { path = "programs/constraints" }
 custom-constraints = { path = "programs/custom-constraints", features = ["cpi"] }
-declare-program = { path = "programs/declare-program", features = ["cpi"] }
-declare-program-surface = { path = "programs/declare-program/programs/surface-client" }
+declare-program-cpi = { path = "programs/declare-program/cpi", features = ["cpi"] }
+declare-program-errors = { path = "programs/declare-program/errors" }
+declare-program-optional = { path = "programs/declare-program/optional", features = ["cpi"] }
+declare-program-returns = { path = "programs/declare-program/returns", features = ["cpi"] }
+declare-program-serialization = { path = "programs/declare-program/serialization" }
+declare-program-surface = { path = "programs/declare-program/surface" }
 dispatch-remaining = { path = "programs/dispatch-remaining" }
 dup-mut = { path = "programs/dup-mut" }
 event-cpi-test = { path = "programs/event-cpi" }

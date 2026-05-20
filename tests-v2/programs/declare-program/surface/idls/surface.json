@@ -135,6 +135,18 @@
           "type": {
             "defined": "SurfaceArgs"
           }
+        },
+        {
+          "name": "byEnum",
+          "type": {
+            "defined": "SurfaceMode"
+          }
+        },
+        {
+          "name": "byTuple",
+          "type": {
+            "defined": "TupleFlag"
+          }
         }
       ]
     }
@@ -175,6 +187,53 @@
               "array": ["i16", 2]
             }
           }
+        ]
+      }
+    },
+    {
+      "name": "SurfaceMode",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Paused"
+          },
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Limit",
+            "fields": [
+              "u64",
+              {
+                "defined": "TupleFlag"
+              }
+            ]
+          },
+          {
+            "name": "Named",
+            "fields": [
+              {
+                "name": "authority",
+                "type": "pubkey"
+              },
+              {
+                "name": "args",
+                "type": {
+                  "defined": "SurfaceArgs"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "TupleFlag",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          "bool"
         ]
       }
     }
