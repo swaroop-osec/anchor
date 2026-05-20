@@ -2058,6 +2058,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
+name = "declare-program-constants"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+]
+
+[[package]]
 name = "declare-program-cpi"
 version = "0.1.0"
 dependencies = [
@@ -2099,6 +2106,14 @@ dependencies = [
 
 [[package]]
 name = "declare-program-surface"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
+name = "declare-program-types"
 version = "0.1.0"
 dependencies = [
  "anchor-lang-v2",
@@ -4940,6 +4955,14 @@ dependencies = [
 
 [[package]]
 name = "return-callee"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "wincode 0.5.2",
+]
+
+[[package]]
+name = "return-spoof"
 version = "0.1.0"
 dependencies = [
  "anchor-lang-v2",
@@ -9175,12 +9198,14 @@ dependencies = [
  "client-builders",
  "constraints",
  "custom-constraints",
+ "declare-program-constants",
  "declare-program-cpi",
  "declare-program-errors",
  "declare-program-optional",
  "declare-program-returns",
  "declare-program-serialization",
  "declare-program-surface",
+ "declare-program-types",
  "derives-test",
  "dispatch-remaining",
  "dup-mut",

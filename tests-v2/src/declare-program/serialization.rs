@@ -25,8 +25,19 @@ fn declared_program_type_serialization_controls_account_traits() {
     where
         T: anchor_lang_v2::Owner
             + anchor_lang_v2::Discriminator
+            + anchor_lang_v2::IdlAccountType
             + anchor_lang_v2::wincode::SchemaWrite<anchor_lang_v2::BorshConfig, Src = T>
             + for<'de> anchor_lang_v2::wincode::SchemaRead<'de, anchor_lang_v2::BorshConfig, Dst = T>,
+    {
+    }
+
+    fn assert_borsh_account_wrapper_idl<T>()
+    where
+        T: anchor_lang_v2::Owner
+            + anchor_lang_v2::Discriminator
+            + anchor_lang_v2::wincode::SchemaWrite<anchor_lang_v2::BorshConfig, Src = T>
+            + for<'de> anchor_lang_v2::wincode::SchemaRead<'de, anchor_lang_v2::BorshConfig, Dst = T>,
+        anchor_lang_v2::accounts::BorshAccount<T>: anchor_lang_v2::IdlAccountType,
     {
     }
 
@@ -42,8 +53,21 @@ fn declared_program_type_serialization_controls_account_traits() {
 
     assert_borsh_account::<serialization::ImplicitBorshAccount>();
     assert_borsh_account::<serialization::ExplicitBorshAccount>();
+    assert_borsh_account_wrapper_idl::<serialization::ImplicitBorshAccount>();
+    assert_borsh_account_wrapper_idl::<serialization::ExplicitBorshAccount>();
     assert_zero_copy_account::<serialization::ZeroCopyAccount>();
     assert_zero_copy_account::<serialization::UnsafeZeroCopyAccount>();
+
+    assert!(
+        <serialization::ImplicitBorshAccount as anchor_lang_v2::IdlAccountType>::__IDL_ACCOUNT_ENTRY
+            .expect("declared account type should have an IDL account entry")
+            .contains("\"name\":\"ImplicitBorshAccount\"")
+    );
+    assert!(
+        <serialization::ImplicitBorshAccount as anchor_lang_v2::IdlAccountType>::__IDL_TYPE_DEF
+            .expect("declared account type should have an IDL type definition")
+            .contains("\"name\":\"ImplicitBorshAccount\"")
+    );
 
     assert_eq!(
         <serialization::ImplicitBorshAccount as Discriminator>::DISCRIMINATOR,

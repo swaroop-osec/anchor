@@ -2065,23 +2065,33 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
     let Some(types) = idl.get("types").and_then(serde_json::Value::as_array) else {
         return Ok(Vec::new());
     };
-    let account_discriminators: std::collections::BTreeMap<_, _> = idl
+    let account_entries: std::collections::BTreeMap<_, _> = idl
         .get("accounts")
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|account| {
             let name = account.get("name")?.as_str()?;
-            let discriminator = account.get("discriminator")?.as_array()?;
-            Some((name, discriminator))
+            Some((name, account))
         })
         .collect();
     let mut out = Vec::new();
     for ty_def in types {
         let name = json_str(ty_def, "name", proc_macro2::Span::call_site())?;
         let ident = Ident::new(&to_type_name(name), proc_macro2::Span::call_site());
+        let docs = gen_declare_program_docs(ty_def, ident.span());
+        let repr = gen_declare_program_repr(ty_def, ident.span())?;
         let serialization = declare_type_serialization(ty_def, ident.span())?;
-        let discriminator = account_discriminators.get(name).copied();
+        let bytemuck_repr = if repr.is_none() && serialization.is_bytemuck() {
+            quote! { #[repr(C)] }
+        } else {
+            quote! { #repr }
+        };
+        let generics = gen_declare_program_type_generics(ty_def, ident.span())?;
+        let account_entry = account_entries.get(name).copied();
+        let discriminator = account_entry
+            .and_then(|account| account.get("discriminator"))
+            .and_then(serde_json::Value::as_array);
         let discriminator_impl = if let Some(discriminator) = discriminator {
             let bytes: Vec<_> = discriminator
                 .iter()
@@ -2102,14 +2112,16 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                 })
                 .collect::<syn::Result<_>>()?;
             let bytes = bytes.iter().map(|byte| quote! { #byte });
+            let impl_generics = &generics.impl_generics;
+            let ty_generics = &generics.ty_generics;
             quote! {
-                impl anchor_lang_v2::Owner for #ident {
+                impl #impl_generics anchor_lang_v2::Owner for #ident #ty_generics {
                     fn owner(_program_id: &anchor_lang_v2::Address) -> anchor_lang_v2::Address {
                         ID
                     }
                 }
 
-                impl anchor_lang_v2::Discriminator for #ident {
+                impl #impl_generics anchor_lang_v2::Discriminator for #ident #ty_generics {
                     const DISCRIMINATOR: &'static [u8] = &[#(#bytes),*];
                 }
             }
@@ -2119,51 +2131,92 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
         let type_obj = ty_def.get("type").ok_or_else(|| {
             syn::Error::new(ident.span(), format!("type `{name}` is missing type body"))
         })?;
+        let idl_type_def = syn::LitStr::new(&ty_def.to_string(), ident.span());
+        let idl_account_entry =
+            account_entry.map(|account| syn::LitStr::new(&account.to_string(), ident.span()));
         let kind = json_str(type_obj, "kind", ident.span())?;
         match kind {
             "struct" => {
-                let fields = type_obj
-                    .get("fields")
-                    .and_then(serde_json::Value::as_array)
-                    .ok_or_else(|| {
-                        syn::Error::new(
-                            ident.span(),
-                            format!("struct type `{name}` is missing fields"),
-                        )
-                    })?;
-                let fields = gen_declare_program_type_fields(fields, ident.span(), true)?;
+                let fields = match type_obj.get("fields") {
+                    Some(fields) => {
+                        let fields = fields.as_array().ok_or_else(|| {
+                            syn::Error::new(
+                                ident.span(),
+                                format!("struct type `{name}` fields must be an array"),
+                            )
+                        })?;
+                        gen_declare_program_type_fields(fields, ident.span(), true)?
+                    }
+                    None => DeclareTypeFields::Unit,
+                };
+                let idl_field_tys = fields.tys();
+                let idl_impl = gen_declare_program_idl_account_type_impl(
+                    &ident,
+                    &generics,
+                    idl_account_entry.as_ref(),
+                    &idl_type_def,
+                    idl_field_tys,
+                );
                 let pod_impls = serialization
                     .is_bytemuck()
-                    .then(|| gen_declare_program_pod_impls(&ident, &fields))
+                    .then(|| gen_declare_program_pod_impls(&ident, &generics, &fields))
                     .unwrap_or_default();
+                let impl_generics = &generics.impl_generics;
                 out.push(match fields {
                     DeclareTypeFields::Named { fields, .. } if serialization.is_bytemuck() => quote! {
+                        #(#docs)*
                         #[derive(Clone, Copy)]
-                        #[repr(C)]
-                        pub struct #ident {
+                        #bytemuck_repr
+                        pub struct #ident #impl_generics {
                             #(#fields)*
                         }
                         #pod_impls
                         #discriminator_impl
+                        #idl_impl
                     },
                     DeclareTypeFields::Named { fields, .. } => quote! {
+                        #(#docs)*
+                        #repr
                         #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
-                        pub struct #ident {
+                        pub struct #ident #impl_generics {
                             #(#fields)*
                         }
                         #discriminator_impl
+                        #idl_impl
                     },
                     DeclareTypeFields::Tuple { fields, .. } if serialization.is_bytemuck() => quote! {
+                        #(#docs)*
                         #[derive(Clone, Copy)]
-                        #[repr(C)]
-                        pub struct #ident(#(#fields),*);
+                        #bytemuck_repr
+                        pub struct #ident #impl_generics(#(#fields),*);
                         #pod_impls
                         #discriminator_impl
+                        #idl_impl
                     },
                     DeclareTypeFields::Tuple { fields, .. } => quote! {
+                        #(#docs)*
+                        #repr
                         #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
-                        pub struct #ident(#(#fields),*);
+                        pub struct #ident #impl_generics(#(#fields),*);
                         #discriminator_impl
+                        #idl_impl
+                    },
+                    DeclareTypeFields::Unit if serialization.is_bytemuck() => quote! {
+                        #(#docs)*
+                        #[derive(Clone, Copy)]
+                        #bytemuck_repr
+                        pub struct #ident #impl_generics;
+                        #pod_impls
+                        #discriminator_impl
+                        #idl_impl
+                    },
+                    DeclareTypeFields::Unit => quote! {
+                        #(#docs)*
+                        #repr
+                        #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
+                        pub struct #ident #impl_generics;
+                        #discriminator_impl
+                        #idl_impl
                     },
                 });
             }
@@ -2184,6 +2237,7 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                         )
                     })?;
                 let mut variant_tokens = Vec::new();
+                let mut idl_field_tys = Vec::new();
                 for variant in variants {
                     let variant_name = json_str(variant, "name", ident.span())?;
                     let variant_ident = Ident::new(variant_name, ident.span());
@@ -2197,27 +2251,57 @@ fn gen_declare_program_types(idl: &serde_json::Value) -> syn::Result<Vec<TokenSt
                             format!("variant `{variant_name}` fields must be an array"),
                         )
                     })?;
-                    match gen_declare_program_type_fields(fields, ident.span(), false)? {
+                    let fields = gen_declare_program_type_fields(fields, ident.span(), false)?;
+                    idl_field_tys.extend(fields.tys().iter().cloned());
+                    match fields {
                         DeclareTypeFields::Named { fields, .. } => {
                             variant_tokens.push(quote! { #variant_ident { #(#fields)* }, });
                         }
                         DeclareTypeFields::Tuple { fields, .. } => {
                             variant_tokens.push(quote! { #variant_ident(#(#fields),*), });
                         }
+                        DeclareTypeFields::Unit => {
+                            variant_tokens.push(quote! { #variant_ident, });
+                        }
                     }
                 }
+                let idl_impl = gen_declare_program_idl_account_type_impl(
+                    &ident,
+                    &generics,
+                    idl_account_entry.as_ref(),
+                    &idl_type_def,
+                    &idl_field_tys,
+                );
+                let impl_generics = &generics.impl_generics;
                 out.push(quote! {
+                    #(#docs)*
+                    #repr
                     #[derive(Clone, anchor_lang_v2::wincode::SchemaRead, anchor_lang_v2::wincode::SchemaWrite)]
-                    pub enum #ident {
+                    pub enum #ident #impl_generics {
                         #(#variant_tokens)*
                     }
                     #discriminator_impl
+                    #idl_impl
+                });
+            }
+            "type" => {
+                let alias = type_obj.get("alias").ok_or_else(|| {
+                    syn::Error::new(
+                        ident.span(),
+                        format!("type alias `{name}` is missing alias"),
+                    )
+                })?;
+                let alias = declare_idl_type_to_tokens(alias, ident.span())?;
+                let impl_generics = &generics.impl_generics;
+                out.push(quote! {
+                    #(#docs)*
+                    pub type #ident #impl_generics = #alias;
                 });
             }
             _ => {
                 return Err(syn::Error::new(
                     ident.span(),
-                    format!("declare_program! only supports struct and enum types for now, got `{kind}`"),
+                    format!("declare_program! only supports struct, enum, and type alias IDL types for now, got `{kind}`"),
                 ));
             }
         }
@@ -2236,6 +2320,69 @@ impl DeclareTypeSerialization {
     fn is_bytemuck(self) -> bool {
         matches!(self, Self::Bytemuck | Self::BytemuckUnsafe)
     }
+}
+
+fn gen_declare_program_docs(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> Vec<TokenStream2> {
+    value
+        .get("docs")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .map(|doc| format!("{}{doc}", if doc.is_empty() { "" } else { " " }))
+        .map(|doc| {
+            let doc = syn::LitStr::new(&doc, span);
+            quote! { #[doc = #doc] }
+        })
+        .collect()
+}
+
+fn gen_declare_program_repr(
+    ty_def: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<Option<TokenStream2>> {
+    let Some(repr) = ty_def.get("repr") else {
+        return Ok(None);
+    };
+    let kind = match json_str(repr, "kind", span)? {
+        "rust" => Ident::new("Rust", span),
+        "c" => Ident::new("C", span),
+        "transparent" => Ident::new("transparent", span),
+        other => {
+            return Err(syn::Error::new(
+                span,
+                format!("unsupported IDL repr kind `{other}`"),
+            ))
+        }
+    };
+
+    let modifier = if repr.get("kind").and_then(serde_json::Value::as_str) == Some("transparent") {
+        None
+    } else {
+        let packed = repr
+            .get("packed")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+            .then_some(quote! { packed });
+        let align = repr
+            .get("align")
+            .and_then(serde_json::Value::as_u64)
+            .map(|align| proc_macro2::Literal::usize_unsuffixed(align as usize))
+            .map(|align| quote! { align(#align) });
+
+        match (packed, align) {
+            (None, None) => None,
+            (Some(packed), None) => Some(quote! { #packed }),
+            (None, Some(align)) => Some(quote! { #align }),
+            (Some(packed), Some(align)) => Some(quote! { #packed, #align }),
+        }
+    }
+    .map(|modifier| quote! { , #modifier });
+
+    Ok(Some(quote! { #[repr(#kind #modifier)] }))
 }
 
 fn declare_type_serialization(
@@ -2280,11 +2427,16 @@ fn gen_declare_program_constants(idl: &serde_json::Value) -> syn::Result<Vec<Tok
     for constant in constants {
         let name = json_str(constant, "name", proc_macro2::Span::call_site())?;
         let ident = Ident::new(name, proc_macro2::Span::call_site());
+        let docs = gen_declare_program_docs(constant, ident.span());
         let ty_value = constant.get("type").ok_or_else(|| {
             syn::Error::new(ident.span(), format!("constant `{name}` is missing type"))
         })?;
         let value = json_str(constant, "value", ident.span())?;
-        out.push(gen_declare_program_constant(&ident, ty_value, value)?);
+        let constant = gen_declare_program_constant(&ident, ty_value, value)?;
+        out.push(quote! {
+            #(#docs)*
+            #constant
+        });
     }
     Ok(out)
 }
@@ -2297,36 +2449,70 @@ fn gen_declare_program_constant(
     let span = ident.span();
     if ty_value.as_str() == Some("bytes") {
         let bytes = parse_declare_program_byte_array(value, span)?;
-        let len = bytes.len();
         let bytes = bytes.iter().map(|b| quote! { #b });
-        return Ok(quote! { pub const #ident: [u8; #len] = [#(#bytes),*]; });
+        return Ok(quote! { pub const #ident: &'static [u8] = &[#(#bytes),*]; });
+    }
+
+    if ty_value.as_str() == Some("string") {
+        let expr: Expr = syn::parse_str(value).map_err(|err| {
+            syn::Error::new(
+                span,
+                format!("failed to parse string constant value: {err}"),
+            )
+        })?;
+        return Ok(quote! { pub const #ident: &'static str = #expr; });
+    }
+
+    if ty_value.as_str() == Some("pubkey") {
+        let value = syn::parse_str::<syn::LitStr>(value)
+            .map(|value| value.value())
+            .unwrap_or_else(|_| value.to_owned());
+        let value = syn::LitStr::new(&value, span);
+        return Ok(quote! {
+            pub const #ident: anchor_lang_v2::Address =
+                anchor_lang_v2::Address::from_str_const(#value);
+        });
     }
 
     if let Some(array) = ty_value.get("array").and_then(serde_json::Value::as_array) {
         if array.len() == 2 && array[0].as_str() == Some("u8") {
-            let len = array[1]
-                .as_u64()
-                .ok_or_else(|| syn::Error::new(span, "IDL array length must be an integer"))?
-                as usize;
+            let len = declare_idl_array_len_to_tokens(&array[1], span)?;
             let bytes = parse_declare_program_byte_array(value, span)?;
-            if bytes.len() != len {
-                return Err(syn::Error::new(
-                    span,
-                    format!(
-                        "constant `{ident}` has {} bytes, expected {len}",
-                        bytes.len()
-                    ),
-                ));
+            if let Some(len) = array[1].as_u64() {
+                let len = len as usize;
+                if bytes.len() != len {
+                    return Err(syn::Error::new(
+                        span,
+                        format!(
+                            "constant `{ident}` has {} bytes, expected {len}",
+                            bytes.len()
+                        ),
+                    ));
+                }
             }
             let bytes = bytes.iter().map(|b| quote! { #b });
             return Ok(quote! { pub const #ident: [u8; #len] = [#(#bytes),*]; });
         }
     }
 
-    let ty = declare_idl_type_to_tokens(ty_value, span)?;
+    let ty = declare_idl_const_type_to_tokens(ty_value, span)?;
     let expr: Expr = syn::parse_str(value)
         .map_err(|err| syn::Error::new(span, format!("failed to parse constant value: {err}")))?;
     Ok(quote! { pub const #ident: #ty = #expr; })
+}
+
+fn declare_idl_const_type_to_tokens(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    if let Some(s) = value.as_str() {
+        match s {
+            "bytes" => return Ok(quote! { &'static [u8] }),
+            "string" => return Ok(quote! { &'static str }),
+            _ => {}
+        }
+    }
+    declare_idl_type_to_tokens(value, span)
 }
 
 fn parse_declare_program_byte_array(value: &str, span: proc_macro2::Span) -> syn::Result<Vec<u8>> {
@@ -2357,23 +2543,152 @@ enum DeclareTypeFields {
         fields: Vec<TokenStream2>,
         tys: Vec<TokenStream2>,
     },
+    Unit,
 }
 
-fn gen_declare_program_pod_impls(ident: &Ident, fields: &DeclareTypeFields) -> TokenStream2 {
-    let field_types = match fields {
-        DeclareTypeFields::Named { tys, .. } | DeclareTypeFields::Tuple { tys, .. } => tys,
+impl DeclareTypeFields {
+    fn tys(&self) -> &[TokenStream2] {
+        match self {
+            Self::Named { tys, .. } | Self::Tuple { tys, .. } => tys,
+            Self::Unit => &[],
+        }
+    }
+}
+
+struct DeclareTypeGenerics {
+    impl_generics: TokenStream2,
+    ty_generics: TokenStream2,
+    idl_where_clause: TokenStream2,
+    pod_where_clause: TokenStream2,
+}
+
+fn gen_declare_program_type_generics(
+    ty_def: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<DeclareTypeGenerics> {
+    let Some(generics) = ty_def.get("generics").and_then(serde_json::Value::as_array) else {
+        return Ok(DeclareTypeGenerics {
+            impl_generics: quote! {},
+            ty_generics: quote! {},
+            idl_where_clause: quote! {},
+            pod_where_clause: quote! {},
+        });
     };
+    let mut impl_params = Vec::new();
+    let mut ty_params = Vec::new();
+    let mut idl_bounds = Vec::new();
+    let mut pod_bounds = Vec::new();
+    for generic in generics {
+        let name = json_str(generic, "name", span)?;
+        let ident = Ident::new(name, span);
+        match json_str(generic, "kind", span)? {
+            "type" => {
+                impl_params.push(quote! { #ident });
+                ty_params.push(quote! { #ident });
+                idl_bounds.push(quote! { #ident: anchor_lang_v2::IdlAccountType });
+                pod_bounds.push(quote! {
+                    #ident: anchor_lang_v2::bytemuck::Pod + anchor_lang_v2::bytemuck::Zeroable
+                });
+            }
+            "const" => {
+                let ty = json_str(generic, "type", span)?;
+                let ty: Type = syn::parse_str(ty).map_err(|err| {
+                    syn::Error::new(
+                        span,
+                        format!("failed to parse const generic `{name}` type `{ty}`: {err}"),
+                    )
+                })?;
+                impl_params.push(quote! { const #ident: #ty });
+                ty_params.push(quote! { #ident });
+            }
+            other => {
+                return Err(syn::Error::new(
+                    span,
+                    format!("unsupported IDL type generic kind `{other}`"),
+                ))
+            }
+        }
+    }
+    let impl_generics = quote! { <#(#impl_params),*> };
+    let ty_generics = quote! { <#(#ty_params),*> };
+    let idl_where_clause = if idl_bounds.is_empty() {
+        quote! {}
+    } else {
+        quote! { where #(#idl_bounds),* }
+    };
+    let pod_where_clause = if pod_bounds.is_empty() {
+        quote! {}
+    } else {
+        quote! { where #(#pod_bounds),* }
+    };
+    Ok(DeclareTypeGenerics {
+        impl_generics,
+        ty_generics,
+        idl_where_clause,
+        pod_where_clause,
+    })
+}
+
+fn gen_declare_program_idl_account_type_impl(
+    ident: &Ident,
+    generics: &DeclareTypeGenerics,
+    account_entry: Option<&syn::LitStr>,
+    type_def: &syn::LitStr,
+    field_tys: &[TokenStream2],
+) -> TokenStream2 {
+    let account_entry = match account_entry {
+        Some(account_entry) => quote! { Some(#account_entry) },
+        None => quote! { None },
+    };
+    let impl_generics = &generics.impl_generics;
+    let ty_generics = &generics.ty_generics;
+    let where_clause = &generics.idl_where_clause;
     quote! {
-        const _: fn() = || {
-            fn assert_pod<T: anchor_lang_v2::bytemuck::Pod>() {}
-            #( assert_pod::<#field_types>(); )*
-        };
-        const _: () = assert!(
-            core::mem::size_of::<#ident>() == 0 #(+ core::mem::size_of::<#field_types>())*,
-            "declared bytemuck type has padding bytes"
-        );
-        unsafe impl anchor_lang_v2::bytemuck::Pod for #ident {}
-        unsafe impl anchor_lang_v2::bytemuck::Zeroable for #ident {}
+        #[doc(hidden)]
+        impl #impl_generics anchor_lang_v2::IdlAccountType for #ident #ty_generics #where_clause {
+            const __IDL_ACCOUNT_ENTRY: Option<&'static str> = #account_entry;
+            const __IDL_TYPE_DEF: Option<&'static str> = Some(#type_def);
+
+            fn __register_idl_deps(
+                accounts: &mut anchor_lang_v2::__alloc::vec::Vec<&'static str>,
+                types: &mut anchor_lang_v2::__alloc::vec::Vec<&'static str>,
+            ) {
+                if let Some(a) = <Self as anchor_lang_v2::IdlAccountType>::__IDL_ACCOUNT_ENTRY {
+                    accounts.push(a);
+                }
+                if let Some(t) = <Self as anchor_lang_v2::IdlAccountType>::__IDL_TYPE_DEF {
+                    types.push(t);
+                }
+                #(
+                    <#field_tys as anchor_lang_v2::IdlAccountType>::__register_idl_deps(accounts, types);
+                )*
+            }
+        }
+    }
+}
+
+fn gen_declare_program_pod_impls(
+    ident: &Ident,
+    generics: &DeclareTypeGenerics,
+    fields: &DeclareTypeFields,
+) -> TokenStream2 {
+    let field_types = fields.tys();
+    let impl_generics = &generics.impl_generics;
+    let ty_generics = &generics.ty_generics;
+    let where_clause = &generics.pod_where_clause;
+    quote! {
+        impl #impl_generics #ident #ty_generics #where_clause {
+            const __ANCHOR_DECLARE_PROGRAM_POD_ASSERT: fn() = || {
+                fn assert_pod<T: anchor_lang_v2::bytemuck::Pod>() {}
+                #( assert_pod::<#field_types>(); )*
+            };
+            const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = assert!(
+                core::mem::size_of::<Self>() == 0 #(+ core::mem::size_of::<#field_types>())*,
+                "declared bytemuck type has padding bytes"
+            );
+        }
+        unsafe impl #impl_generics anchor_lang_v2::bytemuck::Pod for #ident #ty_generics #where_clause {}
+        unsafe impl #impl_generics anchor_lang_v2::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
     }
 }
 
@@ -2428,8 +2743,10 @@ fn declare_idl_type_to_tokens(
             "i16" => quote! { i16 },
             "u32" => quote! { u32 },
             "i32" => quote! { i32 },
+            "f32" => quote! { f32 },
             "u64" => quote! { u64 },
             "i64" => quote! { i64 },
+            "f64" => quote! { f64 },
             "u128" => quote! { u128 },
             "i128" => quote! { i128 },
             "bytes" => quote! { anchor_lang_v2::__alloc::vec::Vec<u8> },
@@ -2451,6 +2768,24 @@ fn declare_idl_type_to_tokens(
             json_str(defined, "name", span)?
         };
         let ident = Ident::new(&to_type_name(defined_name), span);
+        let generic_args = defined
+            .get("generics")
+            .and_then(serde_json::Value::as_array)
+            .map(|generics| {
+                generics
+                    .iter()
+                    .map(|generic| declare_idl_generic_arg_to_tokens(generic, span))
+                    .collect::<syn::Result<Vec<_>>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+        if generic_args.is_empty() {
+            return Ok(quote! { #ident });
+        }
+        return Ok(quote! { #ident<#(#generic_args),*> });
+    }
+    if let Some(generic) = value.get("generic").and_then(serde_json::Value::as_str) {
+        let ident = Ident::new(generic, span);
         return Ok(quote! { #ident });
     }
     if let Some(inner) = value.get("vec") {
@@ -2469,10 +2804,7 @@ fn declare_idl_type_to_tokens(
             ));
         }
         let inner = declare_idl_type_to_tokens(&array[0], span)?;
-        let len = array[1]
-            .as_u64()
-            .ok_or_else(|| syn::Error::new(span, "IDL array length must be an integer"))?
-            as usize;
+        let len = declare_idl_array_len_to_tokens(&array[1], span)?;
         return Ok(quote! { [#inner; #len] });
     }
 
@@ -2480,6 +2812,59 @@ fn declare_idl_type_to_tokens(
         span,
         format!("unsupported IDL type `{value}`"),
     ))
+}
+
+fn declare_idl_array_len_to_tokens(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    if let Some(len) = value.as_u64() {
+        let len = len as usize;
+        return Ok(quote! { #len });
+    }
+    if let Some(generic) = value.get("generic").and_then(serde_json::Value::as_str) {
+        let ident = Ident::new(generic, span);
+        return Ok(quote! { #ident });
+    }
+    if let Some(generic) = value.as_str() {
+        let ident = Ident::new(generic, span);
+        return Ok(quote! { #ident });
+    }
+    Err(syn::Error::new(
+        span,
+        format!("unsupported IDL array length `{value}`"),
+    ))
+}
+
+fn declare_idl_generic_arg_to_tokens(
+    value: &serde_json::Value,
+    span: proc_macro2::Span,
+) -> syn::Result<TokenStream2> {
+    match json_str(value, "kind", span)? {
+        "type" => {
+            let ty = value.get("type").ok_or_else(|| {
+                syn::Error::new(
+                    span,
+                    format!("generic type arg is missing type in `{value}`"),
+                )
+            })?;
+            declare_idl_type_to_tokens(ty, span)
+        }
+        "const" => {
+            let value = json_str(value, "value", span)?;
+            let expr: Expr = syn::parse_str(value).map_err(|err| {
+                syn::Error::new(
+                    span,
+                    format!("failed to parse const generic value `{value}`: {err}"),
+                )
+            })?;
+            Ok(quote! { #expr })
+        }
+        other => Err(syn::Error::new(
+            span,
+            format!("unsupported IDL generic arg kind `{other}`"),
+        )),
+    }
 }
 
 fn json_str<'a>(

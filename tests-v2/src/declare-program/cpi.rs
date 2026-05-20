@@ -463,6 +463,106 @@ fn declared_program_cpi_rejects_wrong_authority() {
 }
 
 #[test]
+fn declared_program_cpi_rejects_wrong_program_account() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-authority-wrong-program");
+    let data = initialize_external_store(&mut svm, &payer, &authority);
+
+    let result = send_instruction(
+        &mut svm,
+        caller_id(),
+        instruction::ProxySetValue { value: 99 }.data(),
+        vec![
+            AccountMeta::new(data, false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new_readonly(alt_cpi_id(), false),
+        ],
+        &payer,
+        &[&authority],
+    );
+
+    assert!(
+        result.is_err(),
+        "CPI through the wrong declared program must fail"
+    );
+    assert_eq!(
+        external_state(&svm, data),
+        ExternalState {
+            value: 0,
+            tag: *b"ini",
+            owner: Pubkey::default(),
+            count: 0,
+            calls: 0,
+        }
+    );
+}
+
+#[test]
+fn declared_program_cpi_rejects_swapped_account_order() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-authority-swapped");
+    let data = initialize_external_store(&mut svm, &payer, &authority);
+
+    let result = send_instruction(
+        &mut svm,
+        caller_id(),
+        instruction::ProxySetValue { value: 99 }.data(),
+        vec![
+            AccountMeta::new(authority.pubkey(), false),
+            AccountMeta::new_readonly(data, true),
+            AccountMeta::new_readonly(external_cpi_id(), false),
+        ],
+        &payer,
+        &[&authority],
+    );
+
+    assert!(result.is_err(), "swapped account order must fail");
+    assert_eq!(
+        external_state(&svm, data),
+        ExternalState {
+            value: 0,
+            tag: *b"ini",
+            owner: Pubkey::default(),
+            count: 0,
+            calls: 0,
+        }
+    );
+}
+
+#[test]
+fn declared_program_cpi_rejects_duplicate_writable_account_alias() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-authority-duplicate-writable");
+    let data = initialize_external_store(&mut svm, &payer, &authority);
+
+    let result = send_instruction(
+        &mut svm,
+        caller_id(),
+        instruction::ProxyComposite { count: 4 }.data(),
+        vec![
+            AccountMeta::new(payer.pubkey(), false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new_readonly(external_cpi_id(), false),
+        ],
+        &payer,
+        &[&authority],
+    );
+
+    assert!(result.is_err(), "duplicate writable alias must fail");
+    assert_eq!(
+        external_state(&svm, data),
+        ExternalState {
+            value: 0,
+            tag: *b"ini",
+            owner: Pubkey::default(),
+            count: 0,
+            calls: 0,
+        }
+    );
+}
+
+#[test]
 fn declared_program_cpi_composite_flattens_nested_accounts() {
     let (mut svm, payer) = setup();
     let authority = keypair_for("declare-program-authority-composite");

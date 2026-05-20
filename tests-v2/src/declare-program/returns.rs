@@ -22,11 +22,24 @@ fn callee_id() -> Pubkey {
         .unwrap()
 }
 
+fn spoof_id() -> Pubkey {
+    "Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp"
+        .parse()
+        .unwrap()
+}
+
 fn setup() -> (LiteSVM, Keypair) {
     let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let deploy_dir = test_dir.join("target/deploy");
     let deploy_str = deploy_dir.to_str().unwrap();
 
+    build_program(
+        test_dir
+            .join("programs/declare-program/returns/programs/return-spoof")
+            .to_str()
+            .unwrap(),
+        deploy_str,
+    );
     build_program(
         test_dir
             .join("programs/declare-program/returns/programs/return-callee")
@@ -43,6 +56,8 @@ fn setup() -> (LiteSVM, Keypair) {
     );
 
     let mut svm = LiteSVM::new();
+    svm.add_program_from_file(spoof_id(), &deploy_dir.join("return_spoof.so"))
+        .expect("failed to load return_spoof program");
     svm.add_program_from_file(callee_id(), &deploy_dir.join("return_callee.so"))
         .expect("failed to load return_callee program");
     svm.add_program_from_file(caller_id(), &deploy_dir.join("declare_program_returns.so"))
@@ -156,6 +171,48 @@ fn expected_return_payload_bytes(amount: u64, authority: Pubkey) -> Vec<u8> {
     bytes
 }
 
+fn expected_empty_return_payload_bytes(amount: u64) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&amount.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.push(0);
+    bytes
+}
+
+fn assert_failed_return_preserves_state(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    authority: &Keypair,
+    callee_data: Pubkey,
+    result: Pubkey,
+    ix_data: Vec<u8>,
+    metas: Vec<AccountMeta>,
+) {
+    let send_result = send_instruction(svm, caller_id(), ix_data, metas, payer, &[authority]);
+    assert!(send_result.is_err(), "malformed return path must fail");
+    assert_eq!(
+        callee_state(svm, callee_data),
+        CalleeState {
+            last_base: 0,
+            last_result: 0,
+            calls: 0,
+        }
+    );
+    assert_eq!(
+        proxy_state(svm, result),
+        ProxyState {
+            last_return: 0,
+            last_observed: 0,
+            last_payload_amount: 0,
+            last_payload_sample_sum: 0,
+            last_payload_label_len: 0,
+            calls: 0,
+            last_payload_has_authority: 0,
+        }
+    );
+}
+
 #[test]
 fn declare_program_cpi_return_round_trips_and_state_changes_persist() {
     let (mut svm, payer) = setup();
@@ -237,6 +294,144 @@ fn declare_program_cpi_return_defined_type_uses_borsh_wire_format() {
             last_payload_label_len: 14,
             calls: 1,
             last_payload_has_authority: 1,
+        }
+    );
+}
+
+#[test]
+fn declare_program_cpi_return_none_rejects_missing_return_data() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-returns-none-authority");
+    let callee_data = initialize_callee_store(&mut svm, &payer, &authority);
+    let result = initialize_proxy_result(&mut svm, &payer, &authority);
+
+    assert_failed_return_preserves_state(
+        &mut svm,
+        &payer,
+        &authority,
+        callee_data,
+        result,
+        instruction::ProxyNoReturn { base: 33 }.data(),
+        vec![
+            AccountMeta::new(result, false),
+            AccountMeta::new(callee_data, false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new_readonly(callee_id(), false),
+        ],
+    );
+}
+
+#[test]
+fn declare_program_cpi_return_rejects_truncated_scalar_return_data() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-returns-short-authority");
+    let callee_data = initialize_callee_store(&mut svm, &payer, &authority);
+    let result = initialize_proxy_result(&mut svm, &payer, &authority);
+
+    assert_failed_return_preserves_state(
+        &mut svm,
+        &payer,
+        &authority,
+        callee_data,
+        result,
+        instruction::ProxyShortReturn { base: 33 }.data(),
+        vec![
+            AccountMeta::new(result, false),
+            AccountMeta::new(callee_data, false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new_readonly(callee_id(), false),
+        ],
+    );
+}
+
+#[test]
+fn declare_program_cpi_return_rejects_wrong_return_program() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-returns-spoof-authority");
+    let callee_data = initialize_callee_store(&mut svm, &payer, &authority);
+    let result = initialize_proxy_result(&mut svm, &payer, &authority);
+
+    assert_failed_return_preserves_state(
+        &mut svm,
+        &payer,
+        &authority,
+        callee_data,
+        result,
+        instruction::ProxySpoofedReturn { base: 33 }.data(),
+        vec![
+            AccountMeta::new(result, false),
+            AccountMeta::new(callee_data, false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new_readonly(callee_id(), false),
+            AccountMeta::new_readonly(spoof_id(), false),
+        ],
+    );
+}
+
+#[test]
+fn declare_program_cpi_return_rejects_malformed_defined_return_data() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-returns-malformed-authority");
+    let callee_data = initialize_callee_store(&mut svm, &payer, &authority);
+    let result = initialize_proxy_result(&mut svm, &payer, &authority);
+
+    assert_failed_return_preserves_state(
+        &mut svm,
+        &payer,
+        &authority,
+        callee_data,
+        result,
+        instruction::ProxyMalformedPayload { base: 33 }.data(),
+        vec![
+            AccountMeta::new(result, false),
+            AccountMeta::new(callee_data, false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new_readonly(callee_id(), false),
+        ],
+    );
+}
+
+#[test]
+fn declare_program_cpi_return_defined_type_handles_empty_and_none_fields() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-returns-empty-authority");
+    let callee_data = initialize_callee_store(&mut svm, &payer, &authority);
+    let result = initialize_proxy_result(&mut svm, &payer, &authority);
+
+    let ix_data = instruction::ProxyDescribeEmpty { base: 6, bonus: 4 }.data();
+    let metas = vec![
+        AccountMeta::new(result, false),
+        AccountMeta::new(callee_data, false),
+        AccountMeta::new_readonly(authority.pubkey(), true),
+        AccountMeta::new_readonly(callee_id(), false),
+    ];
+
+    let meta = send_instruction(&mut svm, caller_id(), ix_data, metas, &payer, &[&authority])
+        .expect("proxy_describe_empty should CPI and read empty return payload");
+
+    assert_eq!(meta.return_data.program_id, callee_id());
+    assert_eq!(
+        meta.return_data.data,
+        expected_empty_return_payload_bytes(35)
+    );
+    assert_eq!(
+        callee_state(&svm, callee_data),
+        CalleeState {
+            last_base: 6,
+            last_result: 35,
+            calls: 1,
+        }
+    );
+    assert_eq!(
+        proxy_state(&svm, result),
+        ProxyState {
+            last_return: 0,
+            last_observed: 0,
+            last_payload_amount: 35,
+            last_payload_sample_sum: 0,
+            last_payload_label_len: 0,
+            calls: 1,
+            last_payload_has_authority: 0,
         }
     );
 }

@@ -37,6 +37,7 @@ members = [
     "tests-v2/programs/spl-ata",
     "tests-v2/programs/token-2022-spy",
     "tests-v2/programs/token-interface",
+    "tests-v2/programs/declare-program/constants",
     "tests-v2/programs/declare-program/cpi",
     "tests-v2/programs/declare-program/cpi/programs/alt-cpi",
     "tests-v2/programs/declare-program/cpi/programs/external-cpi",
@@ -46,8 +47,10 @@ members = [
     "tests-v2/programs/declare-program/optional/programs/optional-callee",
     "tests-v2/programs/declare-program/returns",
     "tests-v2/programs/declare-program/returns/programs/return-callee",
+    "tests-v2/programs/declare-program/returns/programs/return-spoof",
     "tests-v2/programs/declare-program/serialization",
     "tests-v2/programs/declare-program/surface",
+    "tests-v2/programs/declare-program/types",
     "tests-v2/programs/equivalence/spl/v1",
     "tests-v2/programs/equivalence/spl/v2",
 ]

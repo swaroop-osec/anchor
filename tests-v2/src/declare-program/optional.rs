@@ -193,3 +193,62 @@ fn declared_optional_cpi_some_executes_and_passes_marker() {
         }
     );
 }
+
+#[test]
+fn declared_optional_cpi_some_program_id_is_treated_as_none_by_callee() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-optional-authority-sentinel-some");
+    let data = initialize_optional_store(&mut svm, &payer, &authority);
+
+    let ix_data = instruction::ProxyRecord { value: 13 }.data();
+    let metas = declare_program_optional::accounts::ProxyRecord {
+        data,
+        authority: authority.pubkey(),
+        maybe_marker: Some(optional_callee_id()),
+        optional_program: optional_callee_id(),
+    }
+    .to_account_metas(None);
+
+    send_instruction(&mut svm, caller_id(), ix_data, metas, &payer, &[&authority])
+        .expect("program-id sentinel in optional CPI slot should execute as None");
+
+    assert_eq!(
+        optional_state(&svm, data),
+        OptionalState {
+            value: 14,
+            calls: 1,
+            saw_marker: 0,
+            marker: Pubkey::default(),
+        }
+    );
+}
+
+#[test]
+fn declared_optional_cpi_some_passes_exact_marker_account() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("declare-program-optional-authority-exact-marker");
+    let data = initialize_optional_store(&mut svm, &payer, &authority);
+    let marker = Pubkey::new_unique();
+
+    let ix_data = instruction::ProxyRecord { value: 15 }.data();
+    let metas = declare_program_optional::accounts::ProxyRecord {
+        data,
+        authority: authority.pubkey(),
+        maybe_marker: Some(marker),
+        optional_program: optional_callee_id(),
+    }
+    .to_account_metas(None);
+
+    send_instruction(&mut svm, caller_id(), ix_data, metas, &payer, &[&authority])
+        .expect("optional CPI marker should pass through exactly");
+
+    assert_eq!(
+        optional_state(&svm, data),
+        OptionalState {
+            value: 16,
+            calls: 1,
+            saw_marker: 1,
+            marker,
+        }
+    );
+}
