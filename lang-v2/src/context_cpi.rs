@@ -145,10 +145,7 @@ fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a
     // which has the same layout as &[u8] on SBF. This is verified by the
     // static assertion in cpi.rs.
     let cpi_seeds: &[pinocchio::cpi::Seed] = unsafe {
-        core::slice::from_raw_parts(
-            seeds.as_ptr() as *const pinocchio::cpi::Seed,
-            seeds.len(),
-        )
+        core::slice::from_raw_parts(seeds.as_ptr() as *const pinocchio::cpi::Seed, seeds.len())
     };
     pinocchio::cpi::Signer::from(cpi_seeds)
 }
@@ -177,7 +174,10 @@ pub fn invoke_signed_fixed<'a, const N: usize>(
         pinocchio::cpi::CpiAccount::init_from_account_view(handle.account_view(), slot);
     }
     let cpi_accounts = unsafe {
-        core::slice::from_raw_parts(cpi_accounts.as_ptr() as *const pinocchio::cpi::CpiAccount, N)
+        core::slice::from_raw_parts(
+            cpi_accounts.as_ptr() as *const pinocchio::cpi::CpiAccount,
+            N,
+        )
     };
 
     match signer_seeds {
@@ -191,8 +191,10 @@ pub fn invoke_signed_fixed<'a, const N: usize>(
             }
         }
         _ => {
-            let signers: Vec<pinocchio::cpi::Signer<'a, 'a>> =
-                signer_seeds.iter().map(|seeds| signer_from_seeds(seeds)).collect();
+            let signers: Vec<pinocchio::cpi::Signer<'a, 'a>> = signer_seeds
+                .iter()
+                .map(|seeds| signer_from_seeds(seeds))
+                .collect();
             unsafe {
                 pinocchio::cpi::invoke_signed_unchecked(&instruction, cpi_accounts, &signers);
             }

@@ -536,7 +536,8 @@ fn wrap_init_body_with_constraints(
             let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
             let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
             let value = &nc.value;
-            let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token") {
+            let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token")
+            {
                 quote! { anchor_lang_v2::AccountAddress::account_address(&#value) }
             } else if nc.is_field_ref {
                 quote! { AsRef::as_ref(&#value) }
@@ -1831,7 +1832,8 @@ pub fn parse_field(
             let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
             let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
             let value = &nc.value;
-            let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token") {
+            let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token")
+            {
                 quote! { anchor_lang_v2::AccountAddress::account_address(&self.#value) }
             } else if nc.is_field_ref {
                 quote! { AsRef::as_ref(&self.#value) }
@@ -1955,13 +1957,14 @@ pub fn parse_field(
                     let ns = syn::Ident::new(&nc.namespace, proc_macro2::Span::call_site());
                     let key = syn::Ident::new(&nc.key, proc_macro2::Span::call_site());
                     let value = &nc.value;
-                    let expected = if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token") {
-                        quote! { anchor_lang_v2::AccountAddress::account_address(&self.#value) }
-                    } else if nc.is_field_ref {
-                        quote! { AsRef::as_ref(&self.#value) }
-                    } else {
-                        quote! { &#value }
-                    };
+                    let expected =
+                        if nc.is_field_ref && (nc.namespace == "mint" || nc.namespace == "token") {
+                            quote! { anchor_lang_v2::AccountAddress::account_address(&self.#value) }
+                        } else if nc.is_field_ref {
+                            quote! { AsRef::as_ref(&self.#value) }
+                        } else {
+                            quote! { &#value }
+                        };
                     quote! {
                         <#ns::#key as anchor_lang_v2::AccountConstraint<_>>::exit(
                             __inner, #expected,
