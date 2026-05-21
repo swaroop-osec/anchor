@@ -70,6 +70,13 @@ impl<T: Id> AsRef<Address> for Program<T> {
     }
 }
 
+impl<T: Id> crate::ToCpiHandle for Program<T> {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle(self)
+    }
+}
+
 #[doc(hidden)]
 impl<T: Id> crate::IdlAccountType for Program<T> {
     // `Id::IDL_ADDRESS` defaults to `""`; convert empty → None so unknown

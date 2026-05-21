@@ -85,6 +85,7 @@ pub use crate::{
     Space,
     ToAccountMetas,
     ToCpiAccounts,
+    ToCpiHandle,
     TryAccounts,
 };
 #[cfg(feature = "event-cpi")]

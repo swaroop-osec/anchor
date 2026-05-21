@@ -92,6 +92,13 @@ impl<T: PinocchioSysvar + SysvarId + Copy> AsRef<AccountView> for Sysvar<T> {
     }
 }
 
+impl<T: PinocchioSysvar + SysvarId + Copy> crate::ToCpiHandle for Sysvar<T> {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle(self)
+    }
+}
+
 #[doc(hidden)]
 impl<T: PinocchioSysvar + SysvarId + Copy> crate::IdlAccountType for Sysvar<T> {
     const __IDL_ADDRESS: Option<&'static str> = if T::IDL_ADDRESS.is_empty() {

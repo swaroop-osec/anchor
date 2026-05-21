@@ -76,6 +76,12 @@ macro_rules! view_wrapper_traits {
                 self.view.address()
             }
         }
+        impl crate::ToCpiHandle for $Type {
+            #[inline(always)]
+            fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+                crate::AnchorAccount::cpi_handle(self)
+            }
+        }
     };
 }
 pub(crate) use view_wrapper_traits;

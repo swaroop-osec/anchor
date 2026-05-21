@@ -369,6 +369,17 @@ where
     }
 }
 
+impl<T, S> crate::ToCpiHandle for SerializedAccount<T, S>
+where
+    T: Owner + Discriminator,
+    S: AnchorAccountSerialize<T>,
+{
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle(self)
+    }
+}
+
 /// Forward `Discriminator` from a `SerializedAccount<T, S>` to its inner type.
 /// Lets the `#[account(zeroed)]` derive codegen look up the disc via the field
 /// type directly (`<BorshAccount<Counter> as Discriminator>::DISCRIMINATOR`).

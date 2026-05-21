@@ -47,6 +47,13 @@ impl<T: AnchorAccount> AnchorAccount for Box<T> {
     }
 }
 
+impl<T: crate::ToCpiHandle + ?Sized> crate::ToCpiHandle for Box<T> {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        self.as_ref().to_cpi_handle()
+    }
+}
+
 #[doc(hidden)]
 impl<T: crate::IdlAccountType> crate::IdlAccountType for Box<T> {
     const __IDL_ACCOUNT_ENTRY: Option<&'static str> = T::__IDL_ACCOUNT_ENTRY;

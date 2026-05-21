@@ -1,10 +1,6 @@
 use {
     core::ops::Deref,
-    pinocchio::{
-        account::AccountView,
-        address::Address,
-        instruction::InstructionAccount,
-    },
+    pinocchio::{account::AccountView, address::Address, instruction::InstructionAccount},
     solana_program_error::{ProgramError, ProgramResult},
 };
 
@@ -202,6 +198,35 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
             view: self.account(),
             writable: true,
         }
+    }
+}
+
+/// Account-like value that can be passed into a CPI account struct.
+///
+/// This is the v2 equivalent of v1's `ToAccountInfo` for CPI construction:
+/// callers get a [`CpiHandle`] instead of cloning an `AccountInfo`.
+pub trait ToCpiHandle {
+    fn to_cpi_handle(&self) -> CpiHandle<'_>;
+}
+
+impl<T: ToCpiHandle + ?Sized> ToCpiHandle for &T {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> CpiHandle<'_> {
+        (*self).to_cpi_handle()
+    }
+}
+
+impl<T: ToCpiHandle + ?Sized> ToCpiHandle for &mut T {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> CpiHandle<'_> {
+        (**self).to_cpi_handle()
+    }
+}
+
+impl ToCpiHandle for CpiHandle<'_> {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> CpiHandle<'_> {
+        *self
     }
 }
 

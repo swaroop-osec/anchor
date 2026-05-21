@@ -760,6 +760,16 @@ where
     }
 }
 
+impl<H, T> crate::ToCpiHandle for Slab<H, T>
+where
+    H: Pod + Zeroable + SlabSchema,
+{
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle(self)
+    }
+}
+
 // `T: Pod` bound matches the tail-only impl block — only reachable for
 // `Slab<H, T>` where `T` is a real pod type, not `HeaderOnly`.
 impl<H, T> Index<usize> for Slab<H, T>
