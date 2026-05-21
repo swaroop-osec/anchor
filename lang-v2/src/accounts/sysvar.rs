@@ -97,6 +97,11 @@ impl<T: PinocchioSysvar + SysvarId + Copy> crate::ToCpiHandle for Sysvar<T> {
     fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
         crate::AnchorAccount::cpi_handle(self)
     }
+
+    #[inline(always)]
+    fn to_cpi_handle_mut(&mut self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle_mut(self)
+    }
 }
 
 #[doc(hidden)]

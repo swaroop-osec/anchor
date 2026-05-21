@@ -7,7 +7,7 @@ use {
             program,
         },
         testing::{AccountBuffer, MIN_ACCOUNT_BUF},
-        Address, CpiHandle,
+        Address, CpiHandle, ToCpiHandle,
     },
     solana_program_error::ProgramError,
 };
@@ -40,6 +40,21 @@ fn checked_invoke_accepts_matching_handles() {
     let handles = [CpiHandle::writable(&view)];
 
     program::invoke(&ix, &handles).unwrap();
+}
+
+#[test]
+fn account_view_converts_to_cpi_handles() {
+    let buffer = account_view([1; 32], true);
+    let mut view = unsafe { buffer.view() };
+    let address = *view.address();
+
+    let readonly = view.to_cpi_handle();
+    assert_eq!(*readonly.address(), address);
+    assert!(!readonly.is_writable());
+
+    let writable = view.to_cpi_handle_mut();
+    assert_eq!(*writable.address(), address);
+    assert!(writable.is_writable());
 }
 
 #[test]

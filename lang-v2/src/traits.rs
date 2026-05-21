@@ -207,12 +207,19 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
 /// callers get a [`CpiHandle`] instead of cloning an `AccountInfo`.
 pub trait ToCpiHandle {
     fn to_cpi_handle(&self) -> CpiHandle<'_>;
+
+    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_>;
 }
 
 impl<T: ToCpiHandle + ?Sized> ToCpiHandle for &T {
     #[inline(always)]
     fn to_cpi_handle(&self) -> CpiHandle<'_> {
         (*self).to_cpi_handle()
+    }
+
+    #[inline(always)]
+    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
+        panic!("to_cpi_handle_mut called through a shared reference")
     }
 }
 
@@ -221,12 +228,34 @@ impl<T: ToCpiHandle + ?Sized> ToCpiHandle for &mut T {
     fn to_cpi_handle(&self) -> CpiHandle<'_> {
         (**self).to_cpi_handle()
     }
+
+    #[inline(always)]
+    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
+        (**self).to_cpi_handle_mut()
+    }
 }
 
 impl ToCpiHandle for CpiHandle<'_> {
     #[inline(always)]
     fn to_cpi_handle(&self) -> CpiHandle<'_> {
         *self
+    }
+
+    #[inline(always)]
+    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
+        CpiHandle::writable(self.account_view())
+    }
+}
+
+impl ToCpiHandle for AccountView {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> CpiHandle<'_> {
+        CpiHandle::readonly(self)
+    }
+
+    #[inline(always)]
+    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
+        CpiHandle::writable(self)
     }
 }
 

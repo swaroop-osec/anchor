@@ -378,6 +378,11 @@ where
     fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
         crate::AnchorAccount::cpi_handle(self)
     }
+
+    #[inline(always)]
+    fn to_cpi_handle_mut(&mut self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle_mut(self)
+    }
 }
 
 /// Forward `Discriminator` from a `SerializedAccount<T, S>` to its inner type.

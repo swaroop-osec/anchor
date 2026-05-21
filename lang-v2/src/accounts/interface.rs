@@ -74,6 +74,11 @@ impl<T: Ids> crate::ToCpiHandle for Interface<'_, T> {
     fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
         crate::AnchorAccount::cpi_handle(self)
     }
+
+    #[inline(always)]
+    fn to_cpi_handle_mut(&mut self) -> crate::CpiHandle<'_> {
+        crate::AnchorAccount::cpi_handle_mut(self)
+    }
 }
 
 #[doc(hidden)]

@@ -52,6 +52,11 @@ impl<T: crate::ToCpiHandle + ?Sized> crate::ToCpiHandle for Box<T> {
     fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
         self.as_ref().to_cpi_handle()
     }
+
+    #[inline(always)]
+    fn to_cpi_handle_mut(&mut self) -> crate::CpiHandle<'_> {
+        self.as_mut().to_cpi_handle_mut()
+    }
 }
 
 #[doc(hidden)]

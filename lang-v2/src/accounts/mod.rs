@@ -81,6 +81,11 @@ macro_rules! view_wrapper_traits {
             fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
                 crate::AnchorAccount::cpi_handle(self)
             }
+
+            #[inline(always)]
+            fn to_cpi_handle_mut(&mut self) -> crate::CpiHandle<'_> {
+                crate::AnchorAccount::cpi_handle_mut(self)
+            }
         }
     };
 }
