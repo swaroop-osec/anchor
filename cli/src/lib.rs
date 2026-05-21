@@ -1461,11 +1461,10 @@ fn reject_if_inside_cargo_workspace(start: PathBuf) -> Result<()> {
     if let Some(parent) = Manifest::discover_from_path(start)? {
         if parent.workspace.is_some() {
             return Err(anyhow!(
-                "Cannot run `anchor init` inside an existing Cargo workspace at `{}`.\n\
-                 Cargo does not support nested workspaces. To add a program to the \
-                 existing workspace, run `anchor new <name>` from the workspace root. \
-                 To create a fresh Anchor workspace, run `anchor init` outside the \
-                 existing workspace tree.",
+                "Cannot run `anchor init` inside an existing Cargo workspace at `{}`.\nCargo does \
+                 not support nested workspaces. To add a program to the existing workspace, run \
+                 `anchor new <name>` from the workspace root. To create a fresh Anchor workspace, \
+                 run `anchor init` outside the existing workspace tree.",
                 parent.path().display()
             ));
         }
