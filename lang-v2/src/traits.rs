@@ -32,7 +32,7 @@ impl<'a> CpiHandle<'a> {
     }
 
     #[inline(always)]
-    pub fn writable(view: &'a AccountView) -> Self {
+    pub fn writable(view: &'a mut AccountView) -> Self {
         Self {
             view,
             writable: true,
@@ -188,16 +188,23 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// the transaction.
     #[inline(always)]
     fn cpi_handle_mut(&mut self) -> CpiHandle<'_> {
-        // Unconditional (not guardrails-gated): passing a read-only account
-        // to a CPI that writes is a program bug, not a "nice to have" check.
-        assert!(
-            self.account().is_writable(),
-            "cpi_handle_mut called on a read-only account"
-        );
-        CpiHandle {
+        self.try_cpi_handle_mut()
+            .expect("cpi_handle_mut called on a read-only account")
+    }
+
+    /// Fallible variant of [`cpi_handle_mut`](Self::cpi_handle_mut).
+    ///
+    /// Returns [`ProgramError::InvalidArgument`] when the underlying account
+    /// is not marked writable in the transaction.
+    #[inline(always)]
+    fn try_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+        if !self.account().is_writable() {
+            return Err(ProgramError::InvalidArgument);
+        }
+        Ok(CpiHandle {
             view: self.account(),
             writable: true,
-        }
+        })
     }
 }
 
@@ -207,19 +214,23 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
 /// callers get a [`CpiHandle`] instead of cloning an `AccountInfo`.
 pub trait ToCpiHandle {
     fn to_cpi_handle(&self) -> CpiHandle<'_>;
+}
 
-    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_>;
+/// Account-like value that can be passed into a writable CPI account slot.
+pub trait ToCpiHandleMut {
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError>;
+
+    #[inline(always)]
+    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
+        self.try_to_cpi_handle_mut()
+            .expect("to_cpi_handle_mut called on a read-only account")
+    }
 }
 
 impl<T: ToCpiHandle + ?Sized> ToCpiHandle for &T {
     #[inline(always)]
     fn to_cpi_handle(&self) -> CpiHandle<'_> {
         (*self).to_cpi_handle()
-    }
-
-    #[inline(always)]
-    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
-        panic!("to_cpi_handle_mut called through a shared reference")
     }
 }
 
@@ -228,10 +239,12 @@ impl<T: ToCpiHandle + ?Sized> ToCpiHandle for &mut T {
     fn to_cpi_handle(&self) -> CpiHandle<'_> {
         (**self).to_cpi_handle()
     }
+}
 
+impl<T: ToCpiHandleMut + ?Sized> ToCpiHandleMut for &mut T {
     #[inline(always)]
-    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
-        (**self).to_cpi_handle_mut()
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+        (**self).try_to_cpi_handle_mut()
     }
 }
 
@@ -240,10 +253,18 @@ impl ToCpiHandle for CpiHandle<'_> {
     fn to_cpi_handle(&self) -> CpiHandle<'_> {
         *self
     }
+}
 
+impl ToCpiHandleMut for CpiHandle<'_> {
     #[inline(always)]
-    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
-        CpiHandle::writable(self.account_view())
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+        if !self.account_view().is_writable() {
+            return Err(ProgramError::InvalidArgument);
+        }
+        Ok(CpiHandle {
+            view: self.account_view(),
+            writable: true,
+        })
     }
 }
 
@@ -252,10 +273,15 @@ impl ToCpiHandle for AccountView {
     fn to_cpi_handle(&self) -> CpiHandle<'_> {
         CpiHandle::readonly(self)
     }
+}
 
+impl ToCpiHandleMut for AccountView {
     #[inline(always)]
-    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
-        CpiHandle::writable(self)
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+        if !self.is_writable() {
+            return Err(ProgramError::InvalidArgument);
+        }
+        Ok(CpiHandle::writable(self))
     }
 }
 

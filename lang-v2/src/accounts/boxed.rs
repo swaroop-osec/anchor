@@ -52,10 +52,14 @@ impl<T: crate::ToCpiHandle + ?Sized> crate::ToCpiHandle for Box<T> {
     fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
         self.as_ref().to_cpi_handle()
     }
+}
 
+impl<T: crate::ToCpiHandleMut + ?Sized> crate::ToCpiHandleMut for Box<T> {
     #[inline(always)]
-    fn to_cpi_handle_mut(&mut self) -> crate::CpiHandle<'_> {
-        self.as_mut().to_cpi_handle_mut()
+    fn try_to_cpi_handle_mut(
+        &mut self,
+    ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+        self.as_mut().try_to_cpi_handle_mut()
     }
 }
 

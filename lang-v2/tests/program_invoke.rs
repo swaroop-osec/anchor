@@ -7,7 +7,7 @@ use {
             program,
         },
         testing::{AccountBuffer, MIN_ACCOUNT_BUF},
-        Address, CpiHandle, ToCpiHandle,
+        Address, CpiHandle, ToCpiHandle, ToCpiHandleMut,
     },
     solana_program_error::ProgramError,
 };
@@ -35,9 +35,9 @@ fn instruction(account: Address, writable: bool) -> Instruction {
 #[test]
 fn checked_invoke_accepts_matching_handles() {
     let buffer = account_view([1; 32], true);
-    let view = unsafe { buffer.view() };
+    let mut view = unsafe { buffer.view() };
     let ix = instruction(*view.address(), true);
-    let handles = [CpiHandle::writable(&view)];
+    let handles = [CpiHandle::writable(&mut view)];
 
     program::invoke(&ix, &handles).unwrap();
 }
@@ -93,10 +93,11 @@ fn checked_invoke_rejects_readonly_handle_for_writable_meta() {
 #[test]
 fn checked_invoke_rejects_live_borrow_for_writable_meta() {
     let buffer = account_view([1; 32], true);
-    let view = unsafe { buffer.view() };
-    let _borrow = view.try_borrow().unwrap();
+    let mut view = unsafe { buffer.view() };
+    let borrow_view = view;
+    let _borrow = borrow_view.try_borrow().unwrap();
     let ix = instruction(*view.address(), true);
-    let handles = [CpiHandle::writable(&view)];
+    let handles = [CpiHandle::writable(&mut view)];
 
     let err = program::invoke(&ix, &handles).unwrap_err();
 

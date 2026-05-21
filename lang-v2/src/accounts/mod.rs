@@ -81,10 +81,14 @@ macro_rules! view_wrapper_traits {
             fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
                 crate::AnchorAccount::cpi_handle(self)
             }
+        }
 
+        impl crate::ToCpiHandleMut for $Type {
             #[inline(always)]
-            fn to_cpi_handle_mut(&mut self) -> crate::CpiHandle<'_> {
-                crate::AnchorAccount::cpi_handle_mut(self)
+            fn try_to_cpi_handle_mut(
+                &mut self,
+            ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+                crate::AnchorAccount::try_cpi_handle_mut(self)
             }
         }
     };

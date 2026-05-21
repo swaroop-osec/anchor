@@ -768,10 +768,17 @@ where
     fn to_cpi_handle(&self) -> crate::CpiHandle<'_> {
         crate::AnchorAccount::cpi_handle(self)
     }
+}
 
+impl<H, T> crate::ToCpiHandleMut for Slab<H, T>
+where
+    H: Pod + Zeroable + SlabSchema,
+{
     #[inline(always)]
-    fn to_cpi_handle_mut(&mut self) -> crate::CpiHandle<'_> {
-        crate::AnchorAccount::cpi_handle_mut(self)
+    fn try_to_cpi_handle_mut(
+        &mut self,
+    ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+        crate::AnchorAccount::try_cpi_handle_mut(self)
     }
 }
 

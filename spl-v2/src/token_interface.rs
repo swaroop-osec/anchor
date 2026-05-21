@@ -21,7 +21,7 @@
 use {
     anchor_lang_v2::{
         accounts::{InterfaceAccount, SlabInit, SlabSchema},
-        programs::{Token, Token2022},
+        programs::{Token, Token2022 as Token2022Program},
         AccountConstraint, Id, Ids,
     },
     bytemuck::{Pod, Zeroable},
@@ -35,7 +35,9 @@ use {
     },
 };
 
-pub use crate::token::{close_account, CloseAccount};
+pub use crate::token_2022::PermanentDelegateInitialize;
+pub use crate::token_2022::*;
+pub use crate::token_2022_extensions::*;
 
 // ---------------------------------------------------------------------------
 // Interface<T> — transparent wrapper that changes validation to accept both
@@ -96,7 +98,7 @@ impl SlabSchema for Interface<crate::TokenAccount> {
         data: &[u8],
         _program_id: &Address,
     ) -> Result<(), ProgramError> {
-        if !view.owned_by(&Token::id()) && !view.owned_by(&Token2022::id()) {
+        if !view.owned_by(&Token::id()) && !view.owned_by(&Token2022Program::id()) {
             return Err(ProgramError::IllegalOwner);
         }
         PodStateWithExtensions::<PodAccount>::unpack(data)?;
@@ -118,7 +120,7 @@ impl SlabSchema for Interface<crate::Mint> {
         data: &[u8],
         _program_id: &Address,
     ) -> Result<(), ProgramError> {
-        if !view.owned_by(&Token::id()) && !view.owned_by(&Token2022::id()) {
+        if !view.owned_by(&Token::id()) && !view.owned_by(&Token2022Program::id()) {
             return Err(ProgramError::IllegalOwner);
         }
         PodStateWithExtensions::<PodMint>::unpack(data)?;
@@ -152,7 +154,7 @@ impl anchor_lang_v2::IdlAccountType for Interface<crate::Mint> {}
 #[inline(always)]
 fn validate_token_program(program_id: &Address) -> Result<(), ProgramError> {
     if !anchor_lang_v2::address_eq(program_id, &Token::id())
-        && !anchor_lang_v2::address_eq(program_id, &Token2022::id())
+        && !anchor_lang_v2::address_eq(program_id, &Token2022Program::id())
     {
         return Err(ProgramError::IncorrectProgramId);
     }
