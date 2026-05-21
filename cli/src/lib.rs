@@ -1452,6 +1452,27 @@ fn process_command(opts: Opts) -> Result<()> {
     }
 }
 
+/// Cargo does not support nested workspaces. If `start` lives inside a
+/// directory tree whose nearest parent `Cargo.toml` already defines a
+/// `[workspace]` table, refuse to create a new Anchor workspace here and
+/// point at `anchor new`, which is the supported flow for adding a
+/// program to an existing workspace.
+fn reject_if_inside_cargo_workspace(start: PathBuf) -> Result<()> {
+    if let Some(parent) = Manifest::discover_from_path(start)? {
+        if parent.workspace.is_some() {
+            return Err(anyhow!(
+                "Cannot run `anchor init` inside an existing Cargo workspace at `{}`.\n\
+                 Cargo does not support nested workspaces. To add a program to the \
+                 existing workspace, run `anchor new <name>` from the workspace root. \
+                 To create a fresh Anchor workspace, run `anchor init` outside the \
+                 existing workspace tree.",
+                parent.path().display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn init(
     cfg_override: &ConfigOverride,
@@ -1466,8 +1487,11 @@ fn init(
     force: bool,
     install_agent_skills: bool,
 ) -> Result<()> {
-    if !force && Config::discover(cfg_override)?.is_some() {
-        return Err(anyhow!("Workspace already initialized"));
+    if !force {
+        if Config::discover(cfg_override)?.is_some() {
+            return Err(anyhow!("Workspace already initialized"));
+        }
+        reject_if_inside_cargo_workspace(std::env::current_dir()?)?;
     }
 
     // We need to format different cases for the dir and the name
