@@ -6863,7 +6863,6 @@ mod tests {
         assert!(ts.contains(r#""value": "SEED_PREFIX""#));
     }
 
-<<<<<<< feat/idl-convert-to-legacy
     // ---------------------------------------------------------------------
     // `anchor idl convert` regression tests.
     // ---------------------------------------------------------------------
@@ -6921,7 +6920,8 @@ mod tests {
         let out = apply_program_id_override(idl.as_bytes(), TEST_PROGRAM_ID).unwrap();
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["metadata"]["address"], TEST_PROGRAM_ID.to_string());
-=======
+    }
+
     #[test]
     fn skip_deploy_preserves_legacy_validator_config_flags() {
         let cfg = WithPath::new(Config::default(), PathBuf::from("Anchor.toml"));
@@ -6973,6 +6973,5 @@ mod tests {
         assert!(flags
             .windows(expected.len())
             .any(|args| args == expected.as_slice()));
->>>>>>> master
     }
 }
