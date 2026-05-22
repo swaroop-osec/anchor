@@ -1453,21 +1453,17 @@ fn process_command(opts: Opts) -> Result<()> {
 }
 
 /// Cargo does not support nested workspaces. If `start` lives inside a
-/// directory tree whose nearest parent `Cargo.toml` already defines a
-/// `[workspace]` table, refuse to create a new Anchor workspace here and
-/// point at `anchor new`, which is the supported flow for adding a
-/// program to an existing workspace.
-fn reject_if_inside_cargo_workspace(start: PathBuf) -> Result<()> {
+/// directory tree containing any `Cargo.toml`, refuse to create a new
+/// Anchor workspace here and point at `anchor new`, which is the
+/// supported flow for adding a program to an existing project.
+fn reject_if_inside_cargo_project(start: PathBuf) -> Result<()> {
     if let Some(parent) = Manifest::discover_from_path(start)? {
-        if parent.workspace.is_some() {
-            return Err(anyhow!(
-                "Cannot run `anchor init` inside an existing Cargo workspace at `{}`.\nCargo does \
-                 not support nested workspaces. To add a program to the existing workspace, run \
-                 `anchor new <name>` from the workspace root. To create a fresh Anchor workspace, \
-                 run `anchor init` outside the existing workspace tree.",
-                parent.path().display()
-            ));
-        }
+        return Err(anyhow!(
+            "Cannot run `anchor init` inside an existing Cargo project at `{}`.\nTo add a new \
+             program to the existing project, run `anchor new <name>` from the workspace root. To \
+             create a fresh Anchor workspace, run `anchor init` outside any Cargo project tree.",
+            parent.path().display()
+        ));
     }
     Ok(())
 }
@@ -1490,7 +1486,7 @@ fn init(
         if Config::discover(cfg_override)?.is_some() {
             return Err(anyhow!("Workspace already initialized"));
         }
-        reject_if_inside_cargo_workspace(std::env::current_dir()?)?;
+        reject_if_inside_cargo_project(std::env::current_dir()?)?;
     }
 
     // We need to format different cases for the dir and the name
