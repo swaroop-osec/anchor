@@ -16,6 +16,7 @@ use {
         types::{Idl, IdlArrayLen, IdlDefinedFields, IdlType, IdlTypeDefTy},
     },
     anyhow::{anyhow, bail, Context, Result},
+    cargo_metadata::{DependencyKind, MetadataCommand},
     checks::{check_anchor_version, check_deps, check_idl_build_feature, check_overflow},
     clap::{CommandFactory, Parser},
     dirs::home_dir,
@@ -88,6 +89,80 @@ pub static AVM_HOME: LazyLock<PathBuf> = LazyLock::new(|| {
         user_home
     }
 });
+
+pub fn support_version_report() -> String {
+    let mut lines = vec![format!("anchor-cli {VERSION}")];
+
+    lines.push(command_version_line("solana-cli", "solana"));
+    lines.push(command_version_line("cargo", "cargo"));
+    lines.push(format!("OS: {}", os_version()));
+
+    lines.join("\n") + "\n"
+}
+
+fn command_version_line(label: &str, command: &str) -> String {
+    match command_output(command, &["--version"]) {
+        Some(version) if version.starts_with(label) => version,
+        Some(version) => format!("{label} {version}"),
+        None => format!("{label} unavailable"),
+    }
+}
+
+fn command_output(command: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(command)
+        .args(args)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8(output.stdout)
+        .ok()
+        .and_then(|output| output.lines().next().map(str::trim).map(str::to_owned))
+        .filter(|line| !line.is_empty())
+}
+
+fn os_version() -> String {
+    #[cfg(target_os = "macos")]
+    if let Some(version) = macos_version() {
+        return version;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(version) = command_output("lsb_release", &["-ds"]) {
+            return version.trim_matches('"').to_owned();
+        }
+        if let Some(version) = linux_os_release() {
+            return version;
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    if let Some(version) = command_output("cmd", &["/C", "ver"]) {
+        return version;
+    }
+
+    std::env::consts::OS.to_owned()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_version() -> Option<String> {
+    let name = command_output("sw_vers", &["-productName"])?;
+    let version = command_output("sw_vers", &["-productVersion"])?;
+    let build = command_output("sw_vers", &["-buildVersion"])?;
+    Some(format!("{name} {version} {build}"))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_os_release() -> Option<String> {
+    fs::read_to_string("/etc/os-release")
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("PRETTY_NAME="))
+        .map(|value| value.trim_matches('"').to_owned())
+}
 
 #[derive(Debug, Parser, AbsolutePath)]
 #[clap(version = VERSION)]
@@ -2134,7 +2209,7 @@ fn build_all(
             None => Err(anyhow!("Invalid Anchor.toml at {}", cfg_path.display())),
             Some(_parent) => {
                 let mut idl_paths = Vec::new();
-                for p in cfg.get_rust_program_list()? {
+                for p in get_metadata_ordered_rust_program_list(cfg)? {
                     idl_paths.extend(build_rust_cwd(
                         cfg,
                         p.join("Cargo.toml"),
@@ -2156,6 +2231,147 @@ fn build_all(
     })();
     std::env::set_current_dir(cur_dir)?;
     r
+}
+
+fn get_metadata_ordered_rust_program_list(cfg: &WithPath<Config>) -> Result<Vec<PathBuf>> {
+    let programs = cfg.get_rust_program_list()?;
+    let ordered = order_rust_programs_by_metadata(cfg, &programs);
+    Ok(ordered.unwrap_or(programs))
+}
+
+fn order_rust_programs_by_metadata(
+    cfg: &WithPath<Config>,
+    programs: &[PathBuf],
+) -> Result<Vec<PathBuf>> {
+    let workspace_dir = cfg
+        .path()
+        .parent()
+        .ok_or_else(|| anyhow!("Invalid Anchor.toml at {}", cfg.path().display()))?;
+    let metadata = MetadataCommand::new()
+        .current_dir(workspace_dir)
+        .exec()
+        .context("Failed to run `cargo metadata`")?;
+
+    let mut package_dirs = HashMap::new();
+    for (idx, package) in metadata.packages.iter().enumerate() {
+        if package.source.is_some() {
+            continue;
+        }
+        let manifest_path = package.manifest_path.clone().into_std_path_buf();
+        if let Some(package_dir) = manifest_path.parent() {
+            if let Ok(package_dir) = package_dir.canonicalize() {
+                package_dirs.insert(package_dir, idx);
+            }
+        }
+    }
+
+    let program_indices = programs
+        .iter()
+        .filter_map(|program| package_dirs.get(program).copied())
+        .collect::<HashSet<_>>();
+    if program_indices.len() != programs.len() {
+        bail!("Failed to match all Anchor programs in `cargo metadata`");
+    }
+
+    let mut local_deps = vec![Vec::new(); metadata.packages.len()];
+    for (idx, package) in metadata.packages.iter().enumerate() {
+        for dep in &package.dependencies {
+            if dep.kind == DependencyKind::Development {
+                continue;
+            }
+            let Some(dep_path) = dep.path.as_ref() else {
+                continue;
+            };
+            if let Ok(dep_path) = dep_path.clone().into_std_path_buf().canonicalize() {
+                if let Some(dep_idx) = package_dirs.get(&dep_path) {
+                    local_deps[idx].push(*dep_idx);
+                }
+            }
+        }
+    }
+
+    let mut program_closures = HashMap::new();
+    for idx in &program_indices {
+        program_closures.insert(*idx, local_dependency_closure(*idx, &local_deps));
+    }
+
+    let original_order_by_package = programs
+        .iter()
+        .enumerate()
+        .map(|(idx, program)| (package_dirs[program], idx))
+        .collect::<HashMap<_, _>>();
+    let program_by_index = programs
+        .iter()
+        .map(|program| (package_dirs[program], program.clone()))
+        .collect::<HashMap<_, _>>();
+    let ordered = order_program_indices_by_dependency_cache_heuristic(
+        &program_indices,
+        &program_closures,
+        &original_order_by_package,
+    )
+    .into_iter()
+    .map(|idx| program_by_index[&idx].clone())
+    .collect();
+
+    Ok(ordered)
+}
+
+fn order_program_indices_by_dependency_cache_heuristic(
+    program_indices: &HashSet<usize>,
+    program_closures: &HashMap<usize, HashSet<usize>>,
+    original_order: &HashMap<usize, usize>,
+) -> Vec<usize> {
+    let mut reverse_dependents = HashMap::new();
+    for idx in program_indices {
+        reverse_dependents.insert(*idx, 0usize);
+    }
+    for (program_idx, deps) in program_closures {
+        for dep_idx in deps {
+            if program_indices.contains(dep_idx) && dep_idx != program_idx {
+                *reverse_dependents.entry(*dep_idx).or_default() += 1;
+            }
+        }
+    }
+
+    let mut ordered = program_indices.iter().copied().collect::<Vec<_>>();
+    ordered.sort_by(|a, b| {
+        let a_deps = &program_closures[a];
+        let b_deps = &program_closures[b];
+        let a_program_deps = a_deps
+            .iter()
+            .filter(|idx| program_indices.contains(idx))
+            .count();
+        let b_program_deps = b_deps
+            .iter()
+            .filter(|idx| program_indices.contains(idx))
+            .count();
+        let a_reverse = reverse_dependents[a];
+        let b_reverse = reverse_dependents[b];
+        let a_isolated = a_program_deps == 0 && a_reverse == 0;
+        let b_isolated = b_program_deps == 0 && b_reverse == 0;
+
+        b_isolated
+            .cmp(&a_isolated)
+            .then_with(|| b_program_deps.cmp(&a_program_deps))
+            .then_with(|| b_deps.len().cmp(&a_deps.len()))
+            .then_with(|| a_reverse.cmp(&b_reverse))
+            .then_with(|| original_order[a].cmp(&original_order[b]))
+    });
+
+    ordered
+}
+
+fn local_dependency_closure(start: usize, deps: &[Vec<usize>]) -> HashSet<usize> {
+    let mut seen = HashSet::new();
+    let mut stack = deps[start].clone();
+
+    while let Some(idx) = stack.pop() {
+        if seen.insert(idx) {
+            stack.extend(deps[idx].iter().copied());
+        }
+    }
+
+    seen
 }
 
 // Runs the build command outside of a workspace.
@@ -4132,10 +4348,7 @@ fn run_test_suite(
                 )?);
             }
             ValidatorType::Legacy => {
-                let flags = match skip_deploy {
-                    true => None,
-                    false => Some(validator_flags(cfg, test_validator)?),
-                };
+                let flags = Some(validator_flags(cfg, test_validator, skip_deploy)?);
                 validator_handle = Some(start_solana_test_validator(
                     cfg,
                     test_validator,
@@ -4229,10 +4442,23 @@ fn run_test_suite(
     Ok(())
 }
 
-// Returns the solana-test-validator flags. This will embed the workspace
-// programs in the genesis block so we don't have to deploy every time. It also
-// allows control of other solana-test-validator features.
+// Returns the solana-test-validator flags. When `skip_deploy` is false, this
+// embeds the workspace programs in the genesis block so we don't have to deploy
+// every time. It also allows control of other solana-test-validator features.
 fn validator_flags(
+    cfg: &WithPath<Config>,
+    test_validator: &Option<TestValidator>,
+    skip_deploy: bool,
+) -> Result<Vec<String>> {
+    let mut flags = match skip_deploy {
+        true => Vec::new(),
+        false => validator_deploy_flags(cfg, test_validator)?,
+    };
+    flags.extend(validator_config_flags(test_validator)?);
+    Ok(flags)
+}
+
+fn validator_deploy_flags(
     cfg: &WithPath<Config>,
     test_validator: &Option<TestValidator>,
 ) -> Result<Vec<String>> {
@@ -4300,99 +4526,113 @@ fn validator_flags(
                 }
             }
         }
-        if let Some(validator) = &test.validator {
-            let entries = serde_json::to_value(validator)?;
-            for (key, value) in entries.as_object().unwrap() {
-                if key == "ledger" {
-                    // Ledger flag is a special case as it is passed separately to the rest of
-                    // these validator flags.
-                    continue;
-                };
-                if key == "account" {
-                    for entry in value.as_array().unwrap() {
-                        // Push the account flag for each array entry
-                        flags.push("--account".to_string());
-                        flags.push(entry["address"].as_str().unwrap().to_string());
-                        flags.push(entry["filename"].as_str().unwrap().to_string());
-                    }
-                } else if key == "account_dir" {
-                    for entry in value.as_array().unwrap() {
-                        flags.push("--account-dir".to_string());
-                        flags.push(entry["directory"].as_str().unwrap().to_string());
-                    }
-                } else if key == "clone" {
-                    // Client for fetching accounts data
-                    let client = if let Some(url) = entries["url"].as_str() {
-                        create_client(url)
-                    } else {
-                        return Err(anyhow!(
-                            "Validator url for Solana's JSON RPC should be provided in order to \
-                             clone accounts from it"
-                        ));
-                    };
+    }
 
-                    let pubkeys = value
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|entry| {
-                            let address = entry["address"].as_str().unwrap();
-                            Pubkey::try_from(address)
-                                .map_err(|_| anyhow!("Invalid pubkey {}", address))
-                        })
-                        .collect::<Result<HashSet<Pubkey>>>()?
-                        .into_iter()
-                        .collect::<Vec<_>>();
-                    let accounts = client.get_multiple_accounts(&pubkeys)?;
+    Ok(flags)
+}
 
-                    for (pubkey, account) in pubkeys.into_iter().zip(accounts) {
-                        match account {
-                            Some(account) => {
-                                // Use a different flag for program accounts to fix the problem
-                                // described in https://github.com/anza-xyz/agave/issues/522
-                                if account.owner == bpf_loader_upgradeable::id()
-                                    // Only programs are supported with `--clone-upgradeable-program`
-                                    && matches!(
-                                        account.deserialize_data::<UpgradeableLoaderState>()?,
-                                        UpgradeableLoaderState::Program { .. }
-                                    )
-                                {
-                                    flags.push("--clone-upgradeable-program".to_string());
-                                    flags.push(pubkey.to_string());
-                                } else {
-                                    flags.push("--clone".to_string());
-                                    flags.push(pubkey.to_string());
-                                }
-                            }
-                            _ => return Err(anyhow!("Account {} not found", pubkey)),
-                        }
-                    }
-                } else if key == "deactivate_feature" {
-                    // Verify that the feature flags are valid pubkeys
-                    let pubkeys_result: Result<Vec<Pubkey>, _> = value
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|entry| {
-                            let feature_flag = entry.as_str().unwrap();
-                            Pubkey::try_from(feature_flag).map_err(|_| {
-                                anyhow!("Invalid pubkey (feature flag) {}", feature_flag)
-                            })
-                        })
-                        .collect();
-                    let features = pubkeys_result?;
-                    for feature in features {
-                        flags.push("--deactivate-feature".to_string());
-                        flags.push(feature.to_string());
-                    }
+fn validator_config_flags(test_validator: &Option<TestValidator>) -> Result<Vec<String>> {
+    let mut flags = Vec::new();
+
+    if let Some(validator) = test_validator
+        .as_ref()
+        .and_then(|test| test.validator.as_ref())
+    {
+        let entries = serde_json::to_value(validator)?;
+        for (key, value) in entries.as_object().unwrap() {
+            if key == "ledger" {
+                // Ledger flag is a special case as it is passed separately to the rest of
+                // these validator flags.
+                continue;
+            };
+            if key == "extra_args" {
+                for arg in value.as_array().unwrap() {
+                    flags.push(arg.as_str().unwrap().to_string());
+                }
+                continue;
+            }
+            if key == "account" {
+                for entry in value.as_array().unwrap() {
+                    // Push the account flag for each array entry
+                    flags.push("--account".to_string());
+                    flags.push(entry["address"].as_str().unwrap().to_string());
+                    flags.push(entry["filename"].as_str().unwrap().to_string());
+                }
+            } else if key == "account_dir" {
+                for entry in value.as_array().unwrap() {
+                    flags.push("--account-dir".to_string());
+                    flags.push(entry["directory"].as_str().unwrap().to_string());
+                }
+            } else if key == "clone" {
+                // Client for fetching accounts data
+                let client = if let Some(url) = entries["url"].as_str() {
+                    create_client(url)
                 } else {
-                    // Remaining validator flags are non-array types
-                    flags.push(format!("--{}", key.replace('_', "-")));
-                    if let serde_json::Value::String(v) = value {
-                        flags.push(v.to_string());
-                    } else {
-                        flags.push(value.to_string());
+                    return Err(anyhow!(
+                        "Validator url for Solana's JSON RPC should be provided in order to clone \
+                         accounts from it"
+                    ));
+                };
+
+                let pubkeys = value
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|entry| {
+                        let address = entry["address"].as_str().unwrap();
+                        Pubkey::try_from(address).map_err(|_| anyhow!("Invalid pubkey {}", address))
+                    })
+                    .collect::<Result<HashSet<Pubkey>>>()?
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                let accounts = client.get_multiple_accounts(&pubkeys)?;
+
+                for (pubkey, account) in pubkeys.into_iter().zip(accounts) {
+                    match account {
+                        Some(account) => {
+                            // Use a different flag for program accounts to fix the problem
+                            // described in https://github.com/anza-xyz/agave/issues/522
+                            if account.owner == bpf_loader_upgradeable::id()
+                                // Only programs are supported with `--clone-upgradeable-program`
+                                && matches!(
+                                    account.deserialize_data::<UpgradeableLoaderState>()?,
+                                    UpgradeableLoaderState::Program { .. }
+                                )
+                            {
+                                flags.push("--clone-upgradeable-program".to_string());
+                                flags.push(pubkey.to_string());
+                            } else {
+                                flags.push("--clone".to_string());
+                                flags.push(pubkey.to_string());
+                            }
+                        }
+                        _ => return Err(anyhow!("Account {} not found", pubkey)),
                     }
+                }
+            } else if key == "deactivate_feature" {
+                // Verify that the feature flags are valid pubkeys
+                let pubkeys_result: Result<Vec<Pubkey>, _> = value
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|entry| {
+                        let feature_flag = entry.as_str().unwrap();
+                        Pubkey::try_from(feature_flag)
+                            .map_err(|_| anyhow!("Invalid pubkey (feature flag) {}", feature_flag))
+                    })
+                    .collect();
+                let features = pubkeys_result?;
+                for feature in features {
+                    flags.push("--deactivate-feature".to_string());
+                    flags.push(feature.to_string());
+                }
+            } else {
+                // Remaining validator flags are non-array types
+                flags.push(format!("--{}", key.replace('_', "-")));
+                if let serde_json::Value::String(v) = value {
+                    flags.push(v.to_string());
+                } else {
+                    flags.push(value.to_string());
                 }
             }
         }
@@ -5672,10 +5912,7 @@ fn localnet(
                 )?)
             }
             ValidatorType::Legacy => {
-                let flags = match skip_deploy {
-                    true => None,
-                    false => Some(validator_flags(cfg, &cfg.test_validator)?),
-                };
+                let flags = Some(validator_flags(cfg, &cfg.test_validator, skip_deploy)?);
                 Some(start_solana_test_validator(
                     cfg,
                     &cfg.test_validator,
@@ -6167,6 +6404,7 @@ mod tests {
             IdlGenericArg, IdlInstructionAccount, IdlInstructionAccountItem, IdlPda, IdlSeed,
             IdlSeedAccount, IdlTypeDef, IdlTypeDefGeneric,
         },
+        std::collections::{HashMap, HashSet},
         tempfile::tempdir,
     };
 
@@ -6334,6 +6572,83 @@ mod tests {
             true,
         )
         .unwrap();
+    }
+
+    fn index_set(indices: &[usize]) -> HashSet<usize> {
+        indices.iter().copied().collect()
+    }
+
+    #[test]
+    fn program_order_prefers_programs_with_more_anchor_program_deps() {
+        let program_indices = index_set(&[0, 1]);
+        let program_closures = HashMap::from([(0, index_set(&[1])), (1, index_set(&[]))]);
+        let original_order = HashMap::from([(0, 0), (1, 1)]);
+
+        let ordered = order_program_indices_by_dependency_cache_heuristic(
+            &program_indices,
+            &program_closures,
+            &original_order,
+        );
+
+        assert_eq!(ordered, vec![0, 1]);
+    }
+
+    #[test]
+    fn program_order_uses_total_dependency_closure_as_tiebreaker() {
+        let program_indices = index_set(&[0, 1, 2, 3]);
+        let program_closures = HashMap::from([
+            (0, index_set(&[2, 4])),
+            (1, index_set(&[3])),
+            (2, index_set(&[])),
+            (3, index_set(&[])),
+        ]);
+        let original_order = HashMap::from([(0, 1), (1, 0), (2, 2), (3, 3)]);
+
+        let ordered = order_program_indices_by_dependency_cache_heuristic(
+            &program_indices,
+            &program_closures,
+            &original_order,
+        );
+
+        assert_eq!(ordered, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn program_order_places_isolated_programs_first() {
+        let program_indices = index_set(&[0, 1, 2]);
+        let program_closures = HashMap::from([
+            (0, index_set(&[])),
+            (1, index_set(&[2])),
+            (2, index_set(&[])),
+        ]);
+        let original_order = HashMap::from([(0, 0), (1, 1), (2, 2)]);
+
+        let ordered = order_program_indices_by_dependency_cache_heuristic(
+            &program_indices,
+            &program_closures,
+            &original_order,
+        );
+
+        assert_eq!(ordered, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn program_order_preserves_original_order_for_unrelated_programs() {
+        let program_indices = index_set(&[0, 1, 2]);
+        let program_closures = HashMap::from([
+            (0, index_set(&[3])),
+            (1, index_set(&[])),
+            (2, index_set(&[])),
+        ]);
+        let original_order = HashMap::from([(0, 0), (1, 1), (2, 2)]);
+
+        let ordered = order_program_indices_by_dependency_cache_heuristic(
+            &program_indices,
+            &program_closures,
+            &original_order,
+        );
+
+        assert_eq!(ordered, vec![0, 1, 2]);
     }
 
     #[test]
@@ -6548,6 +6863,7 @@ mod tests {
         assert!(ts.contains(r#""value": "SEED_PREFIX""#));
     }
 
+<<<<<<< feat/idl-convert-to-legacy
     // ---------------------------------------------------------------------
     // `anchor idl convert` regression tests.
     // ---------------------------------------------------------------------
@@ -6605,5 +6921,58 @@ mod tests {
         let out = apply_program_id_override(idl.as_bytes(), TEST_PROGRAM_ID).unwrap();
         let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["metadata"]["address"], TEST_PROGRAM_ID.to_string());
+=======
+    #[test]
+    fn skip_deploy_preserves_legacy_validator_config_flags() {
+        let cfg = WithPath::new(Config::default(), PathBuf::from("Anchor.toml"));
+        let test_validator = Some(TestValidator {
+            validator: Some(crate::config::Validator {
+                bind_address: "127.0.0.1".to_string(),
+                ledger: ".anchor/test-ledger".to_string(),
+                rpc_port: 18999,
+                warp_slot: Some(42),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        let flags = validator_flags(&cfg, &test_validator, true).unwrap();
+
+        assert!(flags
+            .windows(2)
+            .any(|args| args[0] == "--rpc-port" && args[1] == "18999"));
+        assert!(flags
+            .windows(2)
+            .any(|args| args[0] == "--warp-slot" && args[1] == "42"));
+        assert!(!flags.iter().any(|arg| arg == "--bpf-program"));
+        assert!(!flags.iter().any(|arg| arg == "--upgradeable-program"));
+    }
+
+    #[test]
+    fn validator_flags_emits_extra_args() {
+        let workspace = tempdir().unwrap();
+        let cfg = WithPath::new(Config::default(), workspace.path().join("Anchor.toml"));
+        let expected = vec![
+            "--rpc-pubsub-enable-block-subscription".to_string(),
+            "--geyser-plugin-config".to_string(),
+            "geyser.json".to_string(),
+        ];
+        let test_validator = Some(TestValidator {
+            validator: Some(crate::config::Validator {
+                bind_address: "127.0.0.1".to_string(),
+                ledger: ".anchor/test-ledger".to_string(),
+                rpc_port: 18999,
+                extra_args: Some(expected.clone()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        let flags = validator_flags(&cfg, &test_validator, true).unwrap();
+
+        assert!(flags
+            .windows(expected.len())
+            .any(|args| args == expected.as_slice()));
+>>>>>>> master
     }
 }
