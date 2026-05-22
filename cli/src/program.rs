@@ -139,8 +139,8 @@ fn read_buffer_keypair_from_args(args: &[String]) -> Result<Option<Keypair>> {
 }
 
 /// Existing on-chain buffer payload + capacity (bytes available for program
-/// data, excluding header). Capacity matters for resume: a persistent buffer
-/// from a prior run may be smaller than the current binary.
+/// data, excluding header). Capacity matters for resume: the loader copies the
+/// whole buffer body into ProgramData, so stale tail bytes must not remain.
 pub struct ExistingBuffer {
     pub data: Vec<u8>,
     pub capacity: usize,
@@ -606,14 +606,13 @@ pub fn program(cfg_override: &ConfigOverride, cmd: ProgramCommand) -> Result<()>
             program_name,
             buffer,
             buffer_authority,
-            max_len,
+            max_len: _max_len,
         } => program_write_buffer(
             cfg_override,
             program_filepath,
             program_name,
             buffer,
             buffer_authority,
-            max_len,
         ),
         ProgramCommand::SetBufferAuthority {
             buffer,
@@ -884,29 +883,26 @@ pub fn program_deploy(
                 BUFFER_STABILIZE_MAX_WAIT_SECS,
             )?;
 
-            // A persistent buffer from a previous run may have been created
-            // with a different `max_len` than the current binary requires.
-            // Undersize: loader's Write ix rejects writes past the buffer's
-            // allocated size, so writes deadlock. Oversize: loader's Upgrade
-            // ix copies the full buffer into programdata, shipping stale tail
-            // bytes from the prior binary. Either way, close ours and let the
-            // next path recreate at the exact size.
+            // A persistent buffer from a previous run must match the current
+            // binary size, not --max-len. The loader copies the whole buffer
+            // body into ProgramData; --max-len only controls final ProgramData
+            // capacity. If the buffer is too small writes fail, and if it is
+            // too large stale tail bytes can be deployed.
+            let needed_size = program_data.len();
             let existing_data = match existing {
-                Some(buf) if buf.capacity != max_data_len => {
+                Some(buf) if buf.capacity != needed_size => {
                     if buffer_keypair.is_none() {
                         bail!(
-                            "Existing buffer {} has capacity {} but program needs {}; \
-                             user-supplied buffer must be closed manually: solana program close {}",
+                            "Buffer size mismatch: existing buffer {} has {} bytes, program needs {} bytes",
                             buffer_pubkey,
                             buf.capacity,
-                            max_data_len,
-                            buffer_pubkey
+                            needed_size
                         );
                     }
                     println!(
                         "Existing buffer {} size mismatch ({} != {} bytes); closing and \
                          recreating.",
-                        buffer_pubkey, buf.capacity, max_data_len
+                        buffer_pubkey, buf.capacity, needed_size
                     );
                     close_buffer_for_resize(
                         &rpc_client,
@@ -932,13 +928,14 @@ pub fn program_deploy(
             }
 
             if let Some(ref kp) = buffer_keypair {
+                // Keep the intermediate buffer at the actual binary length.
+                // --max-len is applied only by deploy_with_max_program_len.
                 write_program_buffer(
                     &rpc_client,
                     &payer,
                     &program_data,
                     &upgrade_authority.pubkey(),
                     kp,
-                    max_len,
                     CommitmentConfig::confirmed(),
                     send_config,
                     priority_fee,
@@ -1461,7 +1458,6 @@ fn program_write_buffer(
     program_name: Option<String>,
     _buffer: Option<String>,
     buffer_authority: Option<String>,
-    max_len: Option<usize>,
 ) -> Result<()> {
     let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
     let payer = get_payer_keypair(cfg_override, &config)?;
@@ -1513,7 +1509,6 @@ fn program_write_buffer(
         &program_data,
         &buffer_authority_keypair.pubkey(),
         &buffer_keypair,
-        max_len,
         CommitmentConfig::confirmed(),
         RpcSendTransactionConfig {
             skip_preflight: false,
@@ -1973,7 +1968,6 @@ pub fn program_upgrade(
                 &program_data,
                 &upgrade_authority_keypair.pubkey(),
                 &buffer_keypair,
-                None, // max_len
                 CommitmentConfig::confirmed(),
                 send_config,
                 priority_fee,
@@ -2534,7 +2528,6 @@ pub fn write_program_buffer(
     program_data: &[u8],
     buffer_authority: &Pubkey,
     buffer_keypair: &dyn Signer,
-    max_len: Option<usize>,
     commitment: CommitmentConfig,
     send_transaction_config: RpcSendTransactionConfig,
     priority_fee: Option<u64>,
@@ -2545,7 +2538,7 @@ pub fn write_program_buffer(
     let buffer_pubkey = buffer_keypair.pubkey();
 
     let program_len = program_data.len();
-    let buffer_len = max_len.unwrap_or(program_len);
+    let buffer_len = program_len;
 
     // Get blockhash for all messages
     let blockhash = rpc_client.get_latest_blockhash()?;
