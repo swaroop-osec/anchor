@@ -997,8 +997,8 @@ fn assert_incorrect_token_2022_program_error<T, E: std::fmt::Display>(
     };
     let error = error.to_string();
     assert!(
-        error.contains("PANICKED") && error.contains("spl-v2/src/token_2022_extensions.rs"),
-        "{context}: expected canonical Token-2022 program assertion panic, got:\n{error}"
+        error.contains("IncorrectProgramId") || error.contains("incorrect program id"),
+        "{context}: expected IncorrectProgramId, got:\n{error}"
     );
 }
 
