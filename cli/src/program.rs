@@ -893,7 +893,8 @@ pub fn program_deploy(
                 Some(buf) if buf.capacity != needed_size => {
                     if buffer_keypair.is_none() {
                         bail!(
-                            "Buffer size mismatch: existing buffer {} has {} bytes, program needs {} bytes",
+                            "Buffer size mismatch: existing buffer {} has {} bytes, program needs \
+                             {} bytes",
                             buffer_pubkey,
                             buf.capacity,
                             needed_size
