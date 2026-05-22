@@ -5,7 +5,7 @@ extern crate alloc;
 use {
     crate::token_2022::spl_token_2022,
     alloc::{string::String, vec, vec::Vec},
-    anchor_lang_v2::{programs::Token2022, CpiContext, CpiHandle, Id, ToCpiAccounts},
+    anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
     solana_instruction::Instruction,
     solana_program_error::ProgramError,
@@ -13,6 +13,9 @@ use {
     spl_pod::optional_keys::OptionalNonZeroPubkey,
     spl_token_metadata_interface::state::Field,
 };
+
+#[cfg(any(feature = "guardrails", test))]
+use anchor_lang_v2::{programs::Token2022, Id};
 
 const EXT_CPI_GUARD: u8 = 34;
 const EXT_GROUP_POINTER: u8 = 40;
@@ -23,10 +26,18 @@ const DISC_INITIALIZE: u8 = 0;
 const DISC_UPDATE: u8 = 1;
 const DISC_RESUME: u8 = 2;
 
+#[cfg(feature = "guardrails")]
+#[inline]
 fn validate_token_2022_program(program: &Address) -> Result<(), ProgramError> {
     if *program != Token2022::id() {
         return Err(ProgramError::IncorrectProgramId);
     }
+    Ok(())
+}
+
+#[cfg(not(feature = "guardrails"))]
+#[inline]
+fn validate_token_2022_program(_program: &Address) -> Result<(), ProgramError> {
     Ok(())
 }
 
@@ -1355,6 +1366,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "guardrails")]
     fn token_2022_program_check_rejects_other_programs() {
         assert_eq!(
             validate_token_2022_program(&Address::new_from_array([1; 32])),

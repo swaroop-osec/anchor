@@ -4,11 +4,14 @@ extern crate alloc;
 
 use {
     alloc::{string::String, vec, vec::Vec},
-    anchor_lang_v2::{programs::Token, CpiContext, CpiHandle, Id, ToCpiAccounts},
+    anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
     solana_program_error::ProgramError,
     solana_pubkey::Pubkey,
 };
+
+#[cfg(any(feature = "guardrails", test))]
+use anchor_lang_v2::{programs::Token, Id};
 
 pub use anchor_lang_v2::programs::Token2022;
 pub use spl_token_2022_interface::{self as spl_token_2022, extension::ExtensionType, ID};
@@ -560,6 +563,8 @@ const DISC_CREATE_NATIVE_MINT: u8 = 31;
 const DISC_INITIALIZE_NON_TRANSFERABLE_MINT: u8 = 32;
 const DISC_WITHDRAW_EXCESS_LAMPORTS: u8 = 38;
 
+#[cfg(feature = "guardrails")]
+#[inline]
 fn validate_token_2022_program(program: &Address) -> Result<(), ProgramError> {
     if *program != Token2022::id() {
         return Err(ProgramError::IncorrectProgramId);
@@ -567,10 +572,24 @@ fn validate_token_2022_program(program: &Address) -> Result<(), ProgramError> {
     Ok(())
 }
 
+#[cfg(not(feature = "guardrails"))]
+#[inline]
+fn validate_token_2022_program(_program: &Address) -> Result<(), ProgramError> {
+    Ok(())
+}
+
+#[cfg(feature = "guardrails")]
+#[inline]
 fn validate_spl_token_program(program: &Address) -> Result<(), ProgramError> {
     if *program != Token::id() && *program != Token2022::id() {
         return Err(ProgramError::IncorrectProgramId);
     }
+    Ok(())
+}
+
+#[cfg(not(feature = "guardrails"))]
+#[inline]
+fn validate_spl_token_program(_program: &Address) -> Result<(), ProgramError> {
     Ok(())
 }
 
@@ -994,6 +1013,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "guardrails")]
     fn token_2022_program_check_rejects_other_programs() {
         assert_eq!(
             validate_token_2022_program(&Address::new_from_array([1; 32])),
@@ -1002,6 +1022,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "guardrails")]
     fn spl_token_program_check_rejects_other_programs() {
         assert_eq!(
             validate_spl_token_program(&Address::new_from_array([1; 32])),

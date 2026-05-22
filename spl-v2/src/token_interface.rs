@@ -151,6 +151,7 @@ impl anchor_lang_v2::IdlAccountType for Interface<crate::TokenAccount> {}
 #[doc(hidden)]
 impl anchor_lang_v2::IdlAccountType for Interface<crate::Mint> {}
 
+#[cfg(feature = "guardrails")]
 #[inline(always)]
 fn validate_token_program(program_id: &Address) -> Result<(), ProgramError> {
     if !anchor_lang_v2::address_eq(program_id, &Token::id())
@@ -158,6 +159,12 @@ fn validate_token_program(program_id: &Address) -> Result<(), ProgramError> {
     {
         return Err(ProgramError::IncorrectProgramId);
     }
+    Ok(())
+}
+
+#[cfg(not(feature = "guardrails"))]
+#[inline(always)]
+fn validate_token_program(_program_id: &Address) -> Result<(), ProgramError> {
     Ok(())
 }
 

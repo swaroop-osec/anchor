@@ -1152,16 +1152,6 @@ fn emit_associated_token_init_body(
             ) {
                 return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
             }
-            if !anchor_lang_v2::address_eq(
-                __token_program.account().address(),
-                &<anchor_lang_v2::programs::Token as anchor_lang_v2::Id>::id(),
-            ) && !anchor_lang_v2::address_eq(
-                __token_program.account().address(),
-                &<anchor_lang_v2::programs::Token2022 as anchor_lang_v2::Id>::id(),
-            ) {
-                return Err(anchor_lang_v2::ErrorCode::ConstraintAddress.into());
-            }
-
             anchor_spl_v2::associated_token::create(anchor_lang_v2::CpiContext::new(
                 __associated_token_program.account().address(),
                 anchor_spl_v2::associated_token::Create {
