@@ -6255,7 +6255,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
-            false,
+            true,
             true,
         )
         .unwrap();
@@ -6278,7 +6278,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
-            false,
+            true,
             true,
         )
         .unwrap();
@@ -6301,7 +6301,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
-            false,
+            true,
             true,
         )
         .unwrap();
