@@ -2289,6 +2289,49 @@ fn transfer_fee_amount_extension_round_trips() {
 }
 
 #[test]
+fn token_interface_extension_trait_reads_mint_and_token_account_extensions() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("trait-ext-mint-auth");
+    let fee_authority = keypair_for("trait-ext-fee-auth");
+    let withdraw_authority = keypair_for("trait-ext-withdraw-auth");
+    let owner = keypair_for("trait-ext-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    let mint_tlv = tlv_transfer_fee_config(
+        &fee_authority.pubkey(),
+        &withdraw_authority.pubkey(),
+        250,
+        4,
+        1_000_000,
+    );
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &mint_tlv),
+    );
+
+    let token_tlv = tlv_transfer_fee_amount(777);
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &token_tlv),
+    );
+
+    let mut data = vec![55]; // read_transfer_fee_config_via_trait
+    data.extend_from_slice(&250u16.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("InterfaceAccount<Mint>::get_extension should read TransferFeeConfig");
+
+    let mut data = vec![56]; // read_transfer_fee_amount_via_trait
+    data.extend_from_slice(&777u64.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("InterfaceAccount<TokenAccount>::get_extension should read TransferFeeAmount");
+}
+
+#[test]
 fn unchecked_token_extension_rejects_mint_account_type_marker() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("unchecked-tfa-type-mint-auth");

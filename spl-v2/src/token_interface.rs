@@ -22,7 +22,7 @@ use {
     anchor_lang_v2::{
         accounts::{InterfaceAccount, SlabInit, SlabSchema},
         programs::{Token, Token2022 as Token2022Program},
-        AccountConstraint, Id, Ids,
+        AccountConstraint, AnchorAccount, Id, Ids,
     },
     bytemuck::{Pod, Zeroable},
     core::ops::Deref,
@@ -70,6 +70,30 @@ pub type TokenAccount = Interface<crate::TokenAccount>;
 
 /// SPL mint account data used with `InterfaceAccount<Mint>`.
 pub type Mint = Interface<crate::Mint>;
+
+/// Extension reader for Token-2022 interface mint and token accounts.
+///
+/// This keeps TLV parsing on the account wrapper, where the underlying
+/// [`AccountView`] is available, while preserving the same owner and extension
+/// family checks as [`crate::extensions::get_mint_extension`] and
+/// [`crate::extensions::get_token_account_extension`].
+pub trait TokenInterfaceAccountExtensions {
+    fn get_extension<T: crate::extensions::ExtensionType>(&self) -> Result<&T, ProgramError>;
+}
+
+impl TokenInterfaceAccountExtensions for InterfaceAccount<Mint> {
+    #[inline(always)]
+    fn get_extension<T: crate::extensions::ExtensionType>(&self) -> Result<&T, ProgramError> {
+        crate::extensions::get_mint_extension(self.account())
+    }
+}
+
+impl TokenInterfaceAccountExtensions for InterfaceAccount<TokenAccount> {
+    #[inline(always)]
+    fn get_extension<T: crate::extensions::ExtensionType>(&self) -> Result<&T, ProgramError> {
+        crate::extensions::get_token_account_extension(self.account())
+    }
+}
 
 /// Program marker that accepts both Token and Token-2022 executable accounts.
 pub struct TokenInterface;

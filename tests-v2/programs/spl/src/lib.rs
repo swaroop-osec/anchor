@@ -17,7 +17,8 @@ use {
         },
         mint::{self, Mint},
         token::{self, TokenAccount},
-        token_2022 as token_2022_cpi, token_2022_extensions as token_2022_ext_cpi, token_interface,
+        token_2022 as token_2022_cpi, token_2022_extensions as token_2022_ext_cpi,
+        token_interface::{self, TokenInterfaceAccountExtensions},
     },
 };
 
@@ -333,6 +334,20 @@ pub mod spl_test {
         Ok(())
     }
 
+    /// Parse `TransferFeeConfig` through the `InterfaceAccount<Mint>` extension
+    /// reader trait.
+    #[discrim = 55]
+    pub fn read_transfer_fee_config_via_trait(
+        ctx: &mut Context<ReadTransferFeeConfigViaTrait>,
+        expected_bps: u16,
+    ) -> Result<()> {
+        let ext: &TransferFeeConfig = ctx.accounts.mint.get_extension()?;
+        if ext.newer_transfer_fee.basis_points() != expected_bps {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
     /// Parse `MetadataPointer` and assert both the `authority` and
     /// `metadata_address` fields match the passed pubkeys.
     #[discrim = 28]
@@ -396,6 +411,20 @@ pub mod spl_test {
     ) -> Result<()> {
         let ext: &TransferFeeAmount =
             extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        if ext.withheld_amount() != expected_withheld {
+            return Err(ProgramError::InvalidAccountData.into());
+        }
+        Ok(())
+    }
+
+    /// Parse `TransferFeeAmount` through the `InterfaceAccount<TokenAccount>`
+    /// extension reader trait.
+    #[discrim = 56]
+    pub fn read_transfer_fee_amount_via_trait(
+        ctx: &mut Context<ReadTransferFeeAmountViaTrait>,
+        expected_withheld: u64,
+    ) -> Result<()> {
+        let ext: &TransferFeeAmount = ctx.accounts.token_account.get_extension()?;
         if ext.withheld_amount() != expected_withheld {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -998,6 +1027,12 @@ pub struct ReadTransferFeeConfig {
 }
 
 #[derive(Accounts)]
+#[instruction(expected_bps: u16)]
+pub struct ReadTransferFeeConfigViaTrait {
+    pub mint: InterfaceAccount<token_interface::Mint>,
+}
+
+#[derive(Accounts)]
 #[instruction(expected_authority: Address, expected_metadata: Address)]
 pub struct ReadMetadataPointer {
     pub mint: InterfaceAccount<token_interface::Mint>,
@@ -1024,6 +1059,12 @@ pub struct ReadPermanentDelegate {
 #[derive(Accounts)]
 #[instruction(expected_withheld: u64)]
 pub struct ReadTransferFeeAmount {
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
+}
+
+#[derive(Accounts)]
+#[instruction(expected_withheld: u64)]
+pub struct ReadTransferFeeAmountViaTrait {
     pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
