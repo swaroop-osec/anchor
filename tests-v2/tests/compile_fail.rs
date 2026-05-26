@@ -910,8 +910,8 @@ pub struct Bad {
 }
 
 #[test]
-fn close_on_unchecked_account_does_not_compile() {
-    compile_fail_case(
+fn close_on_unchecked_account_compiles() {
+    compile_pass_case(
         "close_on_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -937,13 +937,13 @@ pub struct Close {
     pub receiver: UncheckedAccount,
 }
 "#,
-        &["`close` cannot be used on `UncheckedAccount`"],
+        &[],
     );
 }
 
 #[test]
-fn close_on_boxed_unchecked_account_does_not_compile() {
-    compile_fail_case(
+fn close_on_boxed_unchecked_account_compiles() {
+    compile_pass_case(
         "close_on_boxed_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -969,13 +969,13 @@ pub struct Close {
     pub receiver: UncheckedAccount,
 }
 "#,
-        &["`close` cannot be used on `UncheckedAccount`"],
+        &[],
     );
 }
 
 #[test]
-fn close_on_optional_unchecked_account_does_not_compile() {
-    compile_fail_case(
+fn close_on_optional_unchecked_account_compiles() {
+    compile_pass_case(
         "close_on_optional_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1001,7 +1001,7 @@ pub struct Close {
     pub receiver: UncheckedAccount,
 }
 "#,
-        &["`close` cannot be used on `UncheckedAccount`"],
+        &[],
     );
 }
 

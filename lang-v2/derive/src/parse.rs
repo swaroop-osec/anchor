@@ -651,12 +651,6 @@ fn validate_unchecked_account_constraints(ty: &Type, attrs: &AccountAttrs) -> sy
         return Ok(());
     }
 
-    if attrs.close.is_some() {
-        return Err(syn::Error::new_spanned(
-            ty,
-            "`close` cannot be used on `UncheckedAccount`",
-        ));
-    }
     if attrs.realloc.is_some() {
         return Err(syn::Error::new_spanned(
             ty,
