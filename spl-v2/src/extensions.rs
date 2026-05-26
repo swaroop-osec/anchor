@@ -8,25 +8,21 @@
 //! # Usage
 //!
 //! ```ignore
-//! use anchor_spl_v2::extensions::{self, TransferFeeConfig, MetadataPointer};
+//! use anchor_spl_v2::{
+//!     extensions::{MetadataPointer, TransferFeeConfig},
+//!     token_interface::TokenInterfaceAccountExtensions,
+//! };
 //!
 //! // Read extension from an InterfaceAccount<Mint>
-//! let fee_config: &TransferFeeConfig = extensions::get_mint_extension(&mint)?;
-//! let metadata_ptr: &MetadataPointer = extensions::get_mint_extension(&mint)?;
+//! let fee_config: &TransferFeeConfig = mint.get_extension()?;
+//! let metadata_ptr: &MetadataPointer = mint.get_extension()?;
 //! ```
 
 use {
-    anchor_lang_v2::{programs::Token2022, Id},
     bytemuck::{Pod, Zeroable},
-    pinocchio::account::AccountView,
     solana_address::Address,
-    solana_program_error::ProgramError,
-    spl_token_2022_interface::{
-        extension::{
-            BaseStateWithExtensions, Extension as SplExtension, ExtensionType as SplExtensionType,
-            PodStateWithExtensions,
-        },
-        pod::{PodAccount, PodMint},
+    spl_token_2022_interface::extension::{
+        Extension as SplExtension, ExtensionType as SplExtensionType,
     },
 };
 
@@ -38,51 +34,6 @@ use {
 pub trait ExtensionType: Pod + SplExtension {}
 
 impl<T> ExtensionType for T where T: Pod + SplExtension {}
-
-/// Parse a fixed-size extension from a Token-2022 mint or token account.
-///
-/// Both mint and token account extensions share the same TLV start offset
-/// (166 bytes from the beginning of account data).
-pub fn get_mint_extension<T: ExtensionType>(account: &AccountView) -> Result<&T, ProgramError> {
-    let data = unsafe { account.borrow_unchecked() };
-    validate_token_2022_owner(account)?;
-
-    let state = PodStateWithExtensions::<PodMint>::unpack(data)?;
-    let extension = state.get_extension::<T>()?;
-    let extension_ptr = extension as *const T;
-
-    // SAFETY: `PodStateWithExtensions` stores only references into `data`, and
-    // `extension_ptr` points into that account data, not into the temporary
-    // wrapper value. `data` is borrowed from `account`, which outlives the
-    // returned reference.
-    Ok(unsafe { &*extension_ptr })
-}
-
-/// Parse a fixed-size extension from a Token-2022 token account.
-pub fn get_token_account_extension<T: ExtensionType>(
-    account: &AccountView,
-) -> Result<&T, ProgramError> {
-    let data = unsafe { account.borrow_unchecked() };
-    validate_token_2022_owner(account)?;
-
-    let state = PodStateWithExtensions::<PodAccount>::unpack(data)?;
-    let extension = state.get_extension::<T>()?;
-    let extension_ptr = extension as *const T;
-
-    // SAFETY: `PodStateWithExtensions` stores only references into `data`, and
-    // `extension_ptr` points into that account data, not into the temporary
-    // wrapper value. `data` is borrowed from `account`, which outlives the
-    // returned reference.
-    Ok(unsafe { &*extension_ptr })
-}
-
-fn validate_token_2022_owner(account: &AccountView) -> Result<(), ProgramError> {
-    if account.owned_by(&Token2022::id()) {
-        Ok(())
-    } else {
-        Err(ProgramError::IllegalOwner)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Extension struct definitions

@@ -30,7 +30,7 @@ use {
     solana_address::Address,
     solana_program_error::ProgramError,
     spl_token_2022_interface::{
-        extension::PodStateWithExtensions,
+        extension::{BaseStateWithExtensions, PodStateWithExtensions},
         pod::{PodAccount, PodMint},
     },
 };
@@ -74,9 +74,8 @@ pub type Mint = Interface<crate::Mint>;
 /// Extension reader for Token-2022 interface mint and token accounts.
 ///
 /// This keeps TLV parsing on the account wrapper, where the underlying
-/// [`AccountView`] is available, while preserving the same owner and extension
-/// family checks as [`crate::extensions::get_mint_extension`] and
-/// [`crate::extensions::get_token_account_extension`].
+/// [`AccountView`] is available, while preserving Token-2022 owner and
+/// extension-family checks.
 pub trait TokenInterfaceAccountExtensions {
     fn get_extension<T: crate::extensions::ExtensionType>(&self) -> Result<&T, ProgramError>;
 }
@@ -84,14 +83,42 @@ pub trait TokenInterfaceAccountExtensions {
 impl TokenInterfaceAccountExtensions for InterfaceAccount<Mint> {
     #[inline(always)]
     fn get_extension<T: crate::extensions::ExtensionType>(&self) -> Result<&T, ProgramError> {
-        crate::extensions::get_mint_extension(self.account())
+        let account = self.account();
+        if !account.owned_by(&Token2022Program::id()) {
+            return Err(ProgramError::IllegalOwner);
+        }
+
+        let data = unsafe { account.borrow_unchecked() };
+        let state = PodStateWithExtensions::<PodMint>::unpack(data)?;
+        let extension = state.get_extension::<T>()?;
+        let extension_ptr = extension as *const T;
+
+        // SAFETY: `PodStateWithExtensions` stores only references into `data`,
+        // and `extension_ptr` points into that account data, not into the
+        // temporary wrapper value. `data` is borrowed from `account`, which
+        // outlives the returned reference.
+        Ok(unsafe { &*extension_ptr })
     }
 }
 
 impl TokenInterfaceAccountExtensions for InterfaceAccount<TokenAccount> {
     #[inline(always)]
     fn get_extension<T: crate::extensions::ExtensionType>(&self) -> Result<&T, ProgramError> {
-        crate::extensions::get_token_account_extension(self.account())
+        let account = self.account();
+        if !account.owned_by(&Token2022Program::id()) {
+            return Err(ProgramError::IllegalOwner);
+        }
+
+        let data = unsafe { account.borrow_unchecked() };
+        let state = PodStateWithExtensions::<PodAccount>::unpack(data)?;
+        let extension = state.get_extension::<T>()?;
+        let extension_ptr = extension as *const T;
+
+        // SAFETY: `PodStateWithExtensions` stores only references into `data`,
+        // and `extension_ptr` points into that account data, not into the
+        // temporary wrapper value. `data` is borrowed from `account`, which
+        // outlives the returned reference.
+        Ok(unsafe { &*extension_ptr })
     }
 }
 

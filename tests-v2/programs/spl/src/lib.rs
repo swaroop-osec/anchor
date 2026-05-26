@@ -327,7 +327,7 @@ pub mod spl_test {
         ctx: &mut Context<ReadTransferFeeConfig>,
         expected_bps: u16,
     ) -> Result<()> {
-        let ext: &TransferFeeConfig = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let ext: &TransferFeeConfig = ctx.accounts.mint.get_extension()?;
         if ext.newer_transfer_fee.basis_points() != expected_bps {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -356,7 +356,7 @@ pub mod spl_test {
         expected_authority: Address,
         expected_metadata: Address,
     ) -> Result<()> {
-        let ext: &MetadataPointer = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let ext: &MetadataPointer = ctx.accounts.mint.get_extension()?;
         if ext.authority != expected_authority || ext.metadata_address != expected_metadata {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -369,7 +369,7 @@ pub mod spl_test {
         ctx: &mut Context<ReadTransferHook>,
         expected_program_id: Address,
     ) -> Result<()> {
-        let ext: &TransferHook = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let ext: &TransferHook = ctx.accounts.mint.get_extension()?;
         if ext.program_id != expected_program_id {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -383,7 +383,7 @@ pub mod spl_test {
         ctx: &mut Context<ReadMintCloseAuthority>,
         expected_authority: Address,
     ) -> Result<()> {
-        let ext: &MintCloseAuthority = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let ext: &MintCloseAuthority = ctx.accounts.mint.get_extension()?;
         match extensions::optional_address(&ext.close_authority) {
             Some(addr) if *addr == expected_authority => Ok(()),
             _ => Err(ProgramError::InvalidAccountData.into()),
@@ -396,7 +396,7 @@ pub mod spl_test {
         ctx: &mut Context<ReadPermanentDelegate>,
         expected_delegate: Address,
     ) -> Result<()> {
-        let ext: &PermanentDelegate = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let ext: &PermanentDelegate = ctx.accounts.mint.get_extension()?;
         match extensions::optional_address(&ext.delegate) {
             Some(addr) if *addr == expected_delegate => Ok(()),
             _ => Err(ProgramError::InvalidAccountData.into()),
@@ -409,8 +409,7 @@ pub mod spl_test {
         ctx: &mut Context<ReadTransferFeeAmount>,
         expected_withheld: u64,
     ) -> Result<()> {
-        let ext: &TransferFeeAmount =
-            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        let ext: &TransferFeeAmount = ctx.accounts.token_account.get_extension()?;
         if ext.withheld_amount() != expected_withheld {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -437,8 +436,7 @@ pub mod spl_test {
         ctx: &mut Context<ReadTransferHookAccount>,
         expected_transferring: u8,
     ) -> Result<()> {
-        let ext: &TransferHookAccount =
-            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        let ext: &TransferHookAccount = ctx.accounts.token_account.get_extension()?;
         if ext.transferring != expected_transferring {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -451,8 +449,7 @@ pub mod spl_test {
         ctx: &mut Context<ReadDefaultAccountState>,
         expected_state: u8,
     ) -> Result<()> {
-        let ext: &DefaultAccountState =
-            extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let ext: &DefaultAccountState = ctx.accounts.mint.get_extension()?;
         if ext.state != expected_state {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -466,7 +463,7 @@ pub mod spl_test {
         expected_authority: Address,
         expected_group: Address,
     ) -> Result<()> {
-        let ext: &GroupPointer = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let ext: &GroupPointer = ctx.accounts.mint.get_extension()?;
         if ext.authority != expected_authority || ext.group_address != expected_group {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -480,7 +477,7 @@ pub mod spl_test {
         expected_authority: Address,
         expected_member: Address,
     ) -> Result<()> {
-        let ext: &GroupMemberPointer = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let ext: &GroupMemberPointer = ctx.accounts.mint.get_extension()?;
         if ext.authority != expected_authority || ext.member_address != expected_member {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -490,8 +487,7 @@ pub mod spl_test {
     /// Parse `CpiGuard` from a Token-2022 token account.
     #[discrim = 37]
     pub fn read_cpi_guard(ctx: &mut Context<ReadCpiGuard>, expected_enabled: u8) -> Result<()> {
-        let ext: &CpiGuard =
-            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        let ext: &CpiGuard = ctx.accounts.token_account.get_extension()?;
         if u8::from(ext.is_enabled()) != expected_enabled {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -505,7 +501,7 @@ pub mod spl_test {
         expected_authority: Address,
         expected_paused: u8,
     ) -> Result<()> {
-        let ext: &PausableConfig = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let ext: &PausableConfig = ctx.accounts.mint.get_extension()?;
         if ext.authority != expected_authority || u8::from(ext.is_paused()) != expected_paused {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -515,38 +511,35 @@ pub mod spl_test {
     /// Parse zero-sized mint/account marker extensions.
     #[discrim = 39]
     pub fn read_marker_extensions(ctx: &mut Context<ReadMarkerExtensions>) -> Result<()> {
-        let _: &NonTransferable = extensions::get_mint_extension(ctx.accounts.mint.account())?;
-        let _: &NonTransferableAccount =
-            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
-        let _: &PausableAccount =
-            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        let _: &NonTransferable = ctx.accounts.mint.get_extension()?;
+        let _: &NonTransferableAccount = ctx.accounts.token_account.get_extension()?;
+        let _: &PausableAccount = ctx.accounts.token_account.get_extension()?;
         Ok(())
     }
 
-    /// Parse a mint extension from an unchecked account. Used to assert that
-    /// `extensions::get_mint_extension` performs its own validation.
+    /// Parse a mint extension. Used to assert that
+    /// `InterfaceAccount<Mint>::get_extension` performs its own validation.
     #[discrim = 45]
     pub fn read_unchecked_transfer_fee_config(
         ctx: &mut Context<ReadUncheckedMintExtension>,
         expected_bps: u16,
     ) -> Result<()> {
-        let ext: &TransferFeeConfig = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let ext: &TransferFeeConfig = ctx.accounts.mint.get_extension()?;
         if ext.newer_transfer_fee.basis_points() != expected_bps {
             return Err(ProgramError::InvalidAccountData.into());
         }
         Ok(())
     }
 
-    /// Parse a token account extension from an unchecked account. Used to
-    /// assert that `extensions::get_token_account_extension` validates base
+    /// Parse a token account extension. Used to assert that
+    /// `InterfaceAccount<TokenAccount>::get_extension` validates base
     /// Token-2022 account shape before walking TLV.
     #[discrim = 46]
     pub fn read_unchecked_transfer_fee_amount(
         ctx: &mut Context<ReadUncheckedTokenAccountExtension>,
         expected_withheld: u64,
     ) -> Result<()> {
-        let ext: &TransferFeeAmount =
-            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        let ext: &TransferFeeAmount = ctx.accounts.token_account.get_extension()?;
         if ext.withheld_amount() != expected_withheld {
             return Err(ProgramError::InvalidAccountData.into());
         }
@@ -559,7 +552,7 @@ pub mod spl_test {
     pub fn read_unchecked_mint_transfer_fee_amount(
         ctx: &mut Context<ReadUncheckedMintTransferFeeAmount>,
     ) -> Result<()> {
-        let _: &TransferFeeAmount = extensions::get_mint_extension(ctx.accounts.mint.account())?;
+        let _: &TransferFeeAmount = ctx.accounts.mint.get_extension()?;
         Ok(())
     }
 
@@ -569,8 +562,7 @@ pub mod spl_test {
     pub fn read_unchecked_token_account_transfer_fee_config(
         ctx: &mut Context<ReadUncheckedTokenAccountTransferFeeConfig>,
     ) -> Result<()> {
-        let _: &TransferFeeConfig =
-            extensions::get_token_account_extension(ctx.accounts.token_account.account())?;
+        let _: &TransferFeeConfig = ctx.accounts.token_account.get_extension()?;
         Ok(())
     }
 
@@ -1113,23 +1105,23 @@ pub struct ReadMarkerExtensions {
 #[derive(Accounts)]
 #[instruction(expected_bps: u16)]
 pub struct ReadUncheckedMintExtension {
-    pub mint: UncheckedAccount,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 #[instruction(expected_withheld: u64)]
 pub struct ReadUncheckedTokenAccountExtension {
-    pub token_account: UncheckedAccount,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
 #[derive(Accounts)]
 pub struct ReadUncheckedMintTransferFeeAmount {
-    pub mint: UncheckedAccount,
+    pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
 pub struct ReadUncheckedTokenAccountTransferFeeConfig {
-    pub token_account: UncheckedAccount,
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
 }
 
 #[derive(Accounts)]
