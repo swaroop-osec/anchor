@@ -151,23 +151,6 @@ impl anchor_lang_v2::IdlAccountType for Interface<crate::TokenAccount> {}
 #[doc(hidden)]
 impl anchor_lang_v2::IdlAccountType for Interface<crate::Mint> {}
 
-#[cfg(feature = "guardrails")]
-#[inline(always)]
-fn validate_token_program(program_id: &Address) -> Result<(), ProgramError> {
-    if !anchor_lang_v2::address_eq(program_id, &Token::id())
-        && !anchor_lang_v2::address_eq(program_id, &Token2022Program::id())
-    {
-        return Err(ProgramError::IncorrectProgramId);
-    }
-    Ok(())
-}
-
-#[cfg(not(feature = "guardrails"))]
-#[inline(always)]
-fn validate_token_program(_program_id: &Address) -> Result<(), ProgramError> {
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // SlabInit — Interface<TokenAccount>
 // ---------------------------------------------------------------------------
@@ -197,7 +180,7 @@ impl SlabInit for Interface<crate::TokenAccount> {
         let authority = params.authority.ok_or(ProgramError::InvalidArgument)?;
         let token_program = params.token_program.ok_or(ProgramError::InvalidArgument)?;
         let program_id = token_program.address();
-        validate_token_program(program_id)?;
+        crate::token_shared::validate_token_interface_program(program_id)?;
 
         let space = core::mem::size_of::<crate::TokenAccount>();
         match signer_seeds {
@@ -246,7 +229,7 @@ impl SlabInit for Interface<crate::Mint> {
         let authority = params.authority.ok_or(ProgramError::InvalidArgument)?;
         let token_program = params.token_program.ok_or(ProgramError::InvalidArgument)?;
         let program_id = token_program.address();
-        validate_token_program(program_id)?;
+        crate::token_shared::validate_token_interface_program(program_id)?;
 
         let space = core::mem::size_of::<crate::Mint>();
         match signer_seeds {

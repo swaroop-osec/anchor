@@ -92,7 +92,7 @@ pub fn create<'a>(ctx: CpiContext<'a, Create<'a>>) -> Result<(), ProgramError> {
             return Err(ProgramError::IncorrectProgramId);
         }
     }
-    crate::token::validate_token_program(ctx.accounts.token_program.address())?;
+    crate::token_shared::validate_token_interface_program(ctx.accounts.token_program.address())?;
     ctx.invoke(&[0]);
     Ok(())
 }
@@ -112,7 +112,7 @@ pub fn create_idempotent<'a>(
             return Err(ProgramError::IncorrectProgramId);
         }
     }
-    crate::token::validate_token_program(ctx.accounts.token_program.address())?;
+    crate::token_shared::validate_token_interface_program(ctx.accounts.token_program.address())?;
     ctx.invoke(&[1]);
     Ok(())
 }

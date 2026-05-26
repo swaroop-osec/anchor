@@ -13,6 +13,8 @@
 
 #![no_std]
 
+extern crate alloc;
+
 pub mod associated_token;
 pub mod extensions;
 #[cfg(feature = "metadata")]
@@ -22,6 +24,7 @@ pub mod token;
 pub mod token_2022;
 pub mod token_2022_extensions;
 pub mod token_interface;
+mod token_shared;
 
 pub mod prelude {
     pub use crate::{
