@@ -156,7 +156,8 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
         // SAFETY: `CpiContext` already ties every handle to a Rust borrow of
         // the caller's typed account. The checked path would reject Slab-backed
         // mutable accounts because their Pinocchio borrow flag intentionally
-        // remains set while the wrapper is alive.
+        // remains set while the wrapper is alive. Reuse the same unchecked CPI
+        // path as `invoke` instead of re-running AccountView borrow checks here.
         unsafe { crate::program::invoke_signed_unchecked(&ix, &handles, self.signer_seeds) }
     }
 }
