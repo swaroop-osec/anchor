@@ -153,7 +153,11 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
         let mut handles = self.accounts.to_cpi_handles();
         handles.extend(self.remaining_accounts.iter().copied());
 
-        crate::program::invoke_signed(&ix, &handles, self.signer_seeds)
+        // SAFETY: `CpiContext` already ties every handle to a Rust borrow of
+        // the caller's typed account. The checked path would reject Slab-backed
+        // mutable accounts because their Pinocchio borrow flag intentionally
+        // remains set while the wrapper is alive.
+        unsafe { crate::program::invoke_signed_unchecked(&ix, &handles, self.signer_seeds) }
     }
 }
 
