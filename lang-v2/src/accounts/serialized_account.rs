@@ -322,6 +322,29 @@ where
     }
 }
 
+#[cfg(feature = "account-resize")]
+impl<T, S> crate::AccountRealloc for SerializedAccount<T, S>
+where
+    T: Owner + Discriminator,
+    S: AnchorAccountSerialize<T>,
+{
+    #[inline(always)]
+    fn realloc_account(
+        &mut self,
+        new_space: usize,
+        payer: AccountView,
+        zero: bool,
+    ) -> pinocchio::ProgramResult {
+        let mut view = *self.account();
+        if new_space != view.data_len() {
+            self.release_borrow()?;
+            crate::realloc_account(&mut view, new_space, &payer, zero)?;
+            self.reacquire_guard_only()?;
+        }
+        Ok(())
+    }
+}
+
 impl<T, S> Deref for SerializedAccount<T, S>
 where
     T: Owner + Discriminator,

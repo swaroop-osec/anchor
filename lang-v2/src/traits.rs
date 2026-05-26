@@ -87,6 +87,10 @@ pub trait ToCpiAccounts<'a> {
 pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     type Data;
 
+    /// Whether this account wrapper requires the transaction account meta to
+    /// be marked as a signer in generated clients and CPI account structs.
+    const IS_SIGNER: bool = false;
+
     /// Minimum account data length for this type. When > 0, PDA
     /// verification can skip `sol_curve_validate_point`: a non-empty
     /// account was created via CreateAccount/Allocate (which requires
@@ -206,6 +210,21 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
             writable: true,
         })
     }
+}
+
+/// Account wrapper capability for `#[account(realloc = ...)]`.
+///
+/// The derive emits a call to this trait instead of deciding realloc safety
+/// from syntactic type names. That lets rustc resolve aliases and wrapper
+/// forwards normally: unsupported wrappers simply do not implement the trait.
+#[cfg(feature = "account-resize")]
+pub trait AccountRealloc: AnchorAccount {
+    fn realloc_account(
+        &mut self,
+        new_space: usize,
+        payer: AccountView,
+        zero: bool,
+    ) -> ProgramResult;
 }
 
 /// Account-like value that can be passed into a CPI account struct.

@@ -725,6 +725,26 @@ where
     }
 }
 
+#[cfg(feature = "account-resize")]
+impl<H, T> crate::AccountRealloc for Slab<H, T>
+where
+    H: Pod + Zeroable + SlabSchema,
+{
+    #[inline(always)]
+    fn realloc_account(
+        &mut self,
+        new_space: usize,
+        payer: AccountView,
+        zero: bool,
+    ) -> pinocchio::ProgramResult {
+        let mut view = *self.account();
+        if new_space != view.data_len() {
+            crate::realloc_account(&mut view, new_space, &payer, zero)?;
+        }
+        Ok(())
+    }
+}
+
 impl<H, T> Deref for Slab<H, T>
 where
     H: Pod + Zeroable + SlabSchema,

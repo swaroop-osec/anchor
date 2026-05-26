@@ -118,6 +118,35 @@ fn nested_client_accounts_type(ty: &Type) -> Option<TokenStream2> {
     Some(quote! { super::#module_ident::#inner_ident })
 }
 
+fn idl_field_ty(field: &parse::AccountField) -> Option<&Type> {
+    field.idl_field_ty.as_ref()
+}
+
+fn client_meta_signer_expr(field: &parse::AccountField) -> TokenStream2 {
+    let init_signer = field.idl_init_signer;
+    match idl_field_ty(field) {
+        Some(ty) => quote! {
+            if <#ty as anchor_lang_v2::AnchorAccount>::IS_SIGNER || #init_signer {
+                _is_signer.unwrap_or(true)
+            } else {
+                false
+            }
+        },
+        None if init_signer => quote! { _is_signer.unwrap_or(true) },
+        None => quote! { false },
+    }
+}
+
+fn cpi_meta_signer_expr(field: &parse::AccountField) -> TokenStream2 {
+    let init_signer = field.idl_init_signer;
+    match idl_field_ty(field) {
+        Some(ty) => quote! {
+            <#ty as anchor_lang_v2::AnchorAccount>::IS_SIGNER || #init_signer
+        },
+        None => quote! { #init_signer },
+    }
+}
+
 struct ArgsDeser {
     deser: TokenStream2,
     arg_types: Vec<Type>,
@@ -755,16 +784,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .iter()
         .map(|(field, _kind)| {
             let writable = field.idl_writable;
-            let is_signer_ty = parse::field_ty_str(match parse::extract_option_inner(&field.ty) {
-                Some(inner) => inner,
-                None => &field.ty,
-            }) == "Signer";
-            let signer = is_signer_ty || field.idl_init_signer;
-            let signer_expr = if signer {
-                quote! { _is_signer.unwrap_or(true) }
-            } else {
-                quote! { false }
-            };
+            let signer_expr = client_meta_signer_expr(field);
             let field_ident = &field.name;
             if nested_client_accounts_type(&field.ty).is_some() {
                 quote! {
@@ -889,16 +909,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         .iter()
         .map(|field| {
             let writable = field.idl_writable;
-            let is_signer_ty = parse::field_ty_str(match parse::extract_option_inner(&field.ty) {
-                Some(inner) => inner,
-                None => &field.ty,
-            }) == "Signer";
-            let signer = is_signer_ty || field.idl_init_signer;
-            let signer_expr = if signer {
-                quote! { _is_signer.unwrap_or(true) }
-            } else {
-                quote! { false }
-            };
+            let signer_expr = client_meta_signer_expr(field);
             let field_ident = &field.name;
             if nested_client_accounts_type(&field.ty).is_some() {
                 quote! {
@@ -988,20 +999,16 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                     };
                 }
                 let writable = f.idl_writable;
-                let is_signer_ty = parse::field_ty_str(&f.ty) == "Signer" || f.idl_init_signer;
-                let ctor = match (writable, is_signer_ty) {
-                    (true, true) => quote! { writable_signer },
-                    (true, false) => quote! { writable },
-                    (false, true) => quote! { readonly_signer },
-                    (false, false) => quote! { readonly },
-                };
+                let signer_expr = cpi_meta_signer_expr(f);
                 if f.is_optional {
                     quote! {
                         match &self.#n {
                             ::core::option::Option::Some(__account) => {
                                 __accounts.push(
-                                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::#ctor(
+                                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::new(
                                         __account.address(),
+                                        #writable,
+                                        #signer_expr,
                                     ),
                                 );
                             }
@@ -1017,8 +1024,10 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                 } else {
                     quote! {
                         __accounts.push(
-                            anchor_lang_v2::pinocchio::instruction::InstructionAccount::#ctor(
+                            anchor_lang_v2::pinocchio::instruction::InstructionAccount::new(
                                 self.#n.address(),
+                                #writable,
+                                #signer_expr,
                             ),
                         );
                     }
@@ -2113,20 +2122,17 @@ fn collect_declare_account_group(
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
 
-        let base_ty = if signer {
-            quote! { anchor_lang_v2::accounts::Signer }
-        } else {
-            quote! { anchor_lang_v2::accounts::UncheckedAccount }
-        };
+        let base_ty = quote! { anchor_lang_v2::accounts::UncheckedAccount };
         let ty = if optional {
             quote! { Option<#base_ty> }
         } else {
             base_ty
         };
-        let attrs = if writable {
-            quote! { #[account(mut)] }
-        } else {
-            quote! {}
+        let attrs = match (writable, signer) {
+            (true, true) => quote! { #[account(mut, signer)] },
+            (true, false) => quote! { #[account(mut)] },
+            (false, true) => quote! { #[account(signer)] },
+            (false, false) => quote! {},
         };
         fields.push(DeclareAccountField {
             name: ident,

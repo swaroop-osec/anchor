@@ -622,52 +622,6 @@ pub fn extract_option_inner(ty: &Type) -> Option<&Type> {
     None
 }
 
-fn extract_box_inner(ty: &Type) -> Option<&Type> {
-    if let Type::Path(tp) = ty {
-        if let Some(seg) = tp.path.segments.last() {
-            if seg.ident == "Box" {
-                if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
-                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                        return Some(inner);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn transparent_account_inner(mut ty: &Type) -> &Type {
-    loop {
-        if let Some(inner) = extract_option_inner(ty) {
-            ty = inner;
-            continue;
-        }
-        if let Some(inner) = extract_box_inner(ty) {
-            ty = inner;
-            continue;
-        }
-        return ty;
-    }
-}
-
-fn validate_unchecked_account_constraints(ty: &Type, attrs: &AccountAttrs) -> syn::Result<()> {
-    let ty = transparent_account_inner(ty);
-
-    if field_ty_str(ty) != "UncheckedAccount" {
-        return Ok(());
-    }
-
-    if attrs.realloc.is_some() {
-        return Err(syn::Error::new_spanned(
-            ty,
-            "`realloc` cannot be used on `UncheckedAccount`",
-        ));
-    }
-
-    Ok(())
-}
-
 pub struct AccountField {
     pub name: Ident,
     /// The field's original `syn::Type` — used by `impl_accounts` to build
@@ -1188,14 +1142,14 @@ pub fn parse_field(
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
 
     let option_inner = extract_option_inner(field_ty);
-    validate_unchecked_account_constraints(field_ty, &attrs)?;
     let is_optional = option_inner.is_some();
-    // Fresh-keypair init (no seeds) — caller signs the tx. Distinct from
-    // `Signer`-type fields, which the IDL picks up through
-    // `IdlAccountType::__IDL_IS_SIGNER` at runtime.
-    let idl_init_signer = (attrs.is_init || attrs.is_init_if_needed)
-        && attrs.seeds.is_none()
-        && associated_token.is_none();
+    // Explicit signer constraint or fresh-keypair init (no seeds) — caller
+    // signs the tx. Distinct from `Signer`-type fields, which the IDL picks
+    // up through `IdlAccountType::__IDL_IS_SIGNER` at runtime.
+    let idl_init_signer = attrs.is_signer
+        || ((attrs.is_init || attrs.is_init_if_needed)
+            && attrs.seeds.is_none()
+            && associated_token.is_none());
     let idl_writable = attrs.is_mut;
     let idl_has_one: Vec<String> = attrs
         .has_one
@@ -1825,40 +1779,21 @@ pub fn parse_field(
             .as_ref()
             .expect("realloc requires realloc_payer");
         let zero_fill = attrs.realloc_zero;
-        // BorshAccount holds a pinocchio RefMut that (a) blocks the system
-        // program Transfer CPI inside realloc_account and (b) captures a
-        // stale slice length after resize. Release before, reacquire after.
-        // Slab holds no pinocchio borrow so needs neither step.
-        let base_ty = option_inner.unwrap_or(field_ty);
-        let is_borsh_account = field_ty_str(base_ty) == "BorshAccount";
-        let pre_realloc = if is_borsh_account {
-            quote! { #field_name.release_borrow()?; }
+        let realloc_target = if is_optional {
+            quote! { #field_name }
         } else {
-            quote! {}
-        };
-        let post_realloc = if is_borsh_account {
-            // Guard-only: realloc preserves owner/disc, and a full
-            // reacquire would re-deserialize the pre-resize buffer —
-            // fails on shrink.
-            quote! { #field_name.reacquire_guard_only()?; }
-        } else {
-            quote! {}
+            quote! { &mut #field_name }
         };
         constraints.push(quote! {
             {
                 let __new_space = #new_space;
-                let mut __view = *#field_name.account();
                 let __payer_view = *#realloc_payer.account();
-                if __new_space != __view.data_len() {
-                    #pre_realloc
-                    anchor_lang_v2::realloc_account(
-                        &mut __view,
-                        __new_space,
-                        &__payer_view,
-                        #zero_fill,
-                    )?;
-                    #post_realloc
-                }
+                anchor_lang_v2::AccountRealloc::realloc_account(
+                    #realloc_target,
+                    __new_space,
+                    __payer_view,
+                    #zero_fill,
+                )?;
             }
         });
     }

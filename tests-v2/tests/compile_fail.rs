@@ -1065,7 +1065,7 @@ pub struct Resize {
     pub payer: Signer,
 }
 "#,
-        &["`realloc` cannot be used on `UncheckedAccount`"],
+        &["AccountRealloc", "UncheckedAccount"],
     );
 }
 
@@ -1097,7 +1097,7 @@ pub struct Resize {
     pub payer: Signer,
 }
 "#,
-        &["`realloc` cannot be used on `UncheckedAccount`"],
+        &["AccountRealloc", "UncheckedAccount"],
     );
 }
 
@@ -1129,6 +1129,104 @@ pub struct Resize {
     pub payer: Signer,
 }
 "#,
-        &["`realloc` cannot be used on `UncheckedAccount`"],
+        &["AccountRealloc", "UncheckedAccount"],
+    );
+}
+
+#[test]
+fn realloc_on_unchecked_account_alias_does_not_compile() {
+    compile_fail_case(
+        "realloc_on_unchecked_account_alias",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+type UA = UncheckedAccount;
+
+#[derive(Accounts)]
+pub struct Resize {
+    #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
+    pub data: UA,
+    #[account(mut)]
+    pub payer: Signer,
+}
+"#,
+        &["AccountRealloc", "UncheckedAccount"],
+    );
+}
+
+#[test]
+fn realloc_on_renamed_unchecked_account_does_not_compile() {
+    compile_fail_case(
+        "realloc_on_renamed_unchecked_account",
+        r#"
+use anchor_lang_v2::prelude::*;
+use anchor_lang_v2::accounts::UncheckedAccount as UA;
+
+#[derive(Accounts)]
+pub struct Resize {
+    #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
+    pub data: UA,
+    #[account(mut)]
+    pub payer: Signer,
+}
+"#,
+        &["AccountRealloc", "UncheckedAccount"],
+    );
+}
+
+#[test]
+fn realloc_on_box_alias_unchecked_account_does_not_compile() {
+    compile_fail_case(
+        "realloc_on_box_alias_unchecked_account",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+type MyBox<T> = Box<T>;
+
+#[derive(Accounts)]
+pub struct Resize {
+    #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
+    pub data: MyBox<UncheckedAccount>,
+    #[account(mut)]
+    pub payer: Signer,
+}
+"#,
+        &["AccountRealloc", "UncheckedAccount"],
+    );
+}
+
+#[test]
+fn realloc_on_borsh_account_alias_compiles() {
+    compile_pass_case(
+        "realloc_on_borsh_account_alias",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+#[derive(wincode::SchemaRead, wincode::SchemaWrite, Default)]
+pub struct Data {
+    pub value: u64,
+}
+
+impl Owner for Data {
+    fn owner(program_id: &Address) -> Address {
+        *program_id
+    }
+}
+
+impl Discriminator for Data {
+    const DISCRIMINATOR: &'static [u8] = &[1, 2, 3, 4, 5, 6, 7, 8];
+}
+
+type BA<T> = BorshAccount<T>;
+
+#[derive(Accounts)]
+pub struct Resize {
+    #[account(mut, realloc = 16, realloc_payer = payer, realloc_zero = false)]
+    pub data: BA<Data>,
+    #[account(mut)]
+    pub payer: Signer,
+}
+"#,
+        &[],
     );
 }
