@@ -1,6 +1,18 @@
 use {
-    anchor_lang_v2::prelude::*,
-    anchor_spl_v2::{token_interface, Mint, TokenAccount},
+    anchor_lang_v2::{bytemuck::bytes_of, prelude::*, programs::Token2022, AnchorAccount, Id},
+    anchor_spl_v2::{
+        extensions::{
+            CpiGuard as SplCpiGuard, ExtensionType as SplExtensionType,
+            GroupMemberPointer as SplGroupMemberPointer, GroupPointer as SplGroupPointer,
+            MetadataPointer as SplMetadataPointer, MintCloseAuthority as SplMintCloseAuthority,
+            PausableAccount as SplPausableAccount, PausableConfig as SplPausableConfig,
+            PermanentDelegate as SplPermanentDelegate, TransferFeeAmount as SplTransferFeeAmount,
+            TransferHook as SplTransferHook, TransferHookAccount as SplTransferHookAccount,
+        },
+        token_2022::spl_token_2022::extension::transfer_fee::TransferFeeConfig as SplTransferFeeConfig,
+        token_interface::{self, TokenInterfaceAccountExtensions},
+        Mint, TokenAccount,
+    },
 };
 
 declare_id!("5FGXfwXAgDDy76hUXWQEYdBF8ztPezhq7AwibdDtFWvs");
@@ -9,6 +21,11 @@ const TAG_STRICT_MINT: u8 = 1;
 const TAG_STRICT_TOKEN: u8 = 2;
 const TAG_INTERFACE_MINT: u8 = 3;
 const TAG_INTERFACE_TOKEN: u8 = 4;
+const TAG_INTERFACE_MINT_EXTENSION: u8 = 5;
+const TAG_INTERFACE_TOKEN_EXTENSION: u8 = 6;
+const EXTENSION_STATUS_FOUND: u8 = 1;
+const EXTENSION_STATUS_ILLEGAL_OWNER: u8 = 2;
+const EXTENSION_STATUS_ACCESS_ERROR: u8 = 3;
 
 #[program]
 pub mod equivalence_spl_v2 {
@@ -77,6 +94,98 @@ pub mod equivalence_spl_v2 {
             token_account.close_authority().map(|key| key.to_bytes()),
         )
     }
+
+    #[discrim = 4]
+    pub fn check_interface_mint_extension(
+        ctx: &mut Context<CheckInterfaceMintExtension>,
+        operation: u8,
+    ) -> Result<()> {
+        match operation {
+            0 => write_mint_extension_observation::<SplMetadataPointer>(
+                &ctx.accounts.mint,
+                &ctx.accounts.out,
+                operation,
+            ),
+            1 => write_mint_extension_observation::<SplGroupPointer>(
+                &ctx.accounts.mint,
+                &ctx.accounts.out,
+                operation,
+            ),
+            2 => write_mint_extension_observation::<SplGroupMemberPointer>(
+                &ctx.accounts.mint,
+                &ctx.accounts.out,
+                operation,
+            ),
+            3 => write_mint_extension_observation::<SplTransferHook>(
+                &ctx.accounts.mint,
+                &ctx.accounts.out,
+                operation,
+            ),
+            4 => write_mint_extension_observation::<SplMintCloseAuthority>(
+                &ctx.accounts.mint,
+                &ctx.accounts.out,
+                operation,
+            ),
+            5 => write_mint_extension_observation::<SplPermanentDelegate>(
+                &ctx.accounts.mint,
+                &ctx.accounts.out,
+                operation,
+            ),
+            6 => write_mint_extension_observation::<SplTransferFeeConfig>(
+                &ctx.accounts.mint,
+                &ctx.accounts.out,
+                operation,
+            ),
+            7 => write_mint_extension_observation::<SplPausableConfig>(
+                &ctx.accounts.mint,
+                &ctx.accounts.out,
+                operation,
+            ),
+            _ => write_extension_observation(
+                &ctx.accounts.out,
+                TAG_INTERFACE_MINT_EXTENSION,
+                operation,
+                EXTENSION_STATUS_ACCESS_ERROR,
+                &[],
+            ),
+        }
+    }
+
+    #[discrim = 5]
+    pub fn check_interface_token_account_extension(
+        ctx: &mut Context<CheckInterfaceTokenAccountExtension>,
+        operation: u8,
+    ) -> Result<()> {
+        match operation {
+            0 => write_token_account_extension_observation::<SplTransferFeeAmount>(
+                &ctx.accounts.token_account,
+                &ctx.accounts.out,
+                operation,
+            ),
+            1 => write_token_account_extension_observation::<SplCpiGuard>(
+                &ctx.accounts.token_account,
+                &ctx.accounts.out,
+                operation,
+            ),
+            2 => write_token_account_extension_observation::<SplTransferHookAccount>(
+                &ctx.accounts.token_account,
+                &ctx.accounts.out,
+                operation,
+            ),
+            3 => write_token_account_extension_observation::<SplPausableAccount>(
+                &ctx.accounts.token_account,
+                &ctx.accounts.out,
+                operation,
+            ),
+            _ => write_extension_observation(
+                &ctx.accounts.out,
+                TAG_INTERFACE_TOKEN_EXTENSION,
+                operation,
+                EXTENSION_STATUS_ACCESS_ERROR,
+                &[],
+            ),
+        }
+    }
 }
 
 #[derive(Accounts)]
@@ -105,6 +214,92 @@ pub struct CheckInterfaceTokenAccount {
     pub token_account: InterfaceAccount<token_interface::TokenAccount>,
     #[account(mut)]
     pub out: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct CheckInterfaceMintExtension {
+    pub mint: InterfaceAccount<token_interface::Mint>,
+    #[account(mut)]
+    pub out: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct CheckInterfaceTokenAccountExtension {
+    pub token_account: InterfaceAccount<token_interface::TokenAccount>,
+    #[account(mut)]
+    pub out: UncheckedAccount,
+}
+
+fn write_mint_extension_observation<T>(
+    mint: &InterfaceAccount<token_interface::Mint>,
+    out: &UncheckedAccount,
+    operation: u8,
+) -> Result<()>
+where
+    T: SplExtensionType,
+{
+    if !mint.account().owned_by(&Token2022::id()) {
+        return write_extension_observation(
+            out,
+            TAG_INTERFACE_MINT_EXTENSION,
+            operation,
+            EXTENSION_STATUS_ILLEGAL_OWNER,
+            &[],
+        );
+    }
+
+    match mint.get_extension::<T>() {
+        Ok(extension) => write_extension_observation(
+            out,
+            TAG_INTERFACE_MINT_EXTENSION,
+            operation,
+            EXTENSION_STATUS_FOUND,
+            bytes_of(extension),
+        ),
+        Err(_) => write_extension_observation(
+            out,
+            TAG_INTERFACE_MINT_EXTENSION,
+            operation,
+            EXTENSION_STATUS_ACCESS_ERROR,
+            &[],
+        ),
+    }
+}
+
+fn write_token_account_extension_observation<T>(
+    token_account: &InterfaceAccount<token_interface::TokenAccount>,
+    out: &UncheckedAccount,
+    operation: u8,
+) -> Result<()>
+where
+    T: SplExtensionType,
+{
+    if !token_account.account().owned_by(&Token2022::id()) {
+        return write_extension_observation(
+            out,
+            TAG_INTERFACE_TOKEN_EXTENSION,
+            operation,
+            EXTENSION_STATUS_ILLEGAL_OWNER,
+            &[],
+        );
+    }
+
+    match token_account.get_extension::<T>() {
+        Ok(extension) => write_extension_observation(
+            out,
+            TAG_INTERFACE_TOKEN_EXTENSION,
+            operation,
+            EXTENSION_STATUS_FOUND,
+            bytes_of(extension),
+        ),
+        Err(_) => write_extension_observation(
+            out,
+            TAG_INTERFACE_TOKEN_EXTENSION,
+            operation,
+            EXTENSION_STATUS_ACCESS_ERROR,
+            &[],
+        ),
+    }
 }
 
 fn write_mint_observation(
@@ -152,6 +347,24 @@ fn write_token_account_observation(
     write_option_u64(data, 107, is_native);
     data[116..124].copy_from_slice(&delegated_amount.to_le_bytes());
     write_option_key(data, 124, close_authority);
+    Ok(())
+}
+
+fn write_extension_observation(
+    out: &UncheckedAccount,
+    tag: u8,
+    operation: u8,
+    status: u8,
+    extension_data: &[u8],
+) -> Result<()> {
+    let mut out_view = out.account().clone();
+    let data = unsafe { out_view.borrow_unchecked_mut() };
+    clear(data);
+    data[0] = tag;
+    data[1] = operation;
+    data[2] = status;
+    data[3..5].copy_from_slice(&(extension_data.len() as u16).to_le_bytes());
+    data[5..5 + extension_data.len()].copy_from_slice(extension_data);
     Ok(())
 }
 

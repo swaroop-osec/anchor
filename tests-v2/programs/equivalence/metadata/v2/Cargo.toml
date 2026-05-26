@@ -1,0 +1,25 @@
+[package]
+name = "equivalence-metadata-v2"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "equivalence_metadata_v2"
+
+[features]
+default = ["no-log-ix-name"]
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = []
+
+[dependencies]
+anchor-lang-v2 = { path = "../../../../../lang-v2", default-features = false, features = ["alloc"] }
+anchor-spl-v2 = { path = "../../../../../spl-v2", features = ["guardrails", "metadata"] }
+wincode = { version = "0.5", features = ["derive"] }
+
+[lints.rust.unexpected_cfgs]
+level = "allow"

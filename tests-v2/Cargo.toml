@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "equivalence_spl"
 path = "tests/equivalence/spl.rs"
 
+[[test]]
+name = "equivalence_metadata"
+path = "tests/equivalence/metadata.rs"
+
 [dependencies]
 anchor-lang-v2 = { path = "../lang-v2" }
 account-address-constraints = { path = "programs/account-address-constraints" }

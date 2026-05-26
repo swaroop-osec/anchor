@@ -61,6 +61,8 @@ const V2_DISC_STRICT_MINT: u8 = 0;
 const V2_DISC_STRICT_TOKEN_ACCOUNT: u8 = 1;
 const V2_DISC_INTERFACE_MINT: u8 = 2;
 const V2_DISC_INTERFACE_TOKEN_ACCOUNT: u8 = 3;
+const V2_DISC_INTERFACE_MINT_EXTENSION: u8 = 4;
+const V2_DISC_INTERFACE_TOKEN_ACCOUNT_EXTENSION: u8 = 5;
 
 #[derive(Clone, Copy, Debug)]
 enum OracleVersion {
@@ -74,6 +76,8 @@ enum Operation {
     StrictTokenAccount,
     InterfaceMint,
     InterfaceTokenAccount,
+    InterfaceMintExtension(MintExtensionObservation),
+    InterfaceTokenAccountExtension(TokenAccountExtensionObservation),
 }
 
 impl Operation {
@@ -83,6 +87,10 @@ impl Operation {
             Operation::StrictTokenAccount => "check_strict_token_account",
             Operation::InterfaceMint => "check_interface_mint",
             Operation::InterfaceTokenAccount => "check_interface_token_account",
+            Operation::InterfaceMintExtension(_) => "check_interface_mint_extension",
+            Operation::InterfaceTokenAccountExtension(_) => {
+                "check_interface_token_account_extension"
+            }
         }
     }
 
@@ -92,8 +100,62 @@ impl Operation {
             Operation::StrictTokenAccount => V2_DISC_STRICT_TOKEN_ACCOUNT,
             Operation::InterfaceMint => V2_DISC_INTERFACE_MINT,
             Operation::InterfaceTokenAccount => V2_DISC_INTERFACE_TOKEN_ACCOUNT,
+            Operation::InterfaceMintExtension(_) => V2_DISC_INTERFACE_MINT_EXTENSION,
+            Operation::InterfaceTokenAccountExtension(_) => {
+                V2_DISC_INTERFACE_TOKEN_ACCOUNT_EXTENSION
+            }
         }
     }
+
+    fn argument(self) -> Option<u8> {
+        match self {
+            Operation::InterfaceMintExtension(observation) => Some(observation as u8),
+            Operation::InterfaceTokenAccountExtension(observation) => Some(observation as u8),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum MintExtensionObservation {
+    MetadataPointer = 0,
+    GroupPointer = 1,
+    GroupMemberPointer = 2,
+    TransferHook = 3,
+    MintCloseAuthority = 4,
+    PermanentDelegate = 5,
+    TransferFeeConfig = 6,
+    PausableConfig = 7,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum TokenAccountExtensionObservation {
+    TransferFeeAmount = 0,
+    CpiGuard = 1,
+    TransferHookAccount = 2,
+    PausableAccount = 3,
+}
+
+#[derive(Clone, Debug)]
+enum MintExtensionCase {
+    MetadataPointer(Vec<u8>),
+    GroupPointer(Vec<u8>),
+    GroupMemberPointer(Vec<u8>),
+    TransferHook(Vec<u8>),
+    MintCloseAuthority(Vec<u8>),
+    PermanentDelegate(Vec<u8>),
+    TransferFeeConfig(Vec<u8>),
+    PausableConfig(Vec<u8>),
+}
+
+#[derive(Clone, Debug)]
+enum TokenAccountExtensionCase {
+    TransferFeeAmount(Vec<u8>),
+    CpiGuard(Vec<u8>),
+    TransferHookAccount(Vec<u8>),
+    PausableAccount(Vec<u8>),
 }
 
 #[derive(Clone, Debug)]
@@ -271,7 +333,13 @@ fn run_tx(deploy_dir: &std::path::Path, version: OracleVersion, case: &Case) -> 
 
     let instruction_data = match version {
         OracleVersion::V1 => v1_instruction_data(case.operation),
-        OracleVersion::V2 => vec![case.operation.v2_discriminator()],
+        OracleVersion::V2 => {
+            let mut data = vec![case.operation.v2_discriminator()];
+            if let Some(argument) = case.operation.argument() {
+                data.push(argument);
+            }
+            data
+        }
     };
     let instruction = Instruction::new_with_bytes(
         program_id,
@@ -330,7 +398,11 @@ fn normalize_owner(owner: Pubkey) -> Pubkey {
 fn v1_instruction_data(operation: Operation) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(format!("global:{}", operation.v1_name()).as_bytes());
-    hasher.finalize()[..8].to_vec()
+    let mut data = hasher.finalize()[..8].to_vec();
+    if let Some(argument) = operation.argument() {
+        data.push(argument);
+    }
+    data
 }
 
 fn mint_case_strategy(
@@ -405,6 +477,84 @@ fn token_account_case_strategy(
                 output_writable,
             },
         )
+}
+
+fn mint_extension_case_strategy() -> impl Strategy<Value = Case> {
+    mint_extension_observation_strategy().prop_flat_map(|observation| {
+        (
+            Just(Operation::InterfaceMintExtension(observation)),
+            payer_lamports_strategy(),
+            account_case_strategy(
+                interface_owner_strategy(),
+                token_2022_mint_extension_data_strategy(observation),
+            ),
+            output_account_case_strategy(),
+            signer_strategy(),
+            writable_strategy(),
+            signer_strategy(),
+            writable_strategy(),
+        )
+            .prop_map(
+                |(
+                    operation,
+                    payer_lamports,
+                    target,
+                    output,
+                    target_signer,
+                    target_writable,
+                    output_signer,
+                    output_writable,
+                )| Case {
+                    operation,
+                    payer_lamports,
+                    target,
+                    output,
+                    target_signer,
+                    target_writable,
+                    output_signer,
+                    output_writable,
+                },
+            )
+    })
+}
+
+fn token_account_extension_case_strategy() -> impl Strategy<Value = Case> {
+    token_account_extension_observation_strategy().prop_flat_map(|observation| {
+        (
+            Just(Operation::InterfaceTokenAccountExtension(observation)),
+            payer_lamports_strategy(),
+            account_case_strategy(
+                interface_owner_strategy(),
+                token_2022_token_account_extension_data_strategy(observation),
+            ),
+            output_account_case_strategy(),
+            signer_strategy(),
+            writable_strategy(),
+            signer_strategy(),
+            writable_strategy(),
+        )
+            .prop_map(
+                |(
+                    operation,
+                    payer_lamports,
+                    target,
+                    output,
+                    target_signer,
+                    target_writable,
+                    output_signer,
+                    output_writable,
+                )| Case {
+                    operation,
+                    payer_lamports,
+                    target,
+                    output,
+                    target_signer,
+                    target_writable,
+                    output_signer,
+                    output_writable,
+                },
+            )
+    })
 }
 
 fn account_case_strategy(
@@ -766,6 +916,243 @@ fn token_2022_account_extension_strategy() -> impl Strategy<Value = Token2022Ext
     ]
 }
 
+fn mint_extension_observation_strategy() -> impl Strategy<Value = MintExtensionObservation> {
+    prop_oneof![
+        Just(MintExtensionObservation::MetadataPointer),
+        Just(MintExtensionObservation::GroupPointer),
+        Just(MintExtensionObservation::GroupMemberPointer),
+        Just(MintExtensionObservation::TransferHook),
+        Just(MintExtensionObservation::MintCloseAuthority),
+        Just(MintExtensionObservation::PermanentDelegate),
+        Just(MintExtensionObservation::TransferFeeConfig),
+        Just(MintExtensionObservation::PausableConfig),
+    ]
+}
+
+fn token_account_extension_observation_strategy(
+) -> impl Strategy<Value = TokenAccountExtensionObservation> {
+    prop_oneof![
+        Just(TokenAccountExtensionObservation::TransferFeeAmount),
+        Just(TokenAccountExtensionObservation::CpiGuard),
+        Just(TokenAccountExtensionObservation::TransferHookAccount),
+        Just(TokenAccountExtensionObservation::PausableAccount),
+    ]
+}
+
+fn token_2022_mint_extension_data_strategy(
+    observation: MintExtensionObservation,
+) -> BoxedStrategy<Vec<u8>> {
+    let present = token_2022_mint_present_extension_data_strategy(observation);
+
+    let absent = (
+        token_2022_mint_base_strategy(),
+        mint_extension_case_for_observation_strategy(alternate_mint_extension_observation(
+            observation,
+        )),
+    )
+        .prop_map(|(mint, extension)| {
+            token_2022_mint_data_with_extension_cases(mint, &[extension])
+        });
+
+    let corrupted = token_2022_mint_present_extension_data_strategy(observation)
+        .prop_flat_map(|data| corrupt_data_strategy(data));
+
+    prop_oneof![
+        5 => present,
+        3 => absent,
+        2 => arbitrary_data_strategy(),
+        2 => corrupted,
+    ]
+    .boxed()
+}
+
+fn token_2022_mint_present_extension_data_strategy(
+    observation: MintExtensionObservation,
+) -> impl Strategy<Value = Vec<u8>> {
+    (
+        token_2022_mint_base_strategy(),
+        mint_extension_case_for_observation_strategy(observation),
+        prop::bool::ANY,
+    )
+        .prop_map(move |(mint, observed_extension, include_extra)| {
+            let mut extensions = vec![observed_extension];
+            if include_extra {
+                extensions.push(mint_extension_case_for_observation(
+                    alternate_mint_extension_observation(observation),
+                    vec![0; 128],
+                ));
+            }
+            token_2022_mint_data_with_extension_cases(mint, &extensions)
+        })
+}
+
+fn token_2022_token_account_extension_data_strategy(
+    observation: TokenAccountExtensionObservation,
+) -> BoxedStrategy<Vec<u8>> {
+    let present = token_2022_token_account_present_extension_data_strategy(observation);
+
+    let absent = (
+        token_2022_account_base_strategy(),
+        token_account_extension_case_for_observation_strategy(
+            alternate_token_account_extension_observation(observation),
+        ),
+    )
+        .prop_map(|(account, extension)| {
+            token_2022_token_account_data_with_extension_cases(account, &[extension])
+        });
+
+    let corrupted = token_2022_token_account_present_extension_data_strategy(observation)
+        .prop_flat_map(|data| corrupt_data_strategy(data));
+
+    prop_oneof![
+        5 => present,
+        3 => absent,
+        2 => arbitrary_data_strategy(),
+        2 => corrupted,
+    ]
+    .boxed()
+}
+
+fn token_2022_token_account_present_extension_data_strategy(
+    observation: TokenAccountExtensionObservation,
+) -> impl Strategy<Value = Vec<u8>> {
+    (
+        token_2022_account_base_strategy(),
+        token_account_extension_case_for_observation_strategy(observation),
+        prop::bool::ANY,
+    )
+        .prop_map(move |(account, observed_extension, include_extra)| {
+            let mut extensions = vec![observed_extension];
+            if include_extra {
+                extensions.push(token_account_extension_case_for_observation(
+                    alternate_token_account_extension_observation(observation),
+                    vec![0; 128],
+                ));
+            }
+            token_2022_token_account_data_with_extension_cases(account, &extensions)
+        })
+}
+
+fn extension_payload_strategy() -> impl Strategy<Value = Vec<u8>> {
+    prop_oneof![
+        2 => Just(vec![0; 128]),
+        1 => Just(Vec::new()),
+        7 => prop::collection::vec(any::<u8>(), 0..128),
+    ]
+}
+
+fn mint_extension_case_for_observation_strategy(
+    observation: MintExtensionObservation,
+) -> impl Strategy<Value = MintExtensionCase> {
+    extension_payload_strategy()
+        .prop_map(move |payload| mint_extension_case_for_observation(observation, payload))
+}
+
+fn token_account_extension_case_for_observation_strategy(
+    observation: TokenAccountExtensionObservation,
+) -> impl Strategy<Value = TokenAccountExtensionCase> {
+    extension_payload_strategy()
+        .prop_map(move |payload| token_account_extension_case_for_observation(observation, payload))
+}
+
+fn mint_extension_case_for_observation(
+    observation: MintExtensionObservation,
+    payload: Vec<u8>,
+) -> MintExtensionCase {
+    match observation {
+        MintExtensionObservation::MetadataPointer => MintExtensionCase::MetadataPointer(payload),
+        MintExtensionObservation::GroupPointer => MintExtensionCase::GroupPointer(payload),
+        MintExtensionObservation::GroupMemberPointer => {
+            MintExtensionCase::GroupMemberPointer(payload)
+        }
+        MintExtensionObservation::TransferHook => MintExtensionCase::TransferHook(payload),
+        MintExtensionObservation::MintCloseAuthority => {
+            MintExtensionCase::MintCloseAuthority(payload)
+        }
+        MintExtensionObservation::PermanentDelegate => {
+            MintExtensionCase::PermanentDelegate(payload)
+        }
+        MintExtensionObservation::TransferFeeConfig => {
+            MintExtensionCase::TransferFeeConfig(payload)
+        }
+        MintExtensionObservation::PausableConfig => MintExtensionCase::PausableConfig(payload),
+    }
+}
+
+fn token_account_extension_case_for_observation(
+    observation: TokenAccountExtensionObservation,
+    payload: Vec<u8>,
+) -> TokenAccountExtensionCase {
+    match observation {
+        TokenAccountExtensionObservation::TransferFeeAmount => {
+            TokenAccountExtensionCase::TransferFeeAmount(payload)
+        }
+        TokenAccountExtensionObservation::CpiGuard => TokenAccountExtensionCase::CpiGuard(payload),
+        TokenAccountExtensionObservation::TransferHookAccount => {
+            TokenAccountExtensionCase::TransferHookAccount(payload)
+        }
+        TokenAccountExtensionObservation::PausableAccount => {
+            TokenAccountExtensionCase::PausableAccount(payload)
+        }
+    }
+}
+
+fn alternate_mint_extension_observation(
+    observation: MintExtensionObservation,
+) -> MintExtensionObservation {
+    match observation {
+        MintExtensionObservation::MetadataPointer => MintExtensionObservation::GroupPointer,
+        MintExtensionObservation::GroupPointer => MintExtensionObservation::MetadataPointer,
+        MintExtensionObservation::GroupMemberPointer => MintExtensionObservation::MetadataPointer,
+        MintExtensionObservation::TransferHook => MintExtensionObservation::MetadataPointer,
+        MintExtensionObservation::MintCloseAuthority => MintExtensionObservation::MetadataPointer,
+        MintExtensionObservation::PermanentDelegate => MintExtensionObservation::MetadataPointer,
+        MintExtensionObservation::TransferFeeConfig => MintExtensionObservation::MetadataPointer,
+        MintExtensionObservation::PausableConfig => MintExtensionObservation::MetadataPointer,
+    }
+}
+
+fn alternate_token_account_extension_observation(
+    observation: TokenAccountExtensionObservation,
+) -> TokenAccountExtensionObservation {
+    match observation {
+        TokenAccountExtensionObservation::TransferFeeAmount => {
+            TokenAccountExtensionObservation::CpiGuard
+        }
+        TokenAccountExtensionObservation::CpiGuard => {
+            TokenAccountExtensionObservation::TransferFeeAmount
+        }
+        TokenAccountExtensionObservation::TransferHookAccount => {
+            TokenAccountExtensionObservation::TransferFeeAmount
+        }
+        TokenAccountExtensionObservation::PausableAccount => {
+            TokenAccountExtensionObservation::TransferFeeAmount
+        }
+    }
+}
+
+fn corrupt_data_strategy(data: Vec<u8>) -> BoxedStrategy<Vec<u8>> {
+    if data.is_empty() {
+        return Just(data).boxed();
+    }
+    let len = data.len();
+    (
+        Just(data),
+        prop_oneof![
+            3 => 0usize..len,
+            1 => Just(<Token2022Mint as Token2022Pack>::LEN),
+            1 => Just(SplTokenAccount::LEN),
+        ],
+        any::<u8>(),
+    )
+        .prop_map(|(mut data, index, byte)| {
+            let index = index % data.len();
+            data[index] = byte;
+            data
+        })
+        .boxed()
+}
+
 fn token_2022_mint_data(
     mint: Token2022Mint,
     extension_types: &[Token2022ExtensionType],
@@ -836,6 +1223,28 @@ fn token_2022_mint_data(
             }
             _ => unreachable!(),
         }
+    }
+
+    data
+}
+
+fn token_2022_mint_data_with_extension_cases(
+    mint: Token2022Mint,
+    extensions: &[MintExtensionCase],
+) -> Vec<u8> {
+    let extension_types = extensions
+        .iter()
+        .map(MintExtensionCase::extension_type)
+        .collect::<Vec<_>>();
+    let len = Token2022ExtensionType::try_calculate_account_len::<Token2022Mint>(&extension_types)
+        .unwrap();
+    let mut data = vec![0; len];
+    Token2022Mint::pack(mint, &mut data[..<Token2022Mint as Token2022Pack>::LEN]).unwrap();
+    spl_token_2022_interface::extension::set_account_type::<Token2022Mint>(&mut data).unwrap();
+
+    let mut state = StateWithExtensionsMut::<Token2022Mint>::unpack(&mut data).unwrap();
+    for extension in extensions {
+        extension.init(&mut state);
     }
 
     data
@@ -916,6 +1325,122 @@ fn token_2022_token_account_data(
     data
 }
 
+fn token_2022_token_account_data_with_extension_cases(
+    account: Token2022Account,
+    extensions: &[TokenAccountExtensionCase],
+) -> Vec<u8> {
+    let extension_types = extensions
+        .iter()
+        .map(TokenAccountExtensionCase::extension_type)
+        .collect::<Vec<_>>();
+    let len =
+        Token2022ExtensionType::try_calculate_account_len::<Token2022Account>(&extension_types)
+            .unwrap();
+    let mut data = vec![0; len];
+    Token2022Account::pack(
+        account,
+        &mut data[..<Token2022Account as Token2022Pack>::LEN],
+    )
+    .unwrap();
+    spl_token_2022_interface::extension::set_account_type::<Token2022Account>(&mut data).unwrap();
+
+    let mut state = StateWithExtensionsMut::<Token2022Account>::unpack(&mut data).unwrap();
+    for extension in extensions {
+        extension.init(&mut state);
+    }
+
+    data
+}
+
+impl MintExtensionCase {
+    fn extension_type(&self) -> Token2022ExtensionType {
+        match self {
+            MintExtensionCase::MetadataPointer(_) => Token2022ExtensionType::MetadataPointer,
+            MintExtensionCase::GroupPointer(_) => Token2022ExtensionType::GroupPointer,
+            MintExtensionCase::GroupMemberPointer(_) => Token2022ExtensionType::GroupMemberPointer,
+            MintExtensionCase::TransferHook(_) => Token2022ExtensionType::TransferHook,
+            MintExtensionCase::MintCloseAuthority(_) => Token2022ExtensionType::MintCloseAuthority,
+            MintExtensionCase::PermanentDelegate(_) => Token2022ExtensionType::PermanentDelegate,
+            MintExtensionCase::TransferFeeConfig(_) => Token2022ExtensionType::TransferFeeConfig,
+            MintExtensionCase::PausableConfig(_) => Token2022ExtensionType::Pausable,
+        }
+    }
+
+    fn init(&self, state: &mut StateWithExtensionsMut<Token2022Mint>) {
+        match self {
+            MintExtensionCase::MetadataPointer(payload) => {
+                init_extension_bytes::<Token2022Mint, MetadataPointer>(state, payload)
+            }
+            MintExtensionCase::GroupPointer(payload) => {
+                init_extension_bytes::<Token2022Mint, GroupPointer>(state, payload)
+            }
+            MintExtensionCase::GroupMemberPointer(payload) => {
+                init_extension_bytes::<Token2022Mint, GroupMemberPointer>(state, payload)
+            }
+            MintExtensionCase::TransferHook(payload) => {
+                init_extension_bytes::<Token2022Mint, TransferHook>(state, payload)
+            }
+            MintExtensionCase::MintCloseAuthority(payload) => {
+                init_extension_bytes::<Token2022Mint, MintCloseAuthority>(state, payload)
+            }
+            MintExtensionCase::PermanentDelegate(payload) => {
+                init_extension_bytes::<Token2022Mint, PermanentDelegate>(state, payload)
+            }
+            MintExtensionCase::TransferFeeConfig(payload) => {
+                init_extension_bytes::<Token2022Mint, TransferFeeConfig>(state, payload)
+            }
+            MintExtensionCase::PausableConfig(payload) => {
+                init_extension_bytes::<Token2022Mint, PausableConfig>(state, payload)
+            }
+        }
+    }
+}
+
+impl TokenAccountExtensionCase {
+    fn extension_type(&self) -> Token2022ExtensionType {
+        match self {
+            TokenAccountExtensionCase::TransferFeeAmount(_) => {
+                Token2022ExtensionType::TransferFeeAmount
+            }
+            TokenAccountExtensionCase::CpiGuard(_) => Token2022ExtensionType::CpiGuard,
+            TokenAccountExtensionCase::TransferHookAccount(_) => {
+                Token2022ExtensionType::TransferHookAccount
+            }
+            TokenAccountExtensionCase::PausableAccount(_) => {
+                Token2022ExtensionType::PausableAccount
+            }
+        }
+    }
+
+    fn init(&self, state: &mut StateWithExtensionsMut<Token2022Account>) {
+        match self {
+            TokenAccountExtensionCase::TransferFeeAmount(payload) => {
+                init_extension_bytes::<Token2022Account, TransferFeeAmount>(state, payload)
+            }
+            TokenAccountExtensionCase::CpiGuard(payload) => {
+                init_extension_bytes::<Token2022Account, CpiGuard>(state, payload)
+            }
+            TokenAccountExtensionCase::TransferHookAccount(payload) => {
+                init_extension_bytes::<Token2022Account, TransferHookAccount>(state, payload)
+            }
+            TokenAccountExtensionCase::PausableAccount(payload) => {
+                init_extension_bytes::<Token2022Account, PausableAccount>(state, payload)
+            }
+        }
+    }
+}
+
+fn init_extension_bytes<S, T>(state: &mut StateWithExtensionsMut<S>, payload: &[u8])
+where
+    S: spl_token_2022_interface::extension::BaseState,
+    T: spl_token_2022_interface::extension::Extension + anchor_lang_v2::bytemuck::Pod + Default,
+{
+    state.init_extension::<T>(true).unwrap();
+    let extension_data = state.get_extension_bytes_mut::<T>().unwrap();
+    let copy_len = extension_data.len().min(payload.len());
+    extension_data[..copy_len].copy_from_slice(&payload[..copy_len]);
+}
+
 fn malformed_mint_coption_data_strategy() -> impl Strategy<Value = Vec<u8>> {
     (0usize..2, invalid_coption_tag_strategy()).prop_map(|(which, tag)| {
         let mut data = vec![0; SplMint::LEN];
@@ -956,15 +1481,22 @@ fn assert_v1_v2_equivalent(deploy_dir: &std::path::Path, case: &Case) -> Result<
     Ok(())
 }
 
+fn equivalence_proptest_cases() -> u32 {
+    std::env::var("ANCHOR_EQUIVALENCE_PROPTEST_CASES")
+        .ok()
+        .and_then(|cases| cases.parse().ok())
+        .unwrap_or(32 * 1024)
+}
+
 proptest! {
     #![proptest_config(ProptestConfig {
-        cases: 32 * 1024,
+        cases: equivalence_proptest_cases(),
         failure_persistence: None,
         ..ProptestConfig::default()
     })]
 
     #[test]
-    #[ignore = "runs a 32k-case fuzz-style SPL v1/v2 equivalence pass; run explicitly with `-- --ignored`"]
+    #[ignore = "runs a fuzz-style SPL v1/v2 equivalence pass; defaults to 32k cases unless ANCHOR_EQUIVALENCE_PROPTEST_CASES is set"]
     fn spl_v1_v2_strict_mint_has_equivalent_tx_results(
         case in mint_case_strategy(Operation::StrictMint, strict_owner_strategy()),
     ) {
@@ -973,7 +1505,7 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "runs a 32k-case fuzz-style SPL v1/v2 equivalence pass; run explicitly with `-- --ignored`"]
+    #[ignore = "runs a fuzz-style SPL v1/v2 equivalence pass; defaults to 32k cases unless ANCHOR_EQUIVALENCE_PROPTEST_CASES is set"]
     fn spl_v1_v2_strict_token_account_has_equivalent_tx_results(
         case in token_account_case_strategy(Operation::StrictTokenAccount, strict_owner_strategy()),
     ) {
@@ -982,7 +1514,7 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "runs a 32k-case fuzz-style SPL v1/v2 equivalence pass; run explicitly with `-- --ignored`"]
+    #[ignore = "runs a fuzz-style SPL v1/v2 equivalence pass; defaults to 32k cases unless ANCHOR_EQUIVALENCE_PROPTEST_CASES is set"]
     fn spl_v1_v2_interface_mint_has_equivalent_tx_results(
         case in mint_case_strategy(Operation::InterfaceMint, interface_owner_strategy()),
     ) {
@@ -991,9 +1523,27 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "runs a 32k-case fuzz-style SPL v1/v2 equivalence pass; run explicitly with `-- --ignored`"]
+    #[ignore = "runs a fuzz-style SPL v1/v2 equivalence pass; defaults to 32k cases unless ANCHOR_EQUIVALENCE_PROPTEST_CASES is set"]
     fn spl_v1_v2_interface_token_account_has_equivalent_tx_results(
         case in token_account_case_strategy(Operation::InterfaceTokenAccount, interface_owner_strategy()),
+    ) {
+        let deploy_dir = setup();
+        assert_v1_v2_equivalent(&deploy_dir, &case)?;
+    }
+
+    #[test]
+    #[ignore = "runs a fuzz-style SPL v1/v2 equivalence pass; defaults to 32k cases unless ANCHOR_EQUIVALENCE_PROPTEST_CASES is set"]
+    fn spl_v1_v2_interface_mint_extensions_have_equivalent_tx_results(
+        case in mint_extension_case_strategy(),
+    ) {
+        let deploy_dir = setup();
+        assert_v1_v2_equivalent(&deploy_dir, &case)?;
+    }
+
+    #[test]
+    #[ignore = "runs a fuzz-style SPL v1/v2 equivalence pass; defaults to 32k cases unless ANCHOR_EQUIVALENCE_PROPTEST_CASES is set"]
+    fn spl_v1_v2_interface_token_account_extensions_have_equivalent_tx_results(
+        case in token_account_extension_case_strategy(),
     ) {
         let deploy_dir = setup();
         assert_v1_v2_equivalent(&deploy_dir, &case)?;
