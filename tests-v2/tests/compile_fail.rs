@@ -4,6 +4,56 @@ fn compile_fail_case(name: &str, source: &str, snippets: &[&str]) {
     compile_fail_case_with_features(name, source, &[], snippets);
 }
 
+fn compile_fail_build_case(name: &str, source: &str, snippets: &[&str]) {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let crate_dir = manifest_dir.join("target/compile-fail").join(name);
+    let src_dir = crate_dir.join("src");
+    fs::create_dir_all(&src_dir).unwrap();
+
+    let anchor_lang_v2 = manifest_dir
+        .parent()
+        .expect("tests-v2 should live under the workspace root")
+        .join("lang-v2");
+
+    fs::write(
+        crate_dir.join("Cargo.toml"),
+        format!(
+            r#"[package]
+name = "{name}"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anchor-lang-v2 = {{ path = "{}" }}
+
+[workspace]
+"#,
+            anchor_lang_v2.display()
+        ),
+    )
+    .unwrap();
+    fs::write(src_dir.join("lib.rs"), source).unwrap();
+
+    let output = Command::new("cargo")
+        .args(["build", "--offline", "--manifest-path"])
+        .arg(crate_dir.join("Cargo.toml"))
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run cargo build for {name}: {err}"));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "{name} unexpectedly compiled successfully"
+    );
+    for snippet in snippets {
+        assert!(
+            stderr.contains(snippet),
+            "{name} stderr did not contain {snippet:?}\n\nstderr:\n{stderr}"
+        );
+    }
+}
+
 fn compile_fail_case_with_features(name: &str, source: &str, features: &[&str], snippets: &[&str]) {
     compile_case(name, source, features, &[], false, snippets);
 }
@@ -1066,6 +1116,86 @@ pub struct Close {
 }
 "#,
         &["mut must be provided when using close"],
+    );
+}
+
+#[test]
+fn slab_overaligned_header_does_not_compile() {
+    compile_fail_build_case(
+        "slab_overaligned_header",
+        r#"
+use anchor_lang_v2::{
+    accounts::{Slab, SlabSchema},
+    prelude::*,
+    AccountView,
+};
+
+#[repr(C, align(16))]
+#[derive(Clone, Copy)]
+pub struct BadHeader {
+    bytes: [u8; 16],
+}
+
+unsafe impl anchor_lang_v2::bytemuck::Zeroable for BadHeader {}
+unsafe impl anchor_lang_v2::bytemuck::Pod for BadHeader {}
+
+impl SlabSchema for BadHeader {
+    const DATA_OFFSET: usize = 0;
+
+    fn validate(
+        _view: &AccountView,
+        _data: &[u8],
+        _program_id: &Address,
+    ) -> core::result::Result<(), ProgramError> {
+        Ok(())
+    }
+}
+
+pub unsafe fn load_bad(view: AccountView, program_id: &Address) {
+    let _ = <Slab<BadHeader> as AnchorAccount>::load_mut(view, program_id);
+}
+"#,
+        &["Slab header alignment exceeds Solana's 8-byte account data alignment"],
+    );
+}
+
+#[test]
+fn slab_misaligned_header_offset_does_not_compile() {
+    compile_fail_build_case(
+        "slab_misaligned_header_offset",
+        r#"
+use anchor_lang_v2::{
+    accounts::{Slab, SlabSchema},
+    prelude::*,
+    AccountView,
+};
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct BadHeader {
+    value: u64,
+}
+
+unsafe impl anchor_lang_v2::bytemuck::Zeroable for BadHeader {}
+unsafe impl anchor_lang_v2::bytemuck::Pod for BadHeader {}
+
+impl SlabSchema for BadHeader {
+    const DATA_OFFSET: usize = 1;
+
+    fn validate(
+        _view: &AccountView,
+        _data: &[u8],
+        _program_id: &Address,
+    ) -> core::result::Result<(), ProgramError> {
+        Ok(())
+    }
+}
+
+pub unsafe fn load_bad(view: AccountView, program_id: &Address) {
+    let _ = <Slab<BadHeader> as AnchorAccount>::load_mut(view, program_id);
+}
+"#,
+        &["Slab header DATA_OFFSET is not aligned for the header type"],
     );
 }
 

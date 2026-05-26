@@ -193,6 +193,23 @@ where
         }
     };
 
+    #[inline(always)]
+    fn assert_header_alignment() {
+        // Solana guarantees account data buffers are 8-byte aligned. Headers
+        // demanding stricter alignment, or schemas that place the header at a
+        // misaligned offset, would make the cached `header_ptr` invalid.
+        const {
+            assert!(
+                core::mem::align_of::<H>() <= 8,
+                "Slab header alignment exceeds Solana's 8-byte account data alignment",
+            );
+            assert!(
+                H::DATA_OFFSET % core::mem::align_of::<H>() == 0,
+                "Slab header DATA_OFFSET is not aligned for the header type",
+            );
+        };
+    }
+
     /// Returns the account's address. Always safe regardless of borrow state.
     #[inline(always)]
     pub fn address(&self) -> &Address {
@@ -227,15 +244,7 @@ where
 
     #[inline(always)]
     fn from_ref(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
-        // Solana guarantees account data buffers are 8-byte aligned. Headers
-        // demanding stricter alignment would produce misaligned reads through
-        // the cached `header_ptr`. Caught at monomorphization.
-        const {
-            assert!(
-                core::mem::align_of::<H>() <= 8,
-                "Slab header alignment exceeds Solana's 8-byte account data alignment",
-            )
-        };
+        Self::assert_header_alignment();
         // SAFETY: AccountView's data pointer is valid for the instruction lifetime
         // (Solana runtime guarantee). Duplicate mutable accounts are rejected at
         // deserialization, so no aliasing can occur.
@@ -263,6 +272,7 @@ where
     /// no validation. Under `guardrails`, includes a minimum-length check.
     #[inline(always)]
     fn build_mutable(view: AccountView) -> Result<Self, ProgramError> {
+        Self::assert_header_alignment();
         // SAFETY: AccountView's data pointer is valid for the instruction lifetime.
         // Duplicate mutable accounts are rejected at deserialization.
         #[cfg(feature = "guardrails")]
