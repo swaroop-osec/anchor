@@ -1038,6 +1038,38 @@ pub struct Close {
 }
 
 #[test]
+fn close_requires_mut_on_source_account() {
+    compile_fail_case(
+        "close_requires_mut_on_source_account",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod close_requires_mut_on_source_account {
+    use super::*;
+
+    #[discrim = 0]
+    pub fn close(ctx: &mut Context<Close>) -> Result<()> {
+        let _ = ctx;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Close {
+    #[account(close = receiver)]
+    pub data: UncheckedAccount,
+    #[account(mut)]
+    pub receiver: UncheckedAccount,
+}
+"#,
+        &["mut must be provided when using close"],
+    );
+}
+
+#[test]
 fn realloc_on_unchecked_account_does_not_compile() {
     compile_fail_case(
         "realloc_on_unchecked_account",

@@ -1142,6 +1142,12 @@ pub fn parse_field(
     let field_name = field.ident.as_ref().expect("named field");
     let field_ty = &field.ty;
     let attrs = parse_account_attrs(&field.attrs)?;
+    if attrs.close.is_some() && !attrs.is_mut {
+        return Err(syn::Error::new(
+            field_name.span(),
+            "mut must be provided when using close",
+        ));
+    }
     let associated_token = parse_associated_token_init(&attrs, field_names)?;
 
     let option_inner = extract_option_inner(field_ty);
@@ -2033,6 +2039,16 @@ mod tests {
         assert!(parsed_attrs.seeds.is_some());
         assert!(parsed_attrs.bump.is_some());
         assert!(parsed_attrs.is_signer);
+    }
+
+    #[test]
+    fn close_does_not_imply_mutability() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(close = receiver)]
+        )];
+        let parsed_attrs = parse_account_attrs(&attrs).unwrap();
+        assert!(!parsed_attrs.is_mut);
+        assert_eq!(parsed_attrs.close.unwrap().to_string(), "receiver");
     }
 
     #[test]
