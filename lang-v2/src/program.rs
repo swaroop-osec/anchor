@@ -39,6 +39,7 @@ pub fn invoke_signed<'a, 'seeds>(
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
 ) -> ProgramResult {
     validate_handles(instruction, account_handles)?;
+    validate_handle_borrows(instruction, account_handles)?;
 
     // SAFETY: Validation above proves every instruction account has a matching
     // handle, writable metas use writable handles, and AccountView borrow state
@@ -104,7 +105,10 @@ pub unsafe fn invoke_signed_unchecked<'a, 'seeds>(
     Ok(())
 }
 
-fn validate_handles(instruction: &Instruction, account_handles: &[CpiHandle<'_>]) -> ProgramResult {
+pub(crate) fn validate_handles(
+    instruction: &Instruction,
+    account_handles: &[CpiHandle<'_>],
+) -> ProgramResult {
     if account_handles.len() < instruction.accounts.len() {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
@@ -118,6 +122,18 @@ fn validate_handles(instruction: &Instruction, account_handles: &[CpiHandle<'_>]
             if !handle.is_writable() {
                 return Err(ProgramError::InvalidArgument);
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_handle_borrows(
+    instruction: &Instruction,
+    account_handles: &[CpiHandle<'_>],
+) -> ProgramResult {
+    for (meta, handle) in instruction.accounts.iter().zip(account_handles) {
+        if meta.is_writable {
             handle.account_view().check_borrow_mut()?;
         } else {
             handle.account_view().check_borrow()?;

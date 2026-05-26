@@ -70,6 +70,25 @@ pub mod custom_constraints {
     pub fn handle_boxed_close(_ctx: &mut Context<HandleBoxedClose>) -> Result<()> {
         Ok(())
     }
+
+    /// Optional variant of `handle_init`, proving `AccountConstraint::init`
+    /// fires when `Option<T>` creates `Some(T)`.
+    pub fn handle_optional_init(_ctx: &mut Context<HandleOptionalInit>) -> Result<()> {
+        Ok(())
+    }
+
+    /// Optional boxed variant of `handle_init`.
+    pub fn handle_optional_boxed_init(_ctx: &mut Context<HandleOptionalBoxedInit>) -> Result<()> {
+        Ok(())
+    }
+
+    /// Optional `init_if_needed` variant. The create branch must run `init`
+    /// before the later `check`, and the exist branch must only run `check`.
+    pub fn handle_optional_init_if_needed(
+        _ctx: &mut Context<HandleOptionalInitIfNeeded>,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -251,4 +270,53 @@ pub struct HandleBoxedClose {
     pub counter: Box<BorshAccount<Counter>>,
     #[account(mut)]
     pub receiver: SystemAccount,
+}
+
+#[derive(Accounts)]
+pub struct HandleOptionalInit {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + 8,
+        seeds = [b"optional-counter"],
+        bump,
+        counter_ns::init_value = 7u64,
+    )]
+    pub counter: Option<BorshAccount<Counter>>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct HandleOptionalBoxedInit {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + 8,
+        seeds = [b"optional-boxed-counter"],
+        bump,
+        counter_ns::init_value = 11u64,
+    )]
+    pub counter: Option<Box<BorshAccount<Counter>>>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct HandleOptionalInitIfNeeded {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = 8 + 8,
+        seeds = [b"optional-init-if-needed-counter"],
+        bump,
+        counter_ns::init_value = 13u64,
+        counter_ns::min_value = 1u64,
+    )]
+    pub counter: Option<BorshAccount<Counter>>,
+    pub system_program: Program<System>,
 }

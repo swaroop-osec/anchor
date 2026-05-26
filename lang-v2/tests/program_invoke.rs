@@ -7,10 +7,15 @@ use {
             program,
         },
         testing::{AccountBuffer, MIN_ACCOUNT_BUF},
-        Address, CpiHandle, ToCpiHandle, ToCpiHandleMut,
+        Address, CpiContext, CpiHandle, ToCpiAccounts, ToCpiHandle, ToCpiHandleMut,
     },
     solana_program_error::ProgramError,
 };
+
+#[derive(ToCpiAccounts)]
+struct ReadonlyCpi<'a> {
+    account: CpiHandle<'a>,
+}
 
 fn account_view(address: [u8; 32], writable: bool) -> AccountBuffer<{ MIN_ACCOUNT_BUF + 8 }> {
     let buffer = AccountBuffer::new();
@@ -86,6 +91,27 @@ fn checked_invoke_rejects_readonly_handle_for_writable_meta() {
     let handles = [CpiHandle::readonly(&view)];
 
     let err = program::invoke(&ix, &handles).unwrap_err();
+
+    assert_eq!(err, ProgramError::InvalidArgument);
+}
+
+#[test]
+fn invoke_ix_rejects_readonly_handle_for_writable_meta() {
+    let program = Address::new_from_array([7; 32]);
+    let buffer = account_view([1; 32], true);
+    let view = unsafe { buffer.view() };
+    let accounts = ReadonlyCpi {
+        account: view.to_cpi_handle(),
+    };
+    let ix = Instruction {
+        program_id: program,
+        accounts: vec![AccountMeta::new(*view.address(), false)],
+        data: vec![],
+    };
+
+    let err = CpiContext::new(&program, accounts)
+        .invoke_ix(ix)
+        .unwrap_err();
 
     assert_eq!(err, ProgramError::InvalidArgument);
 }

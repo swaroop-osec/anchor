@@ -1303,13 +1303,17 @@ pub fn parse_field(
             } else {
                 emit_init_body(field_name, inner_ty, &attrs, field_names, true)
             };
-            quote! { Some({ #init_body }) }
+            let init_body_with_constraints =
+                wrap_init_body_with_constraints(inner_ty, &attrs, &init_body);
+            quote! { Some({ #init_body_with_constraints }) }
         } else if attrs.is_init_if_needed {
             let init_body = if let Some(ref at) = associated_token {
                 emit_associated_token_init_body(inner_ty, &attrs, at, field_offsets, true)?
             } else {
                 emit_init_body(field_name, inner_ty, &attrs, field_names, true)
             };
+            let init_body_with_constraints =
+                wrap_init_body_with_constraints(inner_ty, &attrs, &init_body);
             quote! {
                 if __target.data_len() > 0
                     && !__target.owned_by(&anchor_lang_v2::programs::System::id())
@@ -1322,7 +1326,7 @@ pub fn parse_field(
                         )?
                     })
                 } else {
-                    Some({ #init_body })
+                    Some({ #init_body_with_constraints })
                 }
             }
         } else if attrs.is_zeroed {
@@ -1798,10 +1802,15 @@ pub fn parse_field(
         };
 
         if nc.is_update {
+            let update_target = if is_optional {
+                quote! { #field_name }
+            } else {
+                quote! { &mut #field_name }
+            };
             // `update(...)` — fires regardless of init state.
             constraints.push(quote! {
                 <#ns::#key as anchor_lang_v2::AccountConstraint<_>>::update(
-                    &mut #field_name, #expected,
+                    #update_target, #expected,
                 )?;
             });
             continue;
@@ -1819,9 +1828,14 @@ pub fn parse_field(
         // handled by `AccountInitialize::Params`, and the values are
         // authoritative by construction.
         if !attrs.is_init {
+            let check_target = if is_optional {
+                quote! { &*#field_name }
+            } else {
+                quote! { &#field_name }
+            };
             constraints.push(quote! {
                 <#ns::#key as anchor_lang_v2::AccountConstraint<_>>::check(
-                    &#field_name, #expected,
+                    #check_target, #expected,
                 )?;
             });
         }

@@ -152,12 +152,12 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
 
         let mut handles = self.accounts.to_cpi_handles();
         handles.extend(self.remaining_accounts.iter().copied());
+        crate::program::validate_handles(&ix, &handles)?;
 
         // SAFETY: `CpiContext` already ties every handle to a Rust borrow of
-        // the caller's typed account. The checked path would reject Slab-backed
-        // mutable accounts because their Pinocchio borrow flag intentionally
-        // remains set while the wrapper is alive. Reuse the same unchecked CPI
-        // path as `invoke` instead of re-running AccountView borrow checks here.
+        // the caller's typed account. The account metas have been validated
+        // above; use unchecked CPI to preserve the Slab-backed borrow-state
+        // contract during invocation.
         unsafe { crate::program::invoke_signed_unchecked(&ix, &handles, self.signer_seeds) }
     }
 }

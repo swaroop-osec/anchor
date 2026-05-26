@@ -30,6 +30,18 @@ fn boxed_counter_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"boxed-counter"], &program_id()).0
 }
 
+fn optional_counter_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"optional-counter"], &program_id()).0
+}
+
+fn optional_boxed_counter_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"optional-boxed-counter"], &program_id()).0
+}
+
+fn optional_init_if_needed_counter_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"optional-init-if-needed-counter"], &program_id()).0
+}
+
 fn setup() -> (LiteSVM, Keypair) {
     let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let deploy_dir = test_dir.join("target/deploy");
@@ -80,6 +92,17 @@ fn init_boxed_counter(svm: &mut LiteSVM, payer: &Keypair) {
         .expect("handle_boxed_init should succeed");
 }
 
+fn init_optional_if_needed_counter(svm: &mut LiteSVM, payer: &Keypair) {
+    let data = custom_constraints::instruction::HandleOptionalInitIfNeeded {}.data();
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(optional_init_if_needed_counter_pda(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), data, metas, payer, &[])
+        .expect("handle_optional_init_if_needed should succeed");
+}
+
 // ---- `init` method ---------------------------------------------------------
 
 #[test]
@@ -99,6 +122,38 @@ fn boxed_init_hook_stamps_value_on_creation() {
     init_boxed_counter(&mut svm, &payer);
 
     assert_eq!(read_counter_value(&svm, &boxed_counter_pda()), 9);
+}
+
+#[test]
+fn optional_init_hook_stamps_value_on_creation() {
+    let (mut svm, payer) = setup();
+
+    let data = custom_constraints::instruction::HandleOptionalInit {}.data();
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(optional_counter_pda(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("handle_optional_init should succeed");
+
+    assert_eq!(read_counter_value(&svm, &optional_counter_pda()), 7);
+}
+
+#[test]
+fn optional_boxed_init_hook_stamps_value_on_creation() {
+    let (mut svm, payer) = setup();
+
+    let data = custom_constraints::instruction::HandleOptionalBoxedInit {}.data();
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(optional_boxed_counter_pda(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("handle_optional_boxed_init should succeed");
+
+    assert_eq!(read_counter_value(&svm, &optional_boxed_counter_pda()), 11);
 }
 
 // ---- `check` method --------------------------------------------------------
@@ -259,6 +314,18 @@ fn init_if_needed_create_branch_runs_init_and_check() {
 }
 
 #[test]
+fn optional_init_if_needed_create_branch_runs_init_and_check() {
+    let (mut svm, payer) = setup();
+
+    init_optional_if_needed_counter(&mut svm, &payer);
+
+    assert_eq!(
+        read_counter_value(&svm, &optional_init_if_needed_counter_pda()),
+        13
+    );
+}
+
+#[test]
 fn init_if_needed_exist_branch_runs_check() {
     let (mut svm, payer) = setup();
     // Pre-populate the counter with a value that satisfies the check.
@@ -297,6 +364,26 @@ fn init_if_needed_exist_branch_runs_check() {
 }
 
 #[test]
+fn optional_init_if_needed_exist_branch_runs_check_without_reinit() {
+    let (mut svm, payer) = setup();
+    init_optional_if_needed_counter(&mut svm, &payer);
+
+    let pda = optional_init_if_needed_counter_pda();
+    let mut account = svm.get_account(&pda).expect("counter exists");
+    account.data[8..16].copy_from_slice(&42u64.to_le_bytes());
+    svm.set_account(pda, account).unwrap();
+
+    svm.expire_blockhash();
+    init_optional_if_needed_counter(&mut svm, &payer);
+
+    assert_eq!(
+        read_counter_value(&svm, &pda),
+        42,
+        "exist branch must not re-run init (would have overwritten 42 -> 13)",
+    );
+}
+
+#[test]
 fn init_if_needed_exist_branch_rejects_failed_check_without_reinit() {
     let (mut svm, payer) = setup();
     init_counter(&mut svm, &payer);
@@ -320,6 +407,35 @@ fn init_if_needed_exist_branch_rejects_failed_check_without_reinit() {
     assert!(
         result.is_err(),
         "init_if_needed exist branch must reject when check() fails"
+    );
+    assert_eq!(
+        read_counter_value(&svm, &pda),
+        0,
+        "failed exist-branch check must not re-run init or mutate data"
+    );
+}
+
+#[test]
+fn optional_init_if_needed_exist_branch_rejects_failed_check_without_reinit() {
+    let (mut svm, payer) = setup();
+    init_optional_if_needed_counter(&mut svm, &payer);
+
+    let pda = optional_init_if_needed_counter_pda();
+    let mut account = svm.get_account(&pda).expect("counter exists");
+    account.data[8..16].copy_from_slice(&0u64.to_le_bytes());
+    svm.set_account(pda, account).unwrap();
+
+    svm.expire_blockhash();
+    let data = custom_constraints::instruction::HandleOptionalInitIfNeeded {}.data();
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(pda, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
+    assert!(
+        result.is_err(),
+        "optional init_if_needed exist branch must reject when check() fails"
     );
     assert_eq!(
         read_counter_value(&svm, &pda),

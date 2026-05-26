@@ -566,9 +566,9 @@ pub struct RevokeCollectionAuthority<'info> {
 #[derive(ToCpiAccounts)]
 pub struct SetCollectionSize<'info> {
     pub metadata: CpiHandleMut<'info>,
-    pub mint: CpiHandle<'info>,
     #[signer]
     pub update_authority: CpiHandleMut<'info>,
+    pub mint: CpiHandle<'info>,
 }
 
 #[derive(ToCpiAccounts)]

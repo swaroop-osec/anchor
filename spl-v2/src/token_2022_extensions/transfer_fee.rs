@@ -114,7 +114,7 @@ pub fn transfer_checked_with_fee<'a>(
 
 pub fn harvest_withheld_tokens_to_mint<'a>(
     ctx: CpiContext<'a, HarvestWithheldTokensToMint<'a>>,
-    sources: Vec<CpiHandle<'a>>,
+    sources: Vec<CpiHandleMut<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -125,7 +125,7 @@ pub fn harvest_withheld_tokens_to_mint<'a>(
         ctx.accounts.mint.address(),
         &source_refs,
     )?;
-    let mut remaining_accounts = sources;
+    let mut remaining_accounts: Vec<CpiHandle<'a>> = sources.into_iter().map(Into::into).collect();
     remaining_accounts.extend(ctx.remaining_accounts.iter().copied());
     ctx.with_remaining_accounts(remaining_accounts)
         .invoke_ix(ix)
@@ -149,7 +149,7 @@ pub fn withdraw_withheld_tokens_from_mint<'a>(
 
 pub fn withdraw_withheld_tokens_from_accounts<'a>(
     ctx: CpiContext<'a, WithdrawWithheldTokensFromAccounts<'a>>,
-    sources: Vec<CpiHandle<'a>>,
+    sources: Vec<CpiHandleMut<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
     let program = *ctx.program;
@@ -164,7 +164,7 @@ pub fn withdraw_withheld_tokens_from_accounts<'a>(
             &[],
             &source_refs,
         )?;
-    let mut remaining_accounts = sources;
+    let mut remaining_accounts: Vec<CpiHandle<'a>> = sources.into_iter().map(Into::into).collect();
     remaining_accounts.extend(ctx.remaining_accounts.iter().copied());
     ctx.with_remaining_accounts(remaining_accounts)
         .invoke_ix(ix)
