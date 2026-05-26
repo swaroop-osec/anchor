@@ -1,94 +1,44 @@
 use {
     super::common::validate_token_2022_program,
-    alloc::{string::String, vec, vec::Vec},
+    alloc::string::String,
     anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
-    pinocchio::{address::Address, instruction::InstructionAccount},
+    pinocchio::address::Address,
     solana_program_error::ProgramError,
     spl_pod::optional_keys::OptionalNonZeroPubkey,
 };
 
 pub use spl_token_metadata_interface::state::Field;
 
+#[derive(ToCpiAccounts)]
 pub struct TokenMetadataInitialize<'a> {
     pub metadata: CpiHandleMut<'a>,
     pub update_authority: CpiHandle<'a>,
-    pub mint_authority: CpiHandle<'a>,
     pub mint: CpiHandle<'a>,
+    #[signer]
+    pub mint_authority: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for TokenMetadataInitialize<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.metadata.address()),
-            InstructionAccount::new(self.update_authority.address(), false, false),
-            InstructionAccount::new(self.mint.address(), false, false),
-            InstructionAccount::readonly_signer(self.mint_authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![
-            self.metadata.into(),
-            self.update_authority,
-            self.mint,
-            self.mint_authority,
-        ]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct TokenMetadataUpdateAuthority<'a> {
     pub metadata: CpiHandleMut<'a>,
+    #[signer]
     pub current_authority: CpiHandle<'a>,
+    #[account_meta(skip)]
     pub new_authority: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for TokenMetadataUpdateAuthority<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.metadata.address()),
-            InstructionAccount::readonly_signer(self.current_authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.metadata.into(), self.current_authority]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct TokenMetadataUpdateField<'a> {
     pub metadata: CpiHandleMut<'a>,
+    #[signer]
     pub update_authority: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for TokenMetadataUpdateField<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.metadata.address()),
-            InstructionAccount::readonly_signer(self.update_authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.metadata.into(), self.update_authority]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct TokenMetadataRemoveKey<'a> {
     pub metadata: CpiHandleMut<'a>,
+    #[signer]
     pub update_authority: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for TokenMetadataRemoveKey<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.metadata.address()),
-            InstructionAccount::readonly_signer(self.update_authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.metadata.into(), self.update_authority]
-    }
 }
 
 pub fn token_metadata_initialize<'a>(

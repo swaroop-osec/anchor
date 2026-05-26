@@ -10,39 +10,18 @@ extern crate alloc;
 pub use mpl_token_metadata;
 
 use {
-    alloc::{vec, vec::Vec},
     anchor_lang_v2::{
-        AccountDeserialize, AnchorAccount, CpiContext, CpiHandle, Id, IdlAccountType, Result,
-        ToCpiAccounts,
+        AccountDeserialize, AnchorAccount, CpiContext, CpiHandle, CpiHandleMut, Id, IdlAccountType,
+        Result, ToCpiAccounts,
     },
     core::ops::Deref,
-    pinocchio::{account::AccountView, instruction::InstructionAccount},
+    pinocchio::account::AccountView,
     solana_address::Address,
     solana_program_error::ProgramError,
     solana_pubkey::Pubkey,
 };
 
 pub const ID: Address = Address::from_str_const("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
-
-macro_rules! impl_cpi_accounts {
-    ($name:ident { $($field:ident),* $(,)? }) => {
-        impl<'a> ToCpiAccounts<'a> for $name<'a> {
-            fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-                vec![$(
-                    InstructionAccount::new(
-                        self.$field.address(),
-                        self.$field.is_writable(),
-                        self.$field.is_signer(),
-                    ),
-                )*]
-            }
-
-            fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-                vec![$(self.$field),*]
-            }
-        }
-    };
-}
 pub fn approve_collection_authority<'info>(
     ctx: CpiContext<'info, ApproveCollectionAuthority<'info>>,
 ) -> Result<()> {
@@ -53,7 +32,7 @@ pub fn approve_collection_authority<'info>(
         new_collection_authority: *ctx.accounts.new_collection_authority.address(),
         payer: *ctx.accounts.payer.address(),
         rent: None,
-        system_program: anchor_lang_v2::programs::System::id(),
+        system_program: *ctx.accounts.system_program.address(),
         update_authority: *ctx.accounts.update_authority.address(),
     }
     .instruction();
@@ -133,7 +112,6 @@ pub fn create_metadata_accounts_v3<'info>(
     ctx: CpiContext<'info, CreateMetadataAccountsV3<'info>>,
     data: mpl_token_metadata::types::DataV2,
     is_mutable: bool,
-    update_authority_is_signer: bool,
     collection_details: Option<mpl_token_metadata::types::CollectionDetails>,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::CreateMetadataAccountV3 {
@@ -142,10 +120,10 @@ pub fn create_metadata_accounts_v3<'info>(
         mint_authority: *ctx.accounts.mint_authority.address(),
         payer: *ctx.accounts.payer.address(),
         rent: None,
-        system_program: anchor_lang_v2::programs::System::id(),
+        system_program: *ctx.accounts.system_program.address(),
         update_authority: (
             *ctx.accounts.update_authority.address(),
-            update_authority_is_signer,
+            ctx.accounts.update_authority_is_signer,
         ),
     }
     .instruction(
@@ -191,8 +169,8 @@ pub fn create_master_edition_v3<'info>(
         mint_authority: *ctx.accounts.mint_authority.address(),
         payer: *ctx.accounts.payer.address(),
         rent: None,
-        system_program: anchor_lang_v2::programs::System::id(),
-        token_program: spl_token_interface::ID,
+        system_program: *ctx.accounts.system_program.address(),
+        token_program: *ctx.accounts.token_program.address(),
         update_authority: *ctx.accounts.update_authority.address(),
     }
     .instruction(
@@ -216,10 +194,10 @@ pub fn mint_new_edition_from_master_edition_via_token<'info>(
         new_mint_authority: *ctx.accounts.new_mint_authority.address(),
         payer: *ctx.accounts.payer.address(),
         rent: None,
-        system_program: anchor_lang_v2::programs::System::id(),
+        system_program: *ctx.accounts.system_program.address(),
         token_account: *ctx.accounts.token_account.address(),
         token_account_owner: *ctx.accounts.token_account_owner.address(),
-        token_program: spl_token_interface::ID,
+        token_program: *ctx.accounts.token_program.address(),
     }
     .instruction(
         mpl_token_metadata::instructions::MintNewEditionFromMasterEditionViaTokenInstructionArgs {
@@ -414,15 +392,15 @@ pub fn utilize<'info>(
     number_of_uses: u64,
 ) -> Result<()> {
     let ix = mpl_token_metadata::instructions::Utilize {
-        ata_program: spl_associated_token_account_interface::program::ID,
+        ata_program: *ctx.accounts.ata_program.address(),
         burner,
         metadata: *ctx.accounts.metadata.address(),
         mint: *ctx.accounts.mint.address(),
         owner: *ctx.accounts.owner.address(),
-        rent: solana_sysvar::rent::ID,
-        system_program: anchor_lang_v2::programs::System::id(),
+        rent: *ctx.accounts.rent.address(),
+        system_program: *ctx.accounts.system_program.address(),
         token_account: *ctx.accounts.token_account.address(),
-        token_program: spl_token_interface::ID,
+        token_program: *ctx.accounts.token_program.address(),
         use_authority: *ctx.accounts.use_authority.address(),
         use_authority_record,
     }
@@ -469,384 +447,265 @@ pub fn unverify_sized_collection_item<'info>(
     ctx.invoke_ix(ix)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct ApproveCollectionAuthority<'info> {
-    pub collection_authority_record: CpiHandle<'info>,
+    pub collection_authority_record: CpiHandleMut<'info>,
     pub new_collection_authority: CpiHandle<'info>,
-    pub update_authority: CpiHandle<'info>,
-    pub payer: CpiHandle<'info>,
+    #[signer]
+    pub update_authority: CpiHandleMut<'info>,
+    #[signer]
+    pub payer: CpiHandleMut<'info>,
     pub metadata: CpiHandle<'info>,
     pub mint: CpiHandle<'info>,
+    pub system_program: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct BubblegumSetCollectionSize<'info> {
-    pub metadata_account: CpiHandle<'info>,
+    pub metadata_account: CpiHandleMut<'info>,
+    #[signer]
     pub update_authority: CpiHandle<'info>,
     pub mint: CpiHandle<'info>,
+    #[signer]
     pub bubblegum_signer: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct BurnEditionNft<'info> {
-    pub metadata: CpiHandle<'info>,
-    pub owner: CpiHandle<'info>,
-    pub print_edition_mint: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
+    pub owner: CpiHandleMut<'info>,
+    pub print_edition_mint: CpiHandleMut<'info>,
     pub master_edition_mint: CpiHandle<'info>,
-    pub print_edition_token: CpiHandle<'info>,
+    pub print_edition_token: CpiHandleMut<'info>,
     pub master_edition_token: CpiHandle<'info>,
-    pub master_edition: CpiHandle<'info>,
-    pub print_edition: CpiHandle<'info>,
-    pub edition_marker: CpiHandle<'info>,
+    pub master_edition: CpiHandleMut<'info>,
+    pub print_edition: CpiHandleMut<'info>,
+    pub edition_marker: CpiHandleMut<'info>,
     pub spl_token: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct BurnNft<'info> {
-    pub metadata: CpiHandle<'info>,
-    pub owner: CpiHandle<'info>,
-    pub mint: CpiHandle<'info>,
-    pub token: CpiHandle<'info>,
-    pub edition: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
+    pub owner: CpiHandleMut<'info>,
+    pub mint: CpiHandleMut<'info>,
+    pub token: CpiHandleMut<'info>,
+    pub edition: CpiHandleMut<'info>,
     pub spl_token: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct CreateMetadataAccountsV3<'info> {
-    pub metadata: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
     pub mint: CpiHandle<'info>,
+    #[signer]
     pub mint_authority: CpiHandle<'info>,
-    pub payer: CpiHandle<'info>,
+    #[signer]
+    pub payer: CpiHandleMut<'info>,
+    #[signer(self.update_authority_is_signer)]
     pub update_authority: CpiHandle<'info>,
     pub system_program: CpiHandle<'info>,
+    #[account_meta(skip)]
+    pub update_authority_is_signer: bool,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct UpdateMetadataAccountsV2<'info> {
-    pub metadata: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
     pub update_authority: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct CreateMasterEditionV3<'info> {
-    pub edition: CpiHandle<'info>,
-    pub mint: CpiHandle<'info>,
+    pub edition: CpiHandleMut<'info>,
+    pub mint: CpiHandleMut<'info>,
+    #[signer]
     pub update_authority: CpiHandle<'info>,
+    #[signer]
     pub mint_authority: CpiHandle<'info>,
-    pub payer: CpiHandle<'info>,
-    pub metadata: CpiHandle<'info>,
+    #[signer]
+    pub payer: CpiHandleMut<'info>,
+    pub metadata: CpiHandleMut<'info>,
     pub token_program: CpiHandle<'info>,
     pub system_program: CpiHandle<'info>,
-    pub rent: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct MintNewEditionFromMasterEditionViaToken<'info> {
-    pub new_metadata: CpiHandle<'info>,
-    pub new_edition: CpiHandle<'info>,
-    pub master_edition: CpiHandle<'info>,
-    pub new_mint: CpiHandle<'info>,
-    pub edition_mark_pda: CpiHandle<'info>,
+    pub new_metadata: CpiHandleMut<'info>,
+    pub new_edition: CpiHandleMut<'info>,
+    pub master_edition: CpiHandleMut<'info>,
+    pub new_mint: CpiHandleMut<'info>,
+    pub edition_mark_pda: CpiHandleMut<'info>,
+    #[signer]
     pub new_mint_authority: CpiHandle<'info>,
-    pub payer: CpiHandle<'info>,
+    #[signer]
+    pub payer: CpiHandleMut<'info>,
+    #[signer]
     pub token_account_owner: CpiHandle<'info>,
     pub token_account: CpiHandle<'info>,
     pub new_metadata_update_authority: CpiHandle<'info>,
     pub metadata: CpiHandle<'info>,
     pub token_program: CpiHandle<'info>,
     pub system_program: CpiHandle<'info>,
-    pub rent: CpiHandle<'info>,
-    //
-    // Not actually used by the program but still needed because it's needed
-    // for the pda calculation in the helper. :/
-    //
-    // The better thing to do would be to remove this and have the instruction
-    // helper pass in the `edition_mark_pda` directly.
-    //
-    pub metadata_mint: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct RevokeCollectionAuthority<'info> {
-    pub collection_authority_record: CpiHandle<'info>,
-    pub delegate_authority: CpiHandle<'info>,
-    pub revoke_authority: CpiHandle<'info>,
+    pub collection_authority_record: CpiHandleMut<'info>,
+    pub delegate_authority: CpiHandleMut<'info>,
+    #[signer]
+    pub revoke_authority: CpiHandleMut<'info>,
     pub metadata: CpiHandle<'info>,
     pub mint: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct SetCollectionSize<'info> {
-    pub metadata: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
     pub mint: CpiHandle<'info>,
-    pub update_authority: CpiHandle<'info>,
-    pub system_program: CpiHandle<'info>,
+    #[signer]
+    pub update_authority: CpiHandleMut<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct SetTokenStandard<'info> {
-    pub metadata_account: CpiHandle<'info>,
+    pub metadata_account: CpiHandleMut<'info>,
+    #[signer]
     pub update_authority: CpiHandle<'info>,
     pub mint_account: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct VerifyCollection<'info> {
-    pub payer: CpiHandle<'info>,
-    pub metadata: CpiHandle<'info>,
-    pub collection_authority: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
+    pub collection_authority: CpiHandleMut<'info>,
+    #[signer]
+    pub payer: CpiHandleMut<'info>,
     pub collection_mint: CpiHandle<'info>,
     pub collection_metadata: CpiHandle<'info>,
     pub collection_master_edition: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct VerifySizedCollectionItem<'info> {
-    pub payer: CpiHandle<'info>,
-    pub metadata: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
     pub collection_authority: CpiHandle<'info>,
+    #[signer]
+    pub payer: CpiHandleMut<'info>,
     pub collection_mint: CpiHandle<'info>,
-    pub collection_metadata: CpiHandle<'info>,
+    pub collection_metadata: CpiHandleMut<'info>,
     pub collection_master_edition: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct SetAndVerifyCollection<'info> {
-    pub metadata: CpiHandle<'info>,
-    pub collection_authority: CpiHandle<'info>,
-    pub payer: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
+    pub collection_authority: CpiHandleMut<'info>,
+    #[signer]
+    pub payer: CpiHandleMut<'info>,
     pub update_authority: CpiHandle<'info>,
     pub collection_mint: CpiHandle<'info>,
     pub collection_metadata: CpiHandle<'info>,
     pub collection_master_edition: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct SetAndVerifySizedCollectionItem<'info> {
-    pub metadata: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
     pub collection_authority: CpiHandle<'info>,
-    pub payer: CpiHandle<'info>,
+    #[signer]
+    pub payer: CpiHandleMut<'info>,
     pub update_authority: CpiHandle<'info>,
     pub collection_mint: CpiHandle<'info>,
-    pub collection_metadata: CpiHandle<'info>,
+    pub collection_metadata: CpiHandleMut<'info>,
     pub collection_master_edition: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct FreezeDelegatedAccount<'info> {
-    pub metadata: CpiHandle<'info>,
-    pub delegate: CpiHandle<'info>,
-    pub token_account: CpiHandle<'info>,
+    #[signer]
+    pub delegate: CpiHandleMut<'info>,
+    pub token_account: CpiHandleMut<'info>,
     pub edition: CpiHandle<'info>,
     pub mint: CpiHandle<'info>,
     pub token_program: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct ThawDelegatedAccount<'info> {
-    pub metadata: CpiHandle<'info>,
-    pub delegate: CpiHandle<'info>,
-    pub token_account: CpiHandle<'info>,
+    #[signer]
+    pub delegate: CpiHandleMut<'info>,
+    pub token_account: CpiHandleMut<'info>,
     pub edition: CpiHandle<'info>,
     pub mint: CpiHandle<'info>,
     pub token_program: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct UpdatePrimarySaleHappenedViaToken<'info> {
-    pub metadata: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
     pub owner: CpiHandle<'info>,
     pub token: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct SignMetadata<'info> {
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
     pub creator: CpiHandle<'info>,
-    pub metadata: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct RemoveCreatorVerification<'info> {
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
     pub creator: CpiHandle<'info>,
-    pub metadata: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct Utilize<'info> {
-    pub metadata: CpiHandle<'info>,
-    pub token_account: CpiHandle<'info>,
-    pub mint: CpiHandle<'info>,
-    pub use_authority: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    pub token_account: CpiHandleMut<'info>,
+    pub mint: CpiHandleMut<'info>,
+    #[signer]
+    pub use_authority: CpiHandleMut<'info>,
     pub owner: CpiHandle<'info>,
+    pub token_program: CpiHandle<'info>,
+    pub ata_program: CpiHandle<'info>,
+    pub system_program: CpiHandle<'info>,
+    pub rent: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct UnverifyCollection<'info> {
-    pub metadata: CpiHandle<'info>,
-    pub collection_authority: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
+    pub collection_authority: CpiHandleMut<'info>,
     pub collection_mint: CpiHandle<'info>,
     pub collection: CpiHandle<'info>,
     pub collection_master_edition_account: CpiHandle<'info>,
 }
 
+#[derive(ToCpiAccounts)]
 pub struct UnverifySizedCollectionItem<'info> {
-    pub metadata: CpiHandle<'info>,
+    pub metadata: CpiHandleMut<'info>,
+    #[signer]
     pub collection_authority: CpiHandle<'info>,
-    pub payer: CpiHandle<'info>,
+    #[signer]
+    pub payer: CpiHandleMut<'info>,
     pub collection_mint: CpiHandle<'info>,
-    pub collection: CpiHandle<'info>,
+    pub collection: CpiHandleMut<'info>,
     pub collection_master_edition_account: CpiHandle<'info>,
 }
-
-impl_cpi_accounts!(ApproveCollectionAuthority {
-    collection_authority_record,
-    new_collection_authority,
-    update_authority,
-    payer,
-    metadata,
-    mint
-});
-impl_cpi_accounts!(BubblegumSetCollectionSize {
-    metadata_account,
-    update_authority,
-    mint,
-    bubblegum_signer
-});
-impl_cpi_accounts!(BurnEditionNft {
-    metadata,
-    owner,
-    print_edition_mint,
-    master_edition_mint,
-    print_edition_token,
-    master_edition_token,
-    master_edition,
-    print_edition,
-    edition_marker,
-    spl_token
-});
-impl_cpi_accounts!(BurnNft {
-    metadata,
-    owner,
-    mint,
-    token,
-    edition,
-    spl_token
-});
-impl_cpi_accounts!(CreateMetadataAccountsV3 {
-    metadata,
-    mint,
-    mint_authority,
-    payer,
-    update_authority,
-    system_program
-});
-impl_cpi_accounts!(UpdateMetadataAccountsV2 {
-    metadata,
-    update_authority
-});
-impl_cpi_accounts!(CreateMasterEditionV3 {
-    edition,
-    mint,
-    update_authority,
-    mint_authority,
-    payer,
-    metadata,
-    token_program,
-    system_program,
-    rent
-});
-impl_cpi_accounts!(MintNewEditionFromMasterEditionViaToken {
-    new_metadata,
-    new_edition,
-    master_edition,
-    new_mint,
-    edition_mark_pda,
-    new_mint_authority,
-    payer,
-    token_account_owner,
-    token_account,
-    new_metadata_update_authority,
-    metadata,
-    token_program,
-    system_program,
-    rent,
-    metadata_mint
-});
-impl_cpi_accounts!(RevokeCollectionAuthority {
-    collection_authority_record,
-    delegate_authority,
-    revoke_authority,
-    metadata,
-    mint
-});
-impl_cpi_accounts!(SetCollectionSize {
-    metadata,
-    mint,
-    update_authority,
-    system_program
-});
-impl_cpi_accounts!(SetTokenStandard {
-    metadata_account,
-    update_authority,
-    mint_account
-});
-impl_cpi_accounts!(VerifyCollection {
-    payer,
-    metadata,
-    collection_authority,
-    collection_mint,
-    collection_metadata,
-    collection_master_edition
-});
-impl_cpi_accounts!(VerifySizedCollectionItem {
-    payer,
-    metadata,
-    collection_authority,
-    collection_mint,
-    collection_metadata,
-    collection_master_edition
-});
-impl_cpi_accounts!(SetAndVerifyCollection {
-    metadata,
-    collection_authority,
-    payer,
-    update_authority,
-    collection_mint,
-    collection_metadata,
-    collection_master_edition
-});
-impl_cpi_accounts!(SetAndVerifySizedCollectionItem {
-    metadata,
-    collection_authority,
-    payer,
-    update_authority,
-    collection_mint,
-    collection_metadata,
-    collection_master_edition
-});
-impl_cpi_accounts!(FreezeDelegatedAccount {
-    metadata,
-    delegate,
-    token_account,
-    edition,
-    mint,
-    token_program
-});
-impl_cpi_accounts!(ThawDelegatedAccount {
-    metadata,
-    delegate,
-    token_account,
-    edition,
-    mint,
-    token_program
-});
-impl_cpi_accounts!(UpdatePrimarySaleHappenedViaToken {
-    metadata,
-    owner,
-    token
-});
-impl_cpi_accounts!(SignMetadata { metadata, creator });
-impl_cpi_accounts!(RemoveCreatorVerification { metadata, creator });
-impl_cpi_accounts!(Utilize {
-    metadata,
-    token_account,
-    mint,
-    use_authority,
-    owner
-});
-impl_cpi_accounts!(UnverifyCollection {
-    metadata,
-    collection_authority,
-    collection_mint,
-    collection,
-    collection_master_edition_account
-});
-impl_cpi_accounts!(UnverifySizedCollectionItem {
-    metadata,
-    collection_authority,
-    payer,
-    collection_mint,
-    collection,
-    collection_master_edition_account
-});
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MetadataAccount {

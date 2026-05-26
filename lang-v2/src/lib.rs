@@ -4,6 +4,7 @@
 
 #![no_std]
 extern crate alloc;
+extern crate self as anchor_lang_v2;
 
 pub mod accounts;
 pub mod context;

@@ -566,19 +566,6 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke the Token-2022 CPI Guard helper against the spy program.
-    #[discrim = 40]
-    pub fn spy_cpi_guard_enable(ctx: &mut Context<SpyCpiGuard>) -> Result<()> {
-        let accs = token_2022_ext_cpi::CpiGuard {
-            account: ctx.accounts.account.cpi_handle_mut(),
-            owner: ctx.accounts.owner.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        #[allow(deprecated)]
-        token_2022_ext_cpi::cpi_guard_enable(cpi_ctx)?;
-        Ok(())
-    }
-
     /// Invoke the Token-2022 group pointer update helper against the spy program.
     #[discrim = 41]
     pub fn spy_group_pointer_update(
@@ -1122,14 +1109,6 @@ pub struct ReadUncheckedMintTransferFeeAmount {
 #[derive(Accounts)]
 pub struct ReadUncheckedTokenAccountTransferFeeConfig {
     pub token_account: InterfaceAccount<token_interface::TokenAccount>,
-}
-
-#[derive(Accounts)]
-pub struct SpyCpiGuard {
-    #[account(mut)]
-    pub account: UncheckedAccount,
-    pub owner: Signer,
-    pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]

@@ -1,42 +1,20 @@
 use {
     super::common::validate_token_2022_program,
     crate::token_2022::spl_token_2022,
-    alloc::{vec, vec::Vec},
     anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
-    pinocchio::instruction::InstructionAccount,
     solana_program_error::ProgramError,
 };
 
+#[derive(ToCpiAccounts)]
 pub struct DefaultAccountStateInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for DefaultAccountStateInitialize<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::writable(self.mint.address())]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint.into()]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct DefaultAccountStateUpdate<'a> {
     pub mint: CpiHandleMut<'a>,
+    #[signer]
     pub freeze_authority: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for DefaultAccountStateUpdate<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.mint.address()),
-            InstructionAccount::readonly_signer(self.freeze_authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint.into(), self.freeze_authority]
-    }
 }
 
 pub fn default_account_state_initialize<'a>(

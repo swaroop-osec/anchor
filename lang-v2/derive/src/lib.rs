@@ -33,7 +33,10 @@ pub fn derive_accounts(input: TokenStream) -> TokenStream {
 // #[derive(ToCpiAccounts)]
 // ---------------------------------------------------------------------------
 
-#[proc_macro_derive(ToCpiAccounts, attributes(signer, nested, accounts_program_id))]
+#[proc_macro_derive(
+    ToCpiAccounts,
+    attributes(signer, nested, account_meta, accounts_program_id)
+)]
 pub fn derive_to_cpi_accounts(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     TokenStream::from(impl_to_cpi_accounts(&input))
@@ -52,6 +55,12 @@ enum CpiFieldKind {
 struct SignerExpr {
     present: bool,
     expr: TokenStream2,
+}
+
+#[derive(Default)]
+struct AccountMetaAttrs {
+    skip: bool,
+    duplicate_readonly: bool,
 }
 
 fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
@@ -84,6 +93,10 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
             .ident
             .as_ref()
             .expect("named fields always have identifiers");
+        let account_meta = match account_meta_attrs(field) {
+            Ok(attrs) => attrs,
+            Err(err) => return err.to_compile_error(),
+        };
         let signer = match signer_expr_attr(field) {
             Ok(signer) => signer,
             Err(err) => return err.to_compile_error(),
@@ -92,6 +105,23 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
             Ok(nested) => nested,
             Err(err) => return err.to_compile_error(),
         };
+        if account_meta.skip {
+            if signer.present {
+                return syn::Error::new_spanned(
+                    field,
+                    "#[account_meta(skip)] cannot be combined with #[signer]",
+                )
+                .to_compile_error();
+            }
+            if nested {
+                return syn::Error::new_spanned(
+                    field,
+                    "#[account_meta(skip)] cannot be combined with #[nested]",
+                )
+                .to_compile_error();
+            }
+            continue;
+        }
         if nested && signer.present {
             return syn::Error::new_spanned(field, "#[nested] cannot be combined with #[signer]")
                 .to_compile_error();
@@ -119,6 +149,16 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
             cpi_lifetime = Some(lifetime);
         }
         if !matches!(kind, CpiFieldKind::Phantom) {
+            if account_meta.duplicate_readonly {
+                if !matches!(kind, CpiFieldKind::Readonly | CpiFieldKind::Writable) {
+                    return syn::Error::new_spanned(
+                        field,
+                        "#[account_meta(duplicate_readonly)] requires a direct CpiHandle or CpiHandleMut field",
+                    )
+                    .to_compile_error();
+                }
+                cpi_fields.push((ident, CpiFieldKind::Readonly, quote! { false }));
+            }
             cpi_fields.push((ident, kind, signer.expr));
         }
     }
@@ -235,12 +275,22 @@ fn accounts_program_id_expr(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 Ok(quote! { #expr })
             }
             syn::Meta::NameValue(nv) => {
-                let expr = &nv.value;
+                let syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(lit),
+                    ..
+                }) = &nv.value
+                else {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "expected #[accounts_program_id(expr)] or #[accounts_program_id = \"expr\"]",
+                    ));
+                };
+                let expr: Expr = lit.parse()?;
                 Ok(quote! { #expr })
             }
             _ => Err(syn::Error::new_spanned(
                 attr,
-                "expected #[accounts_program_id(expr)]",
+                "expected #[accounts_program_id(expr)] or #[accounts_program_id = \"expr\"]",
             )),
         };
     }
@@ -254,7 +304,10 @@ fn signer_expr_attr(field: &syn::Field) -> syn::Result<SignerExpr> {
             continue;
         }
         if signer.is_some() {
-            return Err(syn::Error::new_spanned(attr, "duplicate #[signer] attribute"));
+            return Err(syn::Error::new_spanned(
+                attr,
+                "duplicate #[signer] attribute",
+            ));
         }
         signer = Some(match &attr.meta {
             syn::Meta::Path(_) => quote! { true },
@@ -287,7 +340,10 @@ fn has_nested_attr(field: &syn::Field) -> syn::Result<bool> {
             continue;
         }
         if nested {
-            return Err(syn::Error::new_spanned(attr, "duplicate #[nested] attribute"));
+            return Err(syn::Error::new_spanned(
+                attr,
+                "duplicate #[nested] attribute",
+            ));
         }
         if !matches!(attr.meta, syn::Meta::Path(_)) {
             return Err(syn::Error::new_spanned(attr, "expected #[nested]"));
@@ -295,6 +351,45 @@ fn has_nested_attr(field: &syn::Field) -> syn::Result<bool> {
         nested = true;
     }
     Ok(nested)
+}
+
+fn account_meta_attrs(field: &syn::Field) -> syn::Result<AccountMetaAttrs> {
+    let mut attrs = AccountMetaAttrs::default();
+    for attr in &field.attrs {
+        if !attr.path().is_ident("account_meta") {
+            continue;
+        }
+        if !matches!(attr.meta, syn::Meta::List(_)) {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "expected #[account_meta(skip)]",
+            ));
+        }
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("skip") {
+                if attrs.skip {
+                    return Err(meta.error("duplicate account_meta skip"));
+                }
+                attrs.skip = true;
+                Ok(())
+            } else if meta.path.is_ident("duplicate_readonly") {
+                if attrs.duplicate_readonly {
+                    return Err(meta.error("duplicate account_meta duplicate_readonly"));
+                }
+                attrs.duplicate_readonly = true;
+                Ok(())
+            } else {
+                Err(meta.error("unsupported account_meta option"))
+            }
+        })?;
+    }
+    if attrs.skip && attrs.duplicate_readonly {
+        return Err(syn::Error::new_spanned(
+            field,
+            "#[account_meta(skip)] cannot be combined with #[account_meta(duplicate_readonly)]",
+        ));
+    }
+    Ok(attrs)
 }
 
 fn cpi_field_kind(ty: &Type, nested: bool) -> syn::Result<(CpiFieldKind, syn::Lifetime)> {
@@ -655,7 +750,28 @@ fn parse_accounts_program_id_attr(attrs: &[syn::Attribute]) -> syn::Result<Expr>
                 "duplicate `accounts_program_id` attribute",
             ));
         }
-        program_id = Some(attr.parse_args::<Expr>()?);
+        program_id = Some(match &attr.meta {
+            syn::Meta::List(_) => attr.parse_args::<Expr>()?,
+            syn::Meta::NameValue(nv) => {
+                let syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(lit),
+                    ..
+                }) = &nv.value
+                else {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "expected #[accounts_program_id(expr)] or #[accounts_program_id = \"expr\"]",
+                    ));
+                };
+                lit.parse()?
+            }
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "expected #[accounts_program_id(expr)] or #[accounts_program_id = \"expr\"]",
+                ));
+            }
+        });
     }
     Ok(program_id.unwrap_or_else(|| syn::parse_quote!(crate::ID)))
 }

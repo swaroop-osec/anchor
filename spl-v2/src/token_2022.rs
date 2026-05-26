@@ -3,9 +3,9 @@
 extern crate alloc;
 
 use {
-    alloc::{string::String, vec, vec::Vec},
+    alloc::{string::String, vec::Vec},
     anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
-    pinocchio::{address::Address, instruction::InstructionAccount},
+    pinocchio::address::Address,
     solana_program_error::ProgramError,
 };
 
@@ -21,181 +21,65 @@ pub use crate::token_shared::{
     SetAuthority, SyncNative, ThawAccount, Transfer, TransferChecked,
 };
 
+#[derive(ToCpiAccounts)]
 pub struct GetAccountDataSize<'a> {
     pub mint: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for GetAccountDataSize<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::new(self.mint.address(), false, false)]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct InitializeMintCloseAuthority<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for InitializeMintCloseAuthority<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::writable(self.mint.address())]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint.into()]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct InitializeImmutableOwner<'a> {
     pub account: CpiHandleMut<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for InitializeImmutableOwner<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::writable(self.account.address())]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account.into()]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct AmountToUiAmount<'a> {
     pub account: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for AmountToUiAmount<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::new(
-            self.account.address(),
-            false,
-            false,
-        )]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct UiAmountToAmount<'a> {
     pub account: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for UiAmountToAmount<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::new(
-            self.account.address(),
-            false,
-            false,
-        )]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct Reallocate<'a> {
     pub account: CpiHandleMut<'a>,
+    #[signer]
     pub payer: CpiHandleMut<'a>,
     pub system_program: CpiHandle<'a>,
+    #[signer]
     pub authority: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for Reallocate<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.account.address()),
-            InstructionAccount::writable_signer(self.payer.address()),
-            InstructionAccount::new(self.system_program.address(), false, false),
-            InstructionAccount::readonly_signer(self.authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![
-            self.account.into(),
-            self.payer.into(),
-            self.system_program,
-            self.authority,
-        ]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct WithdrawExcessLamports<'a> {
     pub source: CpiHandleMut<'a>,
     pub destination: CpiHandleMut<'a>,
+    #[signer]
     pub authority: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for WithdrawExcessLamports<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.source.address()),
-            InstructionAccount::writable(self.destination.address()),
-            InstructionAccount::readonly_signer(self.authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.source.into(), self.destination.into(), self.authority]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct CreateNativeMint<'a> {
+    #[signer]
     pub payer: CpiHandleMut<'a>,
     pub native_mint: CpiHandleMut<'a>,
     pub system_program: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for CreateNativeMint<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable_signer(self.payer.address()),
-            InstructionAccount::writable(self.native_mint.address()),
-            InstructionAccount::new(self.system_program.address(), false, false),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![
-            self.payer.into(),
-            self.native_mint.into(),
-            self.system_program,
-        ]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct InitializeNonTransferableMint<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for InitializeNonTransferableMint<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::writable(self.mint.address())]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint.into()]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct PermanentDelegateInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for PermanentDelegateInitialize<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::writable(self.mint.address())]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint.into()]
-    }
 }
 
 fn return_data_from(program: &Address) -> Result<Vec<u8>, ProgramError> {

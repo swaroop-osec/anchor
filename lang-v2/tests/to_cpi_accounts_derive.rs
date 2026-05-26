@@ -22,8 +22,10 @@ struct EmptyCpi<'a> {
 struct ManualCpi<'a> {
     readonly: CpiHandle<'a>,
     writable: CpiHandleMut<'a>,
-    #[signer(AUTHORITY_SIGNER)]
+    #[signer(self.authority_signer)]
     authority: CpiHandle<'a>,
+    #[account_meta(skip)]
+    authority_signer: bool,
     #[nested]
     inner: InnerCpi<'a>,
     optional_readonly: Option<CpiHandle<'a>>,
@@ -64,6 +66,7 @@ fn derive_to_cpi_accounts_emits_metas_and_erased_handles() {
         readonly: readonly_view.to_cpi_handle(),
         writable: writable_view.to_cpi_handle_mut(),
         authority: authority_view.to_cpi_handle(),
+        authority_signer: AUTHORITY_SIGNER,
         inner: InnerCpi {
             inner_readonly: inner_readonly_view.to_cpi_handle(),
             inner_writable: inner_writable_view.to_cpi_handle_mut(),

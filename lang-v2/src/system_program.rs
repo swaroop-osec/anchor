@@ -7,8 +7,8 @@ extern crate alloc;
 
 use {
     crate::{CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
-    alloc::{string::String, vec, vec::Vec},
-    pinocchio::{address::MAX_SEED_LEN, instruction::InstructionAccount},
+    alloc::{string::String, vec::Vec},
+    pinocchio::address::MAX_SEED_LEN,
     solana_address::Address,
     solana_program_error::{ProgramError, ProgramResult},
 };
@@ -62,24 +62,12 @@ pub fn advance_nonce_account<'a>(ctx: CpiContext<'a, AdvanceNonceAccount<'a>>) -
     invoke(&ctx, &4u32.to_le_bytes())
 }
 
+#[derive(ToCpiAccounts)]
 pub struct AdvanceNonceAccount<'a> {
     pub nonce: CpiHandleMut<'a>,
-    pub authorized: CpiHandle<'a>,
     pub recent_blockhashes: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for AdvanceNonceAccount<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.nonce.address()),
-            InstructionAccount::readonly(self.recent_blockhashes.address()),
-            InstructionAccount::readonly_signer(self.authorized.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.nonce.into(), self.recent_blockhashes, self.authorized]
-    }
+    #[signer]
+    pub authorized: CpiHandle<'a>,
 }
 
 pub fn allocate<'a>(ctx: CpiContext<'a, Allocate<'a>>, space: u64) -> ProgramResult {
@@ -89,20 +77,10 @@ pub fn allocate<'a>(ctx: CpiContext<'a, Allocate<'a>>, space: u64) -> ProgramRes
     invoke(&ctx, &data)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct Allocate<'a> {
+    #[signer]
     pub account_to_allocate: CpiHandleMut<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for Allocate<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::writable_signer(
-            self.account_to_allocate.address(),
-        )]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account_to_allocate.into()]
-    }
 }
 
 pub fn allocate_with_seed<'a>(
@@ -122,22 +100,11 @@ pub fn allocate_with_seed<'a>(
     invoke(&ctx, &data)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct AllocateWithSeed<'a> {
     pub account_to_allocate: CpiHandleMut<'a>,
+    #[signer]
     pub base: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for AllocateWithSeed<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.account_to_allocate.address()),
-            InstructionAccount::readonly_signer(self.base.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account_to_allocate.into(), self.base]
-    }
 }
 
 pub fn assign<'a>(ctx: CpiContext<'a, Assign<'a>>, owner: &Address) -> ProgramResult {
@@ -147,20 +114,10 @@ pub fn assign<'a>(ctx: CpiContext<'a, Assign<'a>>, owner: &Address) -> ProgramRe
     invoke(&ctx, &data)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct Assign<'a> {
+    #[signer]
     pub account_to_assign: CpiHandleMut<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for Assign<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::writable_signer(
-            self.account_to_assign.address(),
-        )]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account_to_assign.into()]
-    }
 }
 
 pub fn assign_with_seed<'a>(
@@ -178,22 +135,11 @@ pub fn assign_with_seed<'a>(
     invoke(&ctx, &data)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct AssignWithSeed<'a> {
     pub account_to_assign: CpiHandleMut<'a>,
+    #[signer]
     pub base: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for AssignWithSeed<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.account_to_assign.address()),
-            InstructionAccount::readonly_signer(self.base.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account_to_assign.into(), self.base]
-    }
 }
 
 pub fn authorize_nonce_account<'a>(
@@ -206,22 +152,11 @@ pub fn authorize_nonce_account<'a>(
     invoke(&ctx, &data)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct AuthorizeNonceAccount<'a> {
     pub nonce: CpiHandleMut<'a>,
+    #[signer]
     pub authorized: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for AuthorizeNonceAccount<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.nonce.address()),
-            InstructionAccount::readonly_signer(self.authorized.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.nonce.into(), self.authorized]
-    }
 }
 
 pub fn create_account<'a>(
@@ -238,22 +173,12 @@ pub fn create_account<'a>(
     invoke(&ctx, &data)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct CreateAccount<'a> {
+    #[signer]
     pub from: CpiHandleMut<'a>,
+    #[signer]
     pub to: CpiHandleMut<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for CreateAccount<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable_signer(self.from.address()),
-            InstructionAccount::writable_signer(self.to.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from.into(), self.to.into()]
-    }
 }
 
 pub fn create_account_with_seed<'a>(
@@ -275,24 +200,13 @@ pub fn create_account_with_seed<'a>(
     invoke(&ctx, &data)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct CreateAccountWithSeed<'a> {
+    #[signer]
     pub from: CpiHandleMut<'a>,
     pub to: CpiHandleMut<'a>,
+    #[signer]
     pub base: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for CreateAccountWithSeed<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable_signer(self.from.address()),
-            InstructionAccount::writable(self.to.address()),
-            InstructionAccount::readonly_signer(self.base.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from.into(), self.to.into(), self.base]
-    }
 }
 
 pub fn create_nonce_account<'a>(
@@ -323,31 +237,14 @@ pub fn create_nonce_account<'a>(
     )
 }
 
+#[derive(ToCpiAccounts)]
 pub struct CreateNonceAccount<'a> {
+    #[signer]
     pub from: CpiHandleMut<'a>,
+    #[signer]
     pub nonce: CpiHandleMut<'a>,
     pub recent_blockhashes: CpiHandle<'a>,
     pub rent: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for CreateNonceAccount<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable_signer(self.from.address()),
-            InstructionAccount::writable_signer(self.nonce.address()),
-            InstructionAccount::readonly(self.recent_blockhashes.address()),
-            InstructionAccount::readonly(self.rent.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![
-            self.from.into(),
-            self.nonce.into(),
-            self.recent_blockhashes,
-            self.rent,
-        ]
-    }
 }
 
 pub fn create_nonce_account_with_seed<'a>(
@@ -381,34 +278,15 @@ pub fn create_nonce_account_with_seed<'a>(
     )
 }
 
+#[derive(ToCpiAccounts)]
 pub struct CreateNonceAccountWithSeed<'a> {
+    #[signer]
     pub from: CpiHandleMut<'a>,
     pub nonce: CpiHandleMut<'a>,
+    #[signer]
     pub base: CpiHandle<'a>,
     pub recent_blockhashes: CpiHandle<'a>,
     pub rent: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for CreateNonceAccountWithSeed<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable_signer(self.from.address()),
-            InstructionAccount::writable(self.nonce.address()),
-            InstructionAccount::readonly_signer(self.base.address()),
-            InstructionAccount::readonly(self.recent_blockhashes.address()),
-            InstructionAccount::readonly(self.rent.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![
-            self.from.into(),
-            self.nonce.into(),
-            self.base,
-            self.recent_blockhashes,
-            self.rent,
-        ]
-    }
 }
 
 pub fn transfer<'a>(ctx: CpiContext<'a, Transfer<'a>>, lamports: u64) -> ProgramResult {
@@ -418,22 +296,11 @@ pub fn transfer<'a>(ctx: CpiContext<'a, Transfer<'a>>, lamports: u64) -> Program
     invoke(&ctx, &data)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct Transfer<'a> {
+    #[signer]
     pub from: CpiHandleMut<'a>,
     pub to: CpiHandleMut<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for Transfer<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable_signer(self.from.address()),
-            InstructionAccount::writable(self.to.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from.into(), self.to.into()]
-    }
 }
 
 pub fn transfer_with_seed<'a>(
@@ -452,24 +319,12 @@ pub fn transfer_with_seed<'a>(
     invoke(&ctx, &data)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct TransferWithSeed<'a> {
     pub from: CpiHandleMut<'a>,
+    #[signer]
     pub base: CpiHandle<'a>,
     pub to: CpiHandleMut<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for TransferWithSeed<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.from.address()),
-            InstructionAccount::readonly_signer(self.base.address()),
-            InstructionAccount::writable(self.to.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from.into(), self.base, self.to.into()]
-    }
 }
 
 pub fn withdraw_nonce_account<'a>(
@@ -482,54 +337,21 @@ pub fn withdraw_nonce_account<'a>(
     invoke(&ctx, &data)
 }
 
+#[derive(ToCpiAccounts)]
 pub struct WithdrawNonceAccount<'a> {
     pub nonce: CpiHandleMut<'a>,
     pub to: CpiHandleMut<'a>,
     pub recent_blockhashes: CpiHandle<'a>,
     pub rent: CpiHandle<'a>,
+    #[signer]
     pub authorized: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for WithdrawNonceAccount<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.nonce.address()),
-            InstructionAccount::writable(self.to.address()),
-            InstructionAccount::readonly(self.recent_blockhashes.address()),
-            InstructionAccount::readonly(self.rent.address()),
-            InstructionAccount::readonly_signer(self.authorized.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![
-            self.nonce.into(),
-            self.to.into(),
-            self.recent_blockhashes,
-            self.rent,
-            self.authorized,
-        ]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 struct InitializeNonceAccount<'a> {
     nonce: CpiHandleMut<'a>,
     recent_blockhashes: CpiHandle<'a>,
     rent: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for InitializeNonceAccount<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.nonce.address()),
-            InstructionAccount::readonly(self.recent_blockhashes.address()),
-            InstructionAccount::readonly(self.rent.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.nonce.into(), self.recent_blockhashes, self.rent]
-    }
 }
 
 fn initialize_nonce_account<'a>(

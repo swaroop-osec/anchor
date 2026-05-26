@@ -2925,37 +2925,6 @@ fn zero_sized_marker_extensions_reject_when_marker_missing() {
 }
 
 #[test]
-fn cpi_guard_enable_helper_rejects_non_token_2022_program() {
-    let (mut svm, payer) = setup();
-    let mint_authority = keypair_for("spy-cg-mint-auth");
-    let owner = keypair_for("spy-cg-owner");
-    let mint = Pubkey::new_unique();
-    let token = Pubkey::new_unique();
-
-    seed_token_2022_account(
-        &mut svm,
-        mint,
-        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
-    );
-    seed_token_2022_account(
-        &mut svm,
-        token,
-        build_token_account_data(&mint, &owner.pubkey(), 0, &tlv_cpi_guard(0)),
-    );
-
-    let metas = vec![
-        AccountMeta::new(token, false),
-        AccountMeta::new_readonly(owner.pubkey(), true),
-        AccountMeta::new_readonly(spy_program_id(), false),
-    ];
-    let result = send_instruction(&mut svm, program_id(), vec![40], metas, &payer, &[&owner]);
-    assert!(
-        result.is_err(),
-        "CPI guard helper should reject non-Token-2022 program ids before CPI"
-    );
-}
-
-#[test]
 fn group_pointer_update_helper_rejects_non_token_2022_program() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("spy-gp-mint-auth");

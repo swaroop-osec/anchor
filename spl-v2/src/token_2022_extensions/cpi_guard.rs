@@ -1,54 +1,88 @@
 use {
-    super::common::validate_token_2022_program,
-    crate::token_2022::spl_token_2022,
-    alloc::{vec, vec::Vec},
     anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
-    pinocchio::instruction::InstructionAccount,
     solana_program_error::ProgramError,
 };
 
+#[derive(ToCpiAccounts)]
 pub struct CpiGuard<'a> {
     pub account: CpiHandleMut<'a>,
+    #[signer]
     pub owner: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for CpiGuard<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.account.address()),
-            InstructionAccount::readonly_signer(self.owner.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account.into(), self.owner]
-    }
+#[deprecated(
+    note = "Token-2022 rejects CPI-initiated toggling of CPI Guard with CpiGuardSettingsLocked."
+)]
+pub fn cpi_guard_enable<'a>(_ctx: CpiContext<'a, CpiGuard<'a>>) -> Result<(), ProgramError> {
+    panic!("Token-2022 rejects CPI-initiated toggling of CPI Guard with CpiGuardSettingsLocked")
 }
 
 #[deprecated(
     note = "Token-2022 rejects CPI-initiated toggling of CPI Guard with CpiGuardSettingsLocked."
 )]
-pub fn cpi_guard_enable<'a>(ctx: CpiContext<'a, CpiGuard<'a>>) -> Result<(), ProgramError> {
-    validate_token_2022_program(ctx.program)?;
-    let ix = spl_token_2022::extension::cpi_guard::instruction::enable_cpi_guard(
-        ctx.program,
-        ctx.accounts.account.address(),
-        ctx.accounts.owner.address(),
-        &[],
-    )?;
-    ctx.invoke_ix(ix)
+pub fn cpi_guard_disable<'a>(_ctx: CpiContext<'a, CpiGuard<'a>>) -> Result<(), ProgramError> {
+    panic!("Token-2022 rejects CPI-initiated toggling of CPI Guard with CpiGuardSettingsLocked")
 }
 
-#[deprecated(
-    note = "Token-2022 rejects CPI-initiated toggling of CPI Guard with CpiGuardSettingsLocked."
-)]
-pub fn cpi_guard_disable<'a>(ctx: CpiContext<'a, CpiGuard<'a>>) -> Result<(), ProgramError> {
-    validate_token_2022_program(ctx.program)?;
-    let ix = spl_token_2022::extension::cpi_guard::instruction::disable_cpi_guard(
-        ctx.program,
-        ctx.accounts.account.address(),
-        ctx.accounts.owner.address(),
-        &[],
-    )?;
-    ctx.invoke_ix(ix)
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        anchor_lang_v2::{
+            testing::{AccountBuffer, MIN_ACCOUNT_BUF},
+            Address,
+        },
+    };
+
+    fn account(
+        address: [u8; 32],
+        signer: bool,
+        writable: bool,
+    ) -> AccountBuffer<{ MIN_ACCOUNT_BUF + 8 }> {
+        let buffer = AccountBuffer::new();
+        buffer.init(address, [9; 32], 8, signer, writable, false);
+        buffer
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    #[should_panic(
+        expected = "Token-2022 rejects CPI-initiated toggling of CPI Guard with CpiGuardSettingsLocked"
+    )]
+    fn cpi_guard_enable_panics_at_runtime() {
+        let program = Address::new_from_array([7; 32]);
+        let account_buffer = account([1; 32], false, true);
+        let owner_buffer = account([2; 32], true, false);
+        let mut account_view = unsafe { account_buffer.view() };
+        let owner_view = unsafe { owner_buffer.view() };
+
+        let accounts = CpiGuard {
+            account: CpiHandleMut::writable(&mut account_view),
+            owner: CpiHandle::readonly(&owner_view),
+        };
+        let ctx = CpiContext::new(&program, accounts);
+
+        let _ = cpi_guard_enable(ctx);
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    #[should_panic(
+        expected = "Token-2022 rejects CPI-initiated toggling of CPI Guard with CpiGuardSettingsLocked"
+    )]
+    fn cpi_guard_disable_panics_at_runtime() {
+        let program = Address::new_from_array([7; 32]);
+        let account_buffer = account([1; 32], false, true);
+        let owner_buffer = account([2; 32], true, false);
+        let mut account_view = unsafe { account_buffer.view() };
+        let owner_view = unsafe { owner_buffer.view() };
+
+        let accounts = CpiGuard {
+            account: CpiHandleMut::writable(&mut account_view),
+            owner: CpiHandle::readonly(&owner_view),
+        };
+        let ctx = CpiContext::new(&program, accounts);
+
+        let _ = cpi_guard_disable(ctx);
+    }
 }

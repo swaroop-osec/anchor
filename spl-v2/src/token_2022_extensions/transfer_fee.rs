@@ -1,124 +1,53 @@
 use {
     super::common::{pubkey_refs, validate_token_2022_program},
     crate::token_2022::spl_token_2022,
-    alloc::{vec, vec::Vec},
+    alloc::vec::Vec,
     anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
-    pinocchio::{address::Address, instruction::InstructionAccount},
+    pinocchio::address::Address,
     solana_program_error::ProgramError,
     solana_pubkey::Pubkey,
 };
 
+#[derive(ToCpiAccounts)]
 pub struct TransferFeeInitialize<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for TransferFeeInitialize<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::writable(self.mint.address())]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint.into()]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct TransferFeeSetTransferFee<'a> {
     pub mint: CpiHandleMut<'a>,
+    #[signer]
     pub authority: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for TransferFeeSetTransferFee<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.mint.address()),
-            InstructionAccount::readonly_signer(self.authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint.into(), self.authority]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct TransferCheckedWithFee<'a> {
     pub source: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
     pub destination: CpiHandleMut<'a>,
+    #[signer]
     pub authority: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for TransferCheckedWithFee<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.source.address()),
-            InstructionAccount::new(self.mint.address(), false, false),
-            InstructionAccount::writable(self.destination.address()),
-            InstructionAccount::readonly_signer(self.authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![
-            self.source.into(),
-            self.mint,
-            self.destination.into(),
-            self.authority,
-        ]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct HarvestWithheldTokensToMint<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for HarvestWithheldTokensToMint<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![InstructionAccount::writable(self.mint.address())]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint.into()]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct WithdrawWithheldTokensFromMint<'a> {
     pub mint: CpiHandleMut<'a>,
     pub destination: CpiHandleMut<'a>,
+    #[signer]
     pub authority: CpiHandle<'a>,
 }
 
-impl<'a> ToCpiAccounts<'a> for WithdrawWithheldTokensFromMint<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::writable(self.mint.address()),
-            InstructionAccount::writable(self.destination.address()),
-            InstructionAccount::readonly_signer(self.authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint.into(), self.destination.into(), self.authority]
-    }
-}
-
+#[derive(ToCpiAccounts)]
 pub struct WithdrawWithheldTokensFromAccounts<'a> {
     pub mint: CpiHandle<'a>,
     pub destination: CpiHandleMut<'a>,
+    #[signer]
     pub authority: CpiHandle<'a>,
-}
-
-impl<'a> ToCpiAccounts<'a> for WithdrawWithheldTokensFromAccounts<'a> {
-    fn to_instruction_accounts(&self) -> Vec<InstructionAccount<'a>> {
-        vec![
-            InstructionAccount::new(self.mint.address(), false, false),
-            InstructionAccount::writable(self.destination.address()),
-            InstructionAccount::readonly_signer(self.authority.address()),
-        ]
-    }
-
-    fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint, self.destination.into(), self.authority]
-    }
 }
 
 pub fn transfer_fee_initialize<'a>(
