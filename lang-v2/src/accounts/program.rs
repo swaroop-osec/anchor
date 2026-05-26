@@ -81,7 +81,7 @@ impl<T: Id> crate::ToCpiHandleMut for Program<T> {
     #[inline(always)]
     fn try_to_cpi_handle_mut(
         &mut self,
-    ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+    ) -> Result<crate::CpiHandleMut<'_>, solana_program_error::ProgramError> {
         crate::AnchorAccount::try_cpi_handle_mut(self)
     }
 }

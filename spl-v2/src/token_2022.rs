@@ -4,7 +4,7 @@ extern crate alloc;
 
 use {
     alloc::{string::String, vec, vec::Vec},
-    anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
+    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
     solana_program_error::ProgramError,
 };
@@ -36,7 +36,7 @@ impl<'a> ToCpiAccounts<'a> for GetAccountDataSize<'a> {
 }
 
 pub struct InitializeMintCloseAuthority<'a> {
-    pub mint: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for InitializeMintCloseAuthority<'a> {
@@ -45,12 +45,12 @@ impl<'a> ToCpiAccounts<'a> for InitializeMintCloseAuthority<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint]
+        vec![self.mint.into()]
     }
 }
 
 pub struct InitializeImmutableOwner<'a> {
-    pub account: CpiHandle<'a>,
+    pub account: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for InitializeImmutableOwner<'a> {
@@ -59,7 +59,7 @@ impl<'a> ToCpiAccounts<'a> for InitializeImmutableOwner<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account]
+        vec![self.account.into()]
     }
 }
 
@@ -100,8 +100,8 @@ impl<'a> ToCpiAccounts<'a> for UiAmountToAmount<'a> {
 }
 
 pub struct Reallocate<'a> {
-    pub account: CpiHandle<'a>,
-    pub payer: CpiHandle<'a>,
+    pub account: CpiHandleMut<'a>,
+    pub payer: CpiHandleMut<'a>,
     pub system_program: CpiHandle<'a>,
     pub authority: CpiHandle<'a>,
 }
@@ -118,8 +118,8 @@ impl<'a> ToCpiAccounts<'a> for Reallocate<'a> {
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
         vec![
-            self.account,
-            self.payer,
+            self.account.into(),
+            self.payer.into(),
             self.system_program,
             self.authority,
         ]
@@ -127,8 +127,8 @@ impl<'a> ToCpiAccounts<'a> for Reallocate<'a> {
 }
 
 pub struct WithdrawExcessLamports<'a> {
-    pub source: CpiHandle<'a>,
-    pub destination: CpiHandle<'a>,
+    pub source: CpiHandleMut<'a>,
+    pub destination: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -142,13 +142,13 @@ impl<'a> ToCpiAccounts<'a> for WithdrawExcessLamports<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.source, self.destination, self.authority]
+        vec![self.source.into(), self.destination.into(), self.authority]
     }
 }
 
 pub struct CreateNativeMint<'a> {
-    pub payer: CpiHandle<'a>,
-    pub native_mint: CpiHandle<'a>,
+    pub payer: CpiHandleMut<'a>,
+    pub native_mint: CpiHandleMut<'a>,
     pub system_program: CpiHandle<'a>,
 }
 
@@ -162,12 +162,16 @@ impl<'a> ToCpiAccounts<'a> for CreateNativeMint<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.payer, self.native_mint, self.system_program]
+        vec![
+            self.payer.into(),
+            self.native_mint.into(),
+            self.system_program,
+        ]
     }
 }
 
 pub struct InitializeNonTransferableMint<'a> {
-    pub mint: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for InitializeNonTransferableMint<'a> {
@@ -176,12 +180,12 @@ impl<'a> ToCpiAccounts<'a> for InitializeNonTransferableMint<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint]
+        vec![self.mint.into()]
     }
 }
 
 pub struct PermanentDelegateInitialize<'a> {
-    pub mint: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for PermanentDelegateInitialize<'a> {
@@ -190,7 +194,7 @@ impl<'a> ToCpiAccounts<'a> for PermanentDelegateInitialize<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint]
+        vec![self.mint.into()]
     }
 }
 

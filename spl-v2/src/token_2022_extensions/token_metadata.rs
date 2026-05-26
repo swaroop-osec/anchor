@@ -1,7 +1,7 @@
 use {
     super::common::validate_token_2022_program,
     alloc::{string::String, vec, vec::Vec},
-    anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
+    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
     solana_program_error::ProgramError,
     spl_pod::optional_keys::OptionalNonZeroPubkey,
@@ -10,7 +10,7 @@ use {
 pub use spl_token_metadata_interface::state::Field;
 
 pub struct TokenMetadataInitialize<'a> {
-    pub metadata: CpiHandle<'a>,
+    pub metadata: CpiHandleMut<'a>,
     pub update_authority: CpiHandle<'a>,
     pub mint_authority: CpiHandle<'a>,
     pub mint: CpiHandle<'a>,
@@ -28,7 +28,7 @@ impl<'a> ToCpiAccounts<'a> for TokenMetadataInitialize<'a> {
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
         vec![
-            self.metadata,
+            self.metadata.into(),
             self.update_authority,
             self.mint,
             self.mint_authority,
@@ -37,7 +37,7 @@ impl<'a> ToCpiAccounts<'a> for TokenMetadataInitialize<'a> {
 }
 
 pub struct TokenMetadataUpdateAuthority<'a> {
-    pub metadata: CpiHandle<'a>,
+    pub metadata: CpiHandleMut<'a>,
     pub current_authority: CpiHandle<'a>,
     pub new_authority: CpiHandle<'a>,
 }
@@ -51,12 +51,12 @@ impl<'a> ToCpiAccounts<'a> for TokenMetadataUpdateAuthority<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.metadata, self.current_authority]
+        vec![self.metadata.into(), self.current_authority]
     }
 }
 
 pub struct TokenMetadataUpdateField<'a> {
-    pub metadata: CpiHandle<'a>,
+    pub metadata: CpiHandleMut<'a>,
     pub update_authority: CpiHandle<'a>,
 }
 
@@ -69,12 +69,12 @@ impl<'a> ToCpiAccounts<'a> for TokenMetadataUpdateField<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.metadata, self.update_authority]
+        vec![self.metadata.into(), self.update_authority]
     }
 }
 
 pub struct TokenMetadataRemoveKey<'a> {
-    pub metadata: CpiHandle<'a>,
+    pub metadata: CpiHandleMut<'a>,
     pub update_authority: CpiHandle<'a>,
 }
 
@@ -87,7 +87,7 @@ impl<'a> ToCpiAccounts<'a> for TokenMetadataRemoveKey<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.metadata, self.update_authority]
+        vec![self.metadata.into(), self.update_authority]
     }
 }
 

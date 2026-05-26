@@ -1,12 +1,12 @@
 //! System program CPI helpers.
 //!
 //! Mirrors the v1 `anchor_lang::system_program` CPI utility surface while
-//! using v2 [`CpiContext`] and [`CpiHandle`] accounts.
+//! using v2 [`CpiContext`] and CPI handle accounts.
 
 extern crate alloc;
 
 use {
-    crate::{CpiContext, CpiHandle, Id, ToCpiAccounts},
+    crate::{CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
     alloc::{string::String, vec, vec::Vec},
     pinocchio::{address::MAX_SEED_LEN, instruction::InstructionAccount},
     solana_address::Address,
@@ -63,7 +63,7 @@ pub fn advance_nonce_account<'a>(ctx: CpiContext<'a, AdvanceNonceAccount<'a>>) -
 }
 
 pub struct AdvanceNonceAccount<'a> {
-    pub nonce: CpiHandle<'a>,
+    pub nonce: CpiHandleMut<'a>,
     pub authorized: CpiHandle<'a>,
     pub recent_blockhashes: CpiHandle<'a>,
 }
@@ -78,7 +78,7 @@ impl<'a> ToCpiAccounts<'a> for AdvanceNonceAccount<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.nonce, self.recent_blockhashes, self.authorized]
+        vec![self.nonce.into(), self.recent_blockhashes, self.authorized]
     }
 }
 
@@ -90,7 +90,7 @@ pub fn allocate<'a>(ctx: CpiContext<'a, Allocate<'a>>, space: u64) -> ProgramRes
 }
 
 pub struct Allocate<'a> {
-    pub account_to_allocate: CpiHandle<'a>,
+    pub account_to_allocate: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for Allocate<'a> {
@@ -101,7 +101,7 @@ impl<'a> ToCpiAccounts<'a> for Allocate<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account_to_allocate]
+        vec![self.account_to_allocate.into()]
     }
 }
 
@@ -123,7 +123,7 @@ pub fn allocate_with_seed<'a>(
 }
 
 pub struct AllocateWithSeed<'a> {
-    pub account_to_allocate: CpiHandle<'a>,
+    pub account_to_allocate: CpiHandleMut<'a>,
     pub base: CpiHandle<'a>,
 }
 
@@ -136,7 +136,7 @@ impl<'a> ToCpiAccounts<'a> for AllocateWithSeed<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account_to_allocate, self.base]
+        vec![self.account_to_allocate.into(), self.base]
     }
 }
 
@@ -148,7 +148,7 @@ pub fn assign<'a>(ctx: CpiContext<'a, Assign<'a>>, owner: &Address) -> ProgramRe
 }
 
 pub struct Assign<'a> {
-    pub account_to_assign: CpiHandle<'a>,
+    pub account_to_assign: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for Assign<'a> {
@@ -159,7 +159,7 @@ impl<'a> ToCpiAccounts<'a> for Assign<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account_to_assign]
+        vec![self.account_to_assign.into()]
     }
 }
 
@@ -179,7 +179,7 @@ pub fn assign_with_seed<'a>(
 }
 
 pub struct AssignWithSeed<'a> {
-    pub account_to_assign: CpiHandle<'a>,
+    pub account_to_assign: CpiHandleMut<'a>,
     pub base: CpiHandle<'a>,
 }
 
@@ -192,7 +192,7 @@ impl<'a> ToCpiAccounts<'a> for AssignWithSeed<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account_to_assign, self.base]
+        vec![self.account_to_assign.into(), self.base]
     }
 }
 
@@ -207,7 +207,7 @@ pub fn authorize_nonce_account<'a>(
 }
 
 pub struct AuthorizeNonceAccount<'a> {
-    pub nonce: CpiHandle<'a>,
+    pub nonce: CpiHandleMut<'a>,
     pub authorized: CpiHandle<'a>,
 }
 
@@ -220,7 +220,7 @@ impl<'a> ToCpiAccounts<'a> for AuthorizeNonceAccount<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.nonce, self.authorized]
+        vec![self.nonce.into(), self.authorized]
     }
 }
 
@@ -239,8 +239,8 @@ pub fn create_account<'a>(
 }
 
 pub struct CreateAccount<'a> {
-    pub from: CpiHandle<'a>,
-    pub to: CpiHandle<'a>,
+    pub from: CpiHandleMut<'a>,
+    pub to: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for CreateAccount<'a> {
@@ -252,7 +252,7 @@ impl<'a> ToCpiAccounts<'a> for CreateAccount<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from, self.to]
+        vec![self.from.into(), self.to.into()]
     }
 }
 
@@ -276,8 +276,8 @@ pub fn create_account_with_seed<'a>(
 }
 
 pub struct CreateAccountWithSeed<'a> {
-    pub from: CpiHandle<'a>,
-    pub to: CpiHandle<'a>,
+    pub from: CpiHandleMut<'a>,
+    pub to: CpiHandleMut<'a>,
     pub base: CpiHandle<'a>,
 }
 
@@ -291,7 +291,7 @@ impl<'a> ToCpiAccounts<'a> for CreateAccountWithSeed<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from, self.to, self.base]
+        vec![self.from.into(), self.to.into(), self.base]
     }
 }
 
@@ -324,8 +324,8 @@ pub fn create_nonce_account<'a>(
 }
 
 pub struct CreateNonceAccount<'a> {
-    pub from: CpiHandle<'a>,
-    pub nonce: CpiHandle<'a>,
+    pub from: CpiHandleMut<'a>,
+    pub nonce: CpiHandleMut<'a>,
     pub recent_blockhashes: CpiHandle<'a>,
     pub rent: CpiHandle<'a>,
 }
@@ -341,7 +341,12 @@ impl<'a> ToCpiAccounts<'a> for CreateNonceAccount<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from, self.nonce, self.recent_blockhashes, self.rent]
+        vec![
+            self.from.into(),
+            self.nonce.into(),
+            self.recent_blockhashes,
+            self.rent,
+        ]
     }
 }
 
@@ -377,8 +382,8 @@ pub fn create_nonce_account_with_seed<'a>(
 }
 
 pub struct CreateNonceAccountWithSeed<'a> {
-    pub from: CpiHandle<'a>,
-    pub nonce: CpiHandle<'a>,
+    pub from: CpiHandleMut<'a>,
+    pub nonce: CpiHandleMut<'a>,
     pub base: CpiHandle<'a>,
     pub recent_blockhashes: CpiHandle<'a>,
     pub rent: CpiHandle<'a>,
@@ -397,8 +402,8 @@ impl<'a> ToCpiAccounts<'a> for CreateNonceAccountWithSeed<'a> {
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
         vec![
-            self.from,
-            self.nonce,
+            self.from.into(),
+            self.nonce.into(),
             self.base,
             self.recent_blockhashes,
             self.rent,
@@ -414,8 +419,8 @@ pub fn transfer<'a>(ctx: CpiContext<'a, Transfer<'a>>, lamports: u64) -> Program
 }
 
 pub struct Transfer<'a> {
-    pub from: CpiHandle<'a>,
-    pub to: CpiHandle<'a>,
+    pub from: CpiHandleMut<'a>,
+    pub to: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for Transfer<'a> {
@@ -427,7 +432,7 @@ impl<'a> ToCpiAccounts<'a> for Transfer<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from, self.to]
+        vec![self.from.into(), self.to.into()]
     }
 }
 
@@ -448,9 +453,9 @@ pub fn transfer_with_seed<'a>(
 }
 
 pub struct TransferWithSeed<'a> {
-    pub from: CpiHandle<'a>,
+    pub from: CpiHandleMut<'a>,
     pub base: CpiHandle<'a>,
-    pub to: CpiHandle<'a>,
+    pub to: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for TransferWithSeed<'a> {
@@ -463,7 +468,7 @@ impl<'a> ToCpiAccounts<'a> for TransferWithSeed<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from, self.base, self.to]
+        vec![self.from.into(), self.base, self.to.into()]
     }
 }
 
@@ -478,8 +483,8 @@ pub fn withdraw_nonce_account<'a>(
 }
 
 pub struct WithdrawNonceAccount<'a> {
-    pub nonce: CpiHandle<'a>,
-    pub to: CpiHandle<'a>,
+    pub nonce: CpiHandleMut<'a>,
+    pub to: CpiHandleMut<'a>,
     pub recent_blockhashes: CpiHandle<'a>,
     pub rent: CpiHandle<'a>,
     pub authorized: CpiHandle<'a>,
@@ -498,8 +503,8 @@ impl<'a> ToCpiAccounts<'a> for WithdrawNonceAccount<'a> {
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
         vec![
-            self.nonce,
-            self.to,
+            self.nonce.into(),
+            self.to.into(),
             self.recent_blockhashes,
             self.rent,
             self.authorized,
@@ -508,7 +513,7 @@ impl<'a> ToCpiAccounts<'a> for WithdrawNonceAccount<'a> {
 }
 
 struct InitializeNonceAccount<'a> {
-    nonce: CpiHandle<'a>,
+    nonce: CpiHandleMut<'a>,
     recent_blockhashes: CpiHandle<'a>,
     rent: CpiHandle<'a>,
 }
@@ -523,7 +528,7 @@ impl<'a> ToCpiAccounts<'a> for InitializeNonceAccount<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.nonce, self.recent_blockhashes, self.rent]
+        vec![self.nonce.into(), self.recent_blockhashes, self.rent]
     }
 }
 

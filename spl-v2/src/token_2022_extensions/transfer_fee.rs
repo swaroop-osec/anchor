@@ -2,14 +2,14 @@ use {
     super::common::{pubkey_refs, validate_token_2022_program},
     crate::token_2022::spl_token_2022,
     alloc::{vec, vec::Vec},
-    anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
+    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
     solana_program_error::ProgramError,
     solana_pubkey::Pubkey,
 };
 
 pub struct TransferFeeInitialize<'a> {
-    pub mint: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for TransferFeeInitialize<'a> {
@@ -18,12 +18,12 @@ impl<'a> ToCpiAccounts<'a> for TransferFeeInitialize<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint]
+        vec![self.mint.into()]
     }
 }
 
 pub struct TransferFeeSetTransferFee<'a> {
-    pub mint: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -36,14 +36,14 @@ impl<'a> ToCpiAccounts<'a> for TransferFeeSetTransferFee<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint, self.authority]
+        vec![self.mint.into(), self.authority]
     }
 }
 
 pub struct TransferCheckedWithFee<'a> {
-    pub source: CpiHandle<'a>,
+    pub source: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
-    pub destination: CpiHandle<'a>,
+    pub destination: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -58,12 +58,17 @@ impl<'a> ToCpiAccounts<'a> for TransferCheckedWithFee<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.source, self.mint, self.destination, self.authority]
+        vec![
+            self.source.into(),
+            self.mint,
+            self.destination.into(),
+            self.authority,
+        ]
     }
 }
 
 pub struct HarvestWithheldTokensToMint<'a> {
-    pub mint: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for HarvestWithheldTokensToMint<'a> {
@@ -72,13 +77,13 @@ impl<'a> ToCpiAccounts<'a> for HarvestWithheldTokensToMint<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint]
+        vec![self.mint.into()]
     }
 }
 
 pub struct WithdrawWithheldTokensFromMint<'a> {
-    pub mint: CpiHandle<'a>,
-    pub destination: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
+    pub destination: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -92,13 +97,13 @@ impl<'a> ToCpiAccounts<'a> for WithdrawWithheldTokensFromMint<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint, self.destination, self.authority]
+        vec![self.mint.into(), self.destination.into(), self.authority]
     }
 }
 
 pub struct WithdrawWithheldTokensFromAccounts<'a> {
     pub mint: CpiHandle<'a>,
-    pub destination: CpiHandle<'a>,
+    pub destination: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -112,7 +117,7 @@ impl<'a> ToCpiAccounts<'a> for WithdrawWithheldTokensFromAccounts<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint, self.destination, self.authority]
+        vec![self.mint, self.destination.into(), self.authority]
     }
 }
 

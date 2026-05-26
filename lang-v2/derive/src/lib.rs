@@ -29,6 +29,399 @@ pub fn derive_accounts(input: TokenStream) -> TokenStream {
     TokenStream::from(impl_accounts(&input))
 }
 
+// ---------------------------------------------------------------------------
+// #[derive(ToCpiAccounts)]
+// ---------------------------------------------------------------------------
+
+#[proc_macro_derive(ToCpiAccounts, attributes(signer, nested, accounts_program_id))]
+pub fn derive_to_cpi_accounts(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    TokenStream::from(impl_to_cpi_accounts(&input))
+}
+
+#[derive(Clone, Copy)]
+enum CpiFieldKind {
+    Readonly,
+    Writable,
+    OptionalReadonly,
+    OptionalWritable,
+    Nested,
+    Phantom,
+}
+
+struct SignerExpr {
+    present: bool,
+    expr: TokenStream2,
+}
+
+fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
+    let fields = match &input.data {
+        Data::Struct(s) => match &s.fields {
+            Fields::Named(fields) => &fields.named,
+            _ => {
+                return syn::Error::new_spanned(
+                    input,
+                    "ToCpiAccounts can only be derived for structs with named fields",
+                )
+                .to_compile_error();
+            }
+        },
+        _ => {
+            return syn::Error::new_spanned(input, "ToCpiAccounts can only be derived for structs")
+                .to_compile_error();
+        }
+    };
+
+    let accounts_program_id = match accounts_program_id_expr(input) {
+        Ok(expr) => expr,
+        Err(err) => return err.to_compile_error(),
+    };
+
+    let mut cpi_fields = Vec::new();
+    let mut cpi_lifetime = None::<syn::Lifetime>;
+    for field in fields {
+        let ident = field
+            .ident
+            .as_ref()
+            .expect("named fields always have identifiers");
+        let signer = match signer_expr_attr(field) {
+            Ok(signer) => signer,
+            Err(err) => return err.to_compile_error(),
+        };
+        let nested = match has_nested_attr(field) {
+            Ok(nested) => nested,
+            Err(err) => return err.to_compile_error(),
+        };
+        if nested && signer.present {
+            return syn::Error::new_spanned(field, "#[nested] cannot be combined with #[signer]")
+                .to_compile_error();
+        }
+        let (kind, lifetime) = match cpi_field_kind(&field.ty, nested) {
+            Ok(kind) => kind,
+            Err(err) => return err.to_compile_error(),
+        };
+        if matches!(kind, CpiFieldKind::Phantom) && signer.present {
+            return syn::Error::new_spanned(
+                field,
+                "PhantomData fields cannot be combined with #[signer]",
+            )
+            .to_compile_error();
+        }
+        if let Some(existing) = &cpi_lifetime {
+            if existing.ident != lifetime.ident {
+                return syn::Error::new_spanned(
+                    &field.ty,
+                    "all CpiHandle and CpiHandleMut fields must use the same lifetime",
+                )
+                .to_compile_error();
+            }
+        } else {
+            cpi_lifetime = Some(lifetime);
+        }
+        if !matches!(kind, CpiFieldKind::Phantom) {
+            cpi_fields.push((ident, kind, signer.expr));
+        }
+    }
+
+    let Some(cpi_lifetime) = cpi_lifetime else {
+        return syn::Error::new_spanned(
+            input,
+            "ToCpiAccounts requires at least one CpiHandle or CpiHandleMut field",
+        )
+        .to_compile_error();
+    };
+
+    let name = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let meta_steps = cpi_fields.iter().map(|(ident, kind, signer)| {
+        let writable = matches!(
+            kind,
+            CpiFieldKind::Writable | CpiFieldKind::OptionalWritable
+        );
+        match kind {
+            CpiFieldKind::Phantom => quote! {},
+            CpiFieldKind::Nested => quote! {
+                __accounts.extend(anchor_lang_v2::ToCpiAccounts::to_instruction_accounts(&self.#ident));
+            },
+            CpiFieldKind::Readonly | CpiFieldKind::Writable => quote! {
+                __accounts.push(
+                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::new(
+                        self.#ident.address(),
+                        #writable,
+                        #signer,
+                    ),
+                );
+            },
+            CpiFieldKind::OptionalReadonly | CpiFieldKind::OptionalWritable => quote! {
+                match self.#ident {
+                    ::core::option::Option::Some(__account) => {
+                        __accounts.push(
+                            anchor_lang_v2::pinocchio::instruction::InstructionAccount::new(
+                                __account.address(),
+                                #writable,
+                                #signer,
+                            ),
+                        );
+                    }
+                    ::core::option::Option::None => {
+                        __accounts.push(
+                            anchor_lang_v2::pinocchio::instruction::InstructionAccount::readonly(
+                                &#accounts_program_id,
+                            ),
+                        );
+                    }
+                }
+            },
+        }
+    });
+
+    let handle_steps = cpi_fields.iter().map(|(ident, kind, _)| match kind {
+        CpiFieldKind::Phantom => quote! {},
+        CpiFieldKind::Nested => quote! {
+            __handles.extend(anchor_lang_v2::ToCpiAccounts::to_cpi_handles(&self.#ident));
+        },
+        CpiFieldKind::Readonly => quote! {
+            __handles.push(self.#ident);
+        },
+        CpiFieldKind::Writable => quote! {
+            __handles.push(self.#ident.into());
+        },
+        CpiFieldKind::OptionalReadonly => quote! {
+            if let ::core::option::Option::Some(__account) = self.#ident {
+                __handles.push(__account);
+            }
+        },
+        CpiFieldKind::OptionalWritable => quote! {
+            if let ::core::option::Option::Some(__account) = self.#ident {
+                __handles.push(__account.into());
+            }
+        },
+    });
+
+    quote! {
+        impl #impl_generics anchor_lang_v2::ToCpiAccounts<#cpi_lifetime>
+            for #name #ty_generics #where_clause
+        {
+            fn to_instruction_accounts(
+                &self,
+            ) -> anchor_lang_v2::__alloc::vec::Vec<
+                anchor_lang_v2::pinocchio::instruction::InstructionAccount<#cpi_lifetime>,
+            > {
+                let mut __accounts = anchor_lang_v2::__alloc::vec::Vec::new();
+                #(#meta_steps)*
+                __accounts
+            }
+
+            fn to_cpi_handles(
+                &self,
+            ) -> anchor_lang_v2::__alloc::vec::Vec<anchor_lang_v2::CpiHandle<#cpi_lifetime>> {
+                let mut __handles = anchor_lang_v2::__alloc::vec::Vec::new();
+                #(#handle_steps)*
+                __handles
+            }
+        }
+    }
+}
+
+fn accounts_program_id_expr(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    for attr in &input.attrs {
+        if !attr.path().is_ident("accounts_program_id") {
+            continue;
+        }
+        return match &attr.meta {
+            syn::Meta::List(list) => {
+                let expr: Expr = syn::parse2(list.tokens.clone())?;
+                Ok(quote! { #expr })
+            }
+            syn::Meta::NameValue(nv) => {
+                let expr = &nv.value;
+                Ok(quote! { #expr })
+            }
+            _ => Err(syn::Error::new_spanned(
+                attr,
+                "expected #[accounts_program_id(expr)]",
+            )),
+        };
+    }
+    Ok(quote! { crate::ID })
+}
+
+fn signer_expr_attr(field: &syn::Field) -> syn::Result<SignerExpr> {
+    let mut signer = None::<TokenStream2>;
+    for attr in &field.attrs {
+        if !attr.path().is_ident("signer") {
+            continue;
+        }
+        if signer.is_some() {
+            return Err(syn::Error::new_spanned(attr, "duplicate #[signer] attribute"));
+        }
+        signer = Some(match &attr.meta {
+            syn::Meta::Path(_) => quote! { true },
+            syn::Meta::NameValue(nv) => {
+                let expr = &nv.value;
+                quote! { #expr }
+            }
+            syn::Meta::List(list) => {
+                let expr: Expr = syn::parse2(list.tokens.clone())?;
+                quote! { #expr }
+            }
+        });
+    }
+    Ok(match signer {
+        Some(expr) => SignerExpr {
+            present: true,
+            expr,
+        },
+        None => SignerExpr {
+            present: false,
+            expr: quote! { false },
+        },
+    })
+}
+
+fn has_nested_attr(field: &syn::Field) -> syn::Result<bool> {
+    let mut nested = false;
+    for attr in &field.attrs {
+        if !attr.path().is_ident("nested") {
+            continue;
+        }
+        if nested {
+            return Err(syn::Error::new_spanned(attr, "duplicate #[nested] attribute"));
+        }
+        if !matches!(attr.meta, syn::Meta::Path(_)) {
+            return Err(syn::Error::new_spanned(attr, "expected #[nested]"));
+        }
+        nested = true;
+    }
+    Ok(nested)
+}
+
+fn cpi_field_kind(ty: &Type, nested: bool) -> syn::Result<(CpiFieldKind, syn::Lifetime)> {
+    if nested {
+        if option_inner(ty).is_some() {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "#[nested] fields cannot be wrapped in Option",
+            ));
+        }
+        let Some(lifetime) = path_type_first_lifetime(ty) else {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "#[nested] fields must name a type carrying the CPI lifetime, e.g. Inner<'a>",
+            ));
+        };
+        return Ok((CpiFieldKind::Nested, lifetime));
+    }
+    if let Some(lifetime) = phantom_data_lifetime(ty) {
+        return Ok((CpiFieldKind::Phantom, lifetime));
+    }
+    if let Some((inner, _)) = option_inner(ty) {
+        let (kind, lifetime) = direct_cpi_field_kind(inner)?;
+        return match kind {
+            CpiFieldKind::Readonly => Ok((CpiFieldKind::OptionalReadonly, lifetime)),
+            CpiFieldKind::Writable => Ok((CpiFieldKind::OptionalWritable, lifetime)),
+            _ => unreachable!("direct_cpi_field_kind never returns optional kinds"),
+        };
+    }
+    direct_cpi_field_kind(ty)
+}
+
+fn phantom_data_lifetime(ty: &Type) -> Option<syn::Lifetime> {
+    let Type::Path(tp) = ty else {
+        return None;
+    };
+    let seg = tp.path.segments.last()?;
+    if seg.ident != "PhantomData" {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+    if args.args.len() != 1 {
+        return None;
+    }
+    let syn::GenericArgument::Type(Type::Reference(reference)) = args.args.first()? else {
+        return None;
+    };
+    let Type::Tuple(tuple) = reference.elem.as_ref() else {
+        return None;
+    };
+    if !tuple.elems.is_empty() {
+        return None;
+    }
+    reference.lifetime.clone()
+}
+
+fn direct_cpi_field_kind(ty: &Type) -> syn::Result<(CpiFieldKind, syn::Lifetime)> {
+    let Some((ident, lifetime)) = path_type_ident_and_lifetime(ty) else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "expected CpiHandle<'a>, CpiHandleMut<'a>, Option<CpiHandle<'a>>, or Option<CpiHandleMut<'a>>",
+        ));
+    };
+    match ident.to_string().as_str() {
+        "CpiHandle" => Ok((CpiFieldKind::Readonly, lifetime)),
+        "CpiHandleMut" => Ok((CpiFieldKind::Writable, lifetime)),
+        _ => Err(syn::Error::new_spanned(
+            ty,
+            "expected CpiHandle<'a> or CpiHandleMut<'a>",
+        )),
+    }
+}
+
+fn option_inner(ty: &Type) -> Option<(&Type, &syn::Path)> {
+    let Type::Path(tp) = ty else {
+        return None;
+    };
+    let seg = tp.path.segments.last()?;
+    if seg.ident != "Option" {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+    if args.args.len() != 1 {
+        return None;
+    }
+    let syn::GenericArgument::Type(inner) = args.args.first()? else {
+        return None;
+    };
+    Some((inner, &tp.path))
+}
+
+fn path_type_ident_and_lifetime(ty: &Type) -> Option<(Ident, syn::Lifetime)> {
+    let Type::Path(tp) = ty else {
+        return None;
+    };
+    let seg = tp.path.segments.last()?;
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+    if args.args.len() != 1 {
+        return None;
+    }
+    let syn::GenericArgument::Lifetime(lifetime) = args.args.first()? else {
+        return None;
+    };
+    Some((seg.ident.clone(), lifetime.clone()))
+}
+
+fn path_type_first_lifetime(ty: &Type) -> Option<syn::Lifetime> {
+    let Type::Path(tp) = ty else {
+        return None;
+    };
+    tp.path.segments.iter().find_map(|seg| {
+        let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+            return None;
+        };
+        args.args.iter().find_map(|arg| match arg {
+            syn::GenericArgument::Lifetime(lifetime) => Some(lifetime.clone()),
+            _ => None,
+        })
+    })
+}
+
 /// Returns true if `ty` needs the `'ix` lifetime injected when used as an
 /// instruction arg. This is the case for top-level references (`&[u8]`, `&T`)
 /// and for path types carrying lifetime generic args (`CreateArgs<'_>`,
@@ -1006,13 +1399,13 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
     // --- CPI accounts struct (cross-program invocation, on-chain side) ---
     //
     // Emits a sibling `__cpi_accounts_<name>` module containing a struct of
-    // `CpiHandle<'a>` fields and a `ToCpiAccounts<'a>` impl driven by each
-    // field's compile-time writable / signer flags. `Nested<T>` fields hold
-    // T's generated CPI accounts struct and flatten through `ToCpiAccounts`,
+    // `CpiHandle<'a>` / `CpiHandleMut<'a>` fields and a `ToCpiAccounts<'a>`
+    // impl driven by each field's compile-time writable / signer flags.
+    // `Nested<T>` fields hold T's generated CPI accounts struct and flatten through `ToCpiAccounts`,
     // matching the account ordering used by `TryAccounts`. Optional accounts
-    // are emitted as `Option<CpiHandle<'a>>`; `None` emits the program-id
-    // sentinel account meta and omits the handle, matching the callee's
-    // optional-account parser.
+    // are emitted as `Option<CpiHandle<'a>>` or `Option<CpiHandleMut<'a>>`;
+    // `None` emits the program-id sentinel account meta and omits the handle,
+    // matching the callee's optional-account parser.
     // The `#[program]` macro re-exports the resulting type under
     // `cpi::accounts::<name>` and synthesizes the per-instruction wrapper
     // functions.
@@ -1035,77 +1428,34 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
                         &format!("__cpi_accounts_{}", inner_name.to_lowercase()),
                         n.span(),
                     );
-                    quote! { pub #n: super::#inner_mod::#inner_ident<'a> }
-                } else if f.is_optional {
-                    quote! { pub #n: ::core::option::Option<anchor_lang_v2::CpiHandle<'a>> }
-                } else {
-                    quote! { pub #n: anchor_lang_v2::CpiHandle<'a> }
-                }
-            })
-            .collect();
-        let cpi_meta_steps: Vec<_> = fields
-            .iter()
-            .map(|f| {
-                let n = &f.name;
-                if parse::is_nested_type(&f.ty) {
-                    return quote! {
-                        __accounts.extend(
-                            anchor_lang_v2::ToCpiAccounts::to_instruction_accounts(&self.#n),
-                        );
-                    };
-                }
-                let writable = f.idl_writable;
-                let signer_expr = cpi_meta_signer_expr(f);
-                if f.is_optional {
                     quote! {
-                        match &self.#n {
-                            ::core::option::Option::Some(__account) => {
-                                __accounts.push(
-                                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::new(
-                                        __account.address(),
-                                        #writable,
-                                        #signer_expr,
-                                    ),
-                                );
-                            }
-                            ::core::option::Option::None => {
-                                __accounts.push(
-                                    anchor_lang_v2::pinocchio::instruction::InstructionAccount::readonly(
-                                        &#accounts_program_id,
-                                    ),
-                                );
-                            }
-                        }
+                        #[nested]
+                        pub #n: super::#inner_mod::#inner_ident<'a>
                     }
-                } else {
+                } else if f.is_optional && f.idl_writable {
+                    let signer_expr = cpi_meta_signer_expr(f);
                     quote! {
-                        __accounts.push(
-                            anchor_lang_v2::pinocchio::instruction::InstructionAccount::new(
-                                self.#n.address(),
-                                #writable,
-                                #signer_expr,
-                            ),
-                        );
-                    }
-                }
-            })
-            .collect();
-        let cpi_handle_steps: Vec<_> = fields
-            .iter()
-            .map(|f| {
-                let n = &f.name;
-                if parse::is_nested_type(&f.ty) {
-                    quote! {
-                        __handles.extend(anchor_lang_v2::ToCpiAccounts::to_cpi_handles(&self.#n));
+                        #[signer(#signer_expr)]
+                        pub #n: ::core::option::Option<anchor_lang_v2::CpiHandleMut<'a>>
                     }
                 } else if f.is_optional {
+                    let signer_expr = cpi_meta_signer_expr(f);
                     quote! {
-                        if let ::core::option::Option::Some(__account) = self.#n {
-                            __handles.push(__account);
-                        }
+                        #[signer(#signer_expr)]
+                        pub #n: ::core::option::Option<anchor_lang_v2::CpiHandle<'a>>
+                    }
+                } else if f.idl_writable {
+                    let signer_expr = cpi_meta_signer_expr(f);
+                    quote! {
+                        #[signer(#signer_expr)]
+                        pub #n: anchor_lang_v2::CpiHandleMut<'a>
                     }
                 } else {
-                    quote! { __handles.push(self.#n); }
+                    let signer_expr = cpi_meta_signer_expr(f);
+                    quote! {
+                        #[signer(#signer_expr)]
+                        pub #n: anchor_lang_v2::CpiHandle<'a>
+                    }
                 }
             })
             .collect();
@@ -1114,7 +1464,7 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
         // the lifetime via a `PhantomData<&'a ()>` field — kept hidden — and
         // expose a no-arg `new()` / `Default` so callers don't need to spell
         // out the marker. Non-empty structs already bind `'a` through their
-        // `CpiHandle<'a>` fields and skip the extra field entirely.
+        // CPI handle fields and skip the extra field entirely.
         let (extra_field, ctor_impl) = if fields.is_empty() {
             (
                 quote! {
@@ -1141,29 +1491,13 @@ fn impl_accounts(input: &DeriveInput) -> TokenStream2 {
             pub mod #cpi_mod_name {
                 extern crate alloc;
                 use super::*;
+                #[derive(anchor_lang_v2::ToCpiAccounts)]
+                #[accounts_program_id(#accounts_program_id)]
                 pub struct #name<'a> {
                     #(#cpi_field_decls,)*
                     #extra_field
                 }
                 #ctor_impl
-                impl<'a> anchor_lang_v2::ToCpiAccounts<'a> for #name<'a> {
-                    fn to_instruction_accounts(
-                        &self,
-                    ) -> alloc::vec::Vec<
-                        anchor_lang_v2::pinocchio::instruction::InstructionAccount<'a>,
-                    > {
-                        let mut __accounts = alloc::vec::Vec::new();
-                        #(#cpi_meta_steps)*
-                        __accounts
-                    }
-                    fn to_cpi_handles(
-                        &self,
-                    ) -> alloc::vec::Vec<anchor_lang_v2::CpiHandle<'a>> {
-                        let mut __handles = alloc::vec::Vec::new();
-                        #(#cpi_handle_steps)*
-                        __handles
-                    }
-                }
             }
         }
     };

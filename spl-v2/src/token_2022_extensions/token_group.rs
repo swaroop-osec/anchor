@@ -1,13 +1,13 @@
 use {
     super::common::validate_token_2022_program,
     alloc::{vec, vec::Vec},
-    anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
+    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
     solana_program_error::ProgramError,
 };
 
 pub struct TokenGroupInitialize<'a> {
-    pub group: CpiHandle<'a>,
+    pub group: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
     pub mint_authority: CpiHandle<'a>,
 }
@@ -22,15 +22,15 @@ impl<'a> ToCpiAccounts<'a> for TokenGroupInitialize<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.group, self.mint, self.mint_authority]
+        vec![self.group.into(), self.mint, self.mint_authority]
     }
 }
 
 pub struct TokenMemberInitialize<'a> {
-    pub member: CpiHandle<'a>,
+    pub member: CpiHandleMut<'a>,
     pub member_mint: CpiHandle<'a>,
     pub member_mint_authority: CpiHandle<'a>,
-    pub group: CpiHandle<'a>,
+    pub group: CpiHandleMut<'a>,
     pub group_update_authority: CpiHandle<'a>,
 }
 
@@ -47,10 +47,10 @@ impl<'a> ToCpiAccounts<'a> for TokenMemberInitialize<'a> {
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
         vec![
-            self.member,
+            self.member.into(),
             self.member_mint,
             self.member_mint_authority,
-            self.group,
+            self.group.into(),
             self.group_update_authority,
         ]
     }

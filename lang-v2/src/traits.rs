@@ -9,9 +9,9 @@ use pinocchio::account::{Ref, RefMut};
 
 /// Zero-cost CPI handle that borrows an anchor account at the Rust level.
 ///
-/// Obtained via [`AnchorAccount::cpi_handle`] (shared borrow) or
-/// [`AnchorAccount::cpi_handle_mut`] (exclusive borrow). Pinocchio's
-/// `borrow_state` is never modified — CPI is routed through
+/// Obtained via [`AnchorAccount::cpi_handle`] (shared borrow) or by erasing a
+/// [`CpiHandleMut`] produced from [`AnchorAccount::cpi_handle_mut`].
+/// Pinocchio's `borrow_state` is never modified — CPI is routed through
 /// `invoke_signed_unchecked` by [`CpiContext::invoke`].
 ///
 /// Deliberately does NOT implement `Deref<Target = AccountView>` to
@@ -20,6 +20,15 @@ use pinocchio::account::{Ref, RefMut};
 pub struct CpiHandle<'a> {
     view: &'a AccountView,
     writable: bool,
+}
+
+/// Typed mutable CPI handle for API-facing CPI account structs.
+///
+/// This carries the exclusive-borrow provenance at construction time, then
+/// erases into [`CpiHandle`] for invocation.
+#[derive(Clone, Copy)]
+pub struct CpiHandleMut<'a> {
+    view: &'a AccountView,
 }
 
 impl<'a> CpiHandle<'a> {
@@ -71,10 +80,45 @@ impl<'a> CpiHandle<'a> {
     }
 }
 
+impl<'a> CpiHandleMut<'a> {
+    #[inline(always)]
+    pub fn writable(view: &'a mut AccountView) -> Self {
+        Self { view }
+    }
+
+    /// The account's on-chain address.
+    #[inline(always)]
+    pub fn address(&self) -> &'a Address {
+        self.view.address()
+    }
+
+    /// Mutable handles always erase to writable CPI handles.
+    #[inline(always)]
+    pub fn is_writable(&self) -> bool {
+        true
+    }
+
+    /// Whether the underlying account is a signer on the transaction.
+    #[inline(always)]
+    pub fn is_signer(&self) -> bool {
+        self.view.is_signer()
+    }
+}
+
+impl<'a> From<CpiHandleMut<'a>> for CpiHandle<'a> {
+    #[inline(always)]
+    fn from(handle: CpiHandleMut<'a>) -> Self {
+        Self {
+            view: handle.view,
+            writable: true,
+        }
+    }
+}
+
 /// Converts a CPI accounts struct into instruction metadata and handles.
 ///
 /// Implemented by generated CPI accounts structs. Each field maps to an
-/// [`InstructionAccount`] (address + writable/signer flags) and a
+/// [`InstructionAccount`] (address + writable/signer flags) and an erased
 /// [`CpiHandle`] for the actual invocation.
 pub trait ToCpiAccounts<'a> {
     /// Produce instruction account metadata for the CPI instruction.
@@ -184,14 +228,14 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// Obtain a writable CPI handle for this account.
     ///
     /// The handle borrows `self` mutably, preventing any typed access
-    /// while it is alive. The handle's `is_writable` flag is `true`.
+    /// while it is alive.
     ///
     /// # Panics
     ///
     /// Panics if the underlying account is not marked writable in
     /// the transaction.
     #[inline(always)]
-    fn cpi_handle_mut(&mut self) -> CpiHandle<'_> {
+    fn cpi_handle_mut(&mut self) -> CpiHandleMut<'_> {
         self.try_cpi_handle_mut()
             .expect("cpi_handle_mut called on a read-only account")
     }
@@ -201,13 +245,12 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// Returns [`ProgramError::InvalidArgument`] when the underlying account
     /// is not marked writable in the transaction.
     #[inline(always)]
-    fn try_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+    fn try_cpi_handle_mut(&mut self) -> Result<CpiHandleMut<'_>, ProgramError> {
         if !self.account().is_writable() {
             return Err(ProgramError::InvalidArgument);
         }
-        Ok(CpiHandle {
+        Ok(CpiHandleMut {
             view: self.account(),
-            writable: true,
         })
     }
 }
@@ -237,10 +280,10 @@ pub trait ToCpiHandle {
 
 /// Account-like value that can be passed into a writable CPI account slot.
 pub trait ToCpiHandleMut {
-    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError>;
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandleMut<'_>, ProgramError>;
 
     #[inline(always)]
-    fn to_cpi_handle_mut(&mut self) -> CpiHandle<'_> {
+    fn to_cpi_handle_mut(&mut self) -> CpiHandleMut<'_> {
         self.try_to_cpi_handle_mut()
             .expect("to_cpi_handle_mut called on a read-only account")
     }
@@ -262,7 +305,7 @@ impl<T: ToCpiHandle + ?Sized> ToCpiHandle for &mut T {
 
 impl<T: ToCpiHandleMut + ?Sized> ToCpiHandleMut for &mut T {
     #[inline(always)]
-    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandleMut<'_>, ProgramError> {
         (**self).try_to_cpi_handle_mut()
     }
 }
@@ -276,14 +319,27 @@ impl ToCpiHandle for CpiHandle<'_> {
 
 impl ToCpiHandleMut for CpiHandle<'_> {
     #[inline(always)]
-    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandleMut<'_>, ProgramError> {
         if !self.account_view().is_writable() {
             return Err(ProgramError::InvalidArgument);
         }
-        Ok(CpiHandle {
+        Ok(CpiHandleMut {
             view: self.account_view(),
-            writable: true,
         })
+    }
+}
+
+impl ToCpiHandle for CpiHandleMut<'_> {
+    #[inline(always)]
+    fn to_cpi_handle(&self) -> CpiHandle<'_> {
+        (*self).into()
+    }
+}
+
+impl ToCpiHandleMut for CpiHandleMut<'_> {
+    #[inline(always)]
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandleMut<'_>, ProgramError> {
+        Ok(*self)
     }
 }
 
@@ -296,11 +352,11 @@ impl ToCpiHandle for AccountView {
 
 impl ToCpiHandleMut for AccountView {
     #[inline(always)]
-    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandle<'_>, ProgramError> {
+    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandleMut<'_>, ProgramError> {
         if !self.is_writable() {
             return Err(ProgramError::InvalidArgument);
         }
-        Ok(CpiHandle::writable(self))
+        Ok(CpiHandleMut::writable(self))
     }
 }
 

@@ -2,13 +2,13 @@ use {
     super::common::validate_token_2022_program,
     crate::token_2022::spl_token_2022,
     alloc::{vec, vec::Vec},
-    anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
+    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
     solana_program_error::ProgramError,
 };
 
 pub struct InterestBearingMintInitialize<'a> {
-    pub mint: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for InterestBearingMintInitialize<'a> {
@@ -17,12 +17,12 @@ impl<'a> ToCpiAccounts<'a> for InterestBearingMintInitialize<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint]
+        vec![self.mint.into()]
     }
 }
 
 pub struct InterestBearingMintUpdateRate<'a> {
-    pub mint: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
     pub rate_authority: CpiHandle<'a>,
 }
 
@@ -35,7 +35,7 @@ impl<'a> ToCpiAccounts<'a> for InterestBearingMintUpdateRate<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint, self.rate_authority]
+        vec![self.mint.into(), self.rate_authority]
     }
 }
 

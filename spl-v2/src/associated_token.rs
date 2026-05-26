@@ -18,7 +18,7 @@ extern crate alloc;
 
 use {
     alloc::{vec, vec::Vec},
-    anchor_lang_v2::{programs::Token, CpiContext, CpiHandle, Id, ToCpiAccounts},
+    anchor_lang_v2::{programs::Token, CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
     pinocchio::instruction::InstructionAccount,
     solana_address::Address,
     solana_program_error::ProgramError,
@@ -45,8 +45,8 @@ pub fn get_associated_token_address_with_program_id(
 }
 
 pub struct Create<'a> {
-    pub payer: CpiHandle<'a>,
-    pub associated_token: CpiHandle<'a>,
+    pub payer: CpiHandleMut<'a>,
+    pub associated_token: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
     pub mint: CpiHandle<'a>,
     pub system_program: CpiHandle<'a>,
@@ -67,8 +67,8 @@ impl<'a> ToCpiAccounts<'a> for Create<'a> {
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
         vec![
-            self.payer,
-            self.associated_token,
+            self.payer.into(),
+            self.associated_token.into(),
             self.authority,
             self.mint,
             self.system_program,

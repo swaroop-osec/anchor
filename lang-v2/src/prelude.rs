@@ -62,6 +62,7 @@ pub use crate::{
     // CPI
     CpiContext,
     CpiHandle,
+    CpiHandleMut,
     Discriminator,
     Error,
     // Re-export ProgramError for custom error impls

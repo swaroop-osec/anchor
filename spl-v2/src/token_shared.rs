@@ -4,7 +4,7 @@ extern crate alloc;
 
 use {
     alloc::{vec, vec::Vec},
-    anchor_lang_v2::{CpiContext, CpiHandle, Id, ToCpiAccounts},
+    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
     solana_program_error::ProgramError,
     spl_token_2022_interface as spl_token_2022,
@@ -29,7 +29,7 @@ pub(crate) fn validate_token_interface_program(_program_id: &Address) -> Result<
 }
 
 pub struct InitializeAccount<'a> {
-    pub account: CpiHandle<'a>,
+    pub account: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
     pub authority: CpiHandle<'a>,
     pub rent: CpiHandle<'a>,
@@ -46,12 +46,12 @@ impl<'a> ToCpiAccounts<'a> for InitializeAccount<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account, self.mint, self.authority, self.rent]
+        vec![self.account.into(), self.mint, self.authority, self.rent]
     }
 }
 
 pub struct InitializeAccount3<'a> {
-    pub account: CpiHandle<'a>,
+    pub account: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
     pub authority: CpiHandle<'a>,
 }
@@ -65,12 +65,12 @@ impl<'a> ToCpiAccounts<'a> for InitializeAccount3<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account, self.mint]
+        vec![self.account.into(), self.mint]
     }
 }
 
 pub struct InitializeMint<'a> {
-    pub mint: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
     pub rent: CpiHandle<'a>,
 }
 
@@ -83,12 +83,12 @@ impl<'a> ToCpiAccounts<'a> for InitializeMint<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint, self.rent]
+        vec![self.mint.into(), self.rent]
     }
 }
 
 pub struct InitializeMint2<'a> {
-    pub mint: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for InitializeMint2<'a> {
@@ -97,7 +97,7 @@ impl<'a> ToCpiAccounts<'a> for InitializeMint2<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint]
+        vec![self.mint.into()]
     }
 }
 
@@ -106,8 +106,8 @@ impl<'a> ToCpiAccounts<'a> for InitializeMint2<'a> {
 ///   1. `[writable]` to
 ///   2. `[signer]` authority (owner/delegate)
 pub struct Transfer<'a> {
-    pub from: CpiHandle<'a>,
-    pub to: CpiHandle<'a>,
+    pub from: CpiHandleMut<'a>,
+    pub to: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -121,7 +121,7 @@ impl<'a> ToCpiAccounts<'a> for Transfer<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from, self.to, self.authority]
+        vec![self.from.into(), self.to.into(), self.authority]
     }
 }
 
@@ -132,9 +132,9 @@ impl<'a> ToCpiAccounts<'a> for Transfer<'a> {
 ///   2. `[writable]` to
 ///   3. `[signer]` authority
 pub struct TransferChecked<'a> {
-    pub from: CpiHandle<'a>,
+    pub from: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
-    pub to: CpiHandle<'a>,
+    pub to: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -149,13 +149,13 @@ impl<'a> ToCpiAccounts<'a> for TransferChecked<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from, self.mint, self.to, self.authority]
+        vec![self.from.into(), self.mint, self.to.into(), self.authority]
     }
 }
 
 pub struct MintTo<'a> {
-    pub mint: CpiHandle<'a>,
-    pub to: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
+    pub to: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -169,13 +169,13 @@ impl<'a> ToCpiAccounts<'a> for MintTo<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint, self.to, self.authority]
+        vec![self.mint.into(), self.to.into(), self.authority]
     }
 }
 
 pub struct MintToChecked<'a> {
-    pub mint: CpiHandle<'a>,
-    pub to: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
+    pub to: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -189,13 +189,13 @@ impl<'a> ToCpiAccounts<'a> for MintToChecked<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.mint, self.to, self.authority]
+        vec![self.mint.into(), self.to.into(), self.authority]
     }
 }
 
 pub struct Burn<'a> {
-    pub mint: CpiHandle<'a>,
-    pub from: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
+    pub from: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -209,13 +209,13 @@ impl<'a> ToCpiAccounts<'a> for Burn<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from, self.mint, self.authority]
+        vec![self.from.into(), self.mint.into(), self.authority]
     }
 }
 
 pub struct BurnChecked<'a> {
-    pub mint: CpiHandle<'a>,
-    pub from: CpiHandle<'a>,
+    pub mint: CpiHandleMut<'a>,
+    pub from: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -229,12 +229,12 @@ impl<'a> ToCpiAccounts<'a> for BurnChecked<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.from, self.mint, self.authority]
+        vec![self.from.into(), self.mint.into(), self.authority]
     }
 }
 
 pub struct Approve<'a> {
-    pub to: CpiHandle<'a>,
+    pub to: CpiHandleMut<'a>,
     pub delegate: CpiHandle<'a>,
     pub authority: CpiHandle<'a>,
 }
@@ -249,12 +249,12 @@ impl<'a> ToCpiAccounts<'a> for Approve<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.to, self.delegate, self.authority]
+        vec![self.to.into(), self.delegate, self.authority]
     }
 }
 
 pub struct ApproveChecked<'a> {
-    pub to: CpiHandle<'a>,
+    pub to: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
     pub delegate: CpiHandle<'a>,
     pub authority: CpiHandle<'a>,
@@ -271,12 +271,12 @@ impl<'a> ToCpiAccounts<'a> for ApproveChecked<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.to, self.mint, self.delegate, self.authority]
+        vec![self.to.into(), self.mint, self.delegate, self.authority]
     }
 }
 
 pub struct Revoke<'a> {
-    pub source: CpiHandle<'a>,
+    pub source: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -289,13 +289,13 @@ impl<'a> ToCpiAccounts<'a> for Revoke<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.source, self.authority]
+        vec![self.source.into(), self.authority]
     }
 }
 
 pub struct SetAuthority<'a> {
     pub current_authority: CpiHandle<'a>,
-    pub account_or_mint: CpiHandle<'a>,
+    pub account_or_mint: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for SetAuthority<'a> {
@@ -307,13 +307,13 @@ impl<'a> ToCpiAccounts<'a> for SetAuthority<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account_or_mint, self.current_authority]
+        vec![self.account_or_mint.into(), self.current_authority]
     }
 }
 
 pub struct CloseAccount<'a> {
-    pub account: CpiHandle<'a>,
-    pub destination: CpiHandle<'a>,
+    pub account: CpiHandleMut<'a>,
+    pub destination: CpiHandleMut<'a>,
     pub authority: CpiHandle<'a>,
 }
 
@@ -327,12 +327,12 @@ impl<'a> ToCpiAccounts<'a> for CloseAccount<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account, self.destination, self.authority]
+        vec![self.account.into(), self.destination.into(), self.authority]
     }
 }
 
 pub struct FreezeAccount<'a> {
-    pub account: CpiHandle<'a>,
+    pub account: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
     pub authority: CpiHandle<'a>,
 }
@@ -347,12 +347,12 @@ impl<'a> ToCpiAccounts<'a> for FreezeAccount<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account, self.mint, self.authority]
+        vec![self.account.into(), self.mint, self.authority]
     }
 }
 
 pub struct ThawAccount<'a> {
-    pub account: CpiHandle<'a>,
+    pub account: CpiHandleMut<'a>,
     pub mint: CpiHandle<'a>,
     pub authority: CpiHandle<'a>,
 }
@@ -367,12 +367,12 @@ impl<'a> ToCpiAccounts<'a> for ThawAccount<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account, self.mint, self.authority]
+        vec![self.account.into(), self.mint, self.authority]
     }
 }
 
 pub struct SyncNative<'a> {
-    pub account: CpiHandle<'a>,
+    pub account: CpiHandleMut<'a>,
 }
 
 impl<'a> ToCpiAccounts<'a> for SyncNative<'a> {
@@ -381,7 +381,7 @@ impl<'a> ToCpiAccounts<'a> for SyncNative<'a> {
     }
 
     fn to_cpi_handles(&self) -> Vec<CpiHandle<'a>> {
-        vec![self.account]
+        vec![self.account.into()]
     }
 }
 

@@ -59,7 +59,7 @@ impl<T: crate::ToCpiHandleMut + ?Sized> crate::ToCpiHandleMut for Box<T> {
     #[inline(always)]
     fn try_to_cpi_handle_mut(
         &mut self,
-    ) -> Result<crate::CpiHandle<'_>, solana_program_error::ProgramError> {
+    ) -> Result<crate::CpiHandleMut<'_>, solana_program_error::ProgramError> {
         self.as_mut().try_to_cpi_handle_mut()
     }
 }
