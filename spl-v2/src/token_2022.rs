@@ -7,7 +7,6 @@ use {
     anchor_lang_v2::{CpiContext, CpiHandle, ToCpiAccounts},
     pinocchio::{address::Address, instruction::InstructionAccount},
     solana_program_error::ProgramError,
-    solana_pubkey::Pubkey,
 };
 
 #[cfg(any(feature = "guardrails", test))]
@@ -593,16 +592,6 @@ fn validate_spl_token_program(_program: &Address) -> Result<(), ProgramError> {
     Ok(())
 }
 
-fn address_to_pubkey(address: &Address) -> Pubkey {
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(address.as_ref());
-    Pubkey::new_from_array(bytes)
-}
-
-fn optional_address_to_pubkey(address: Option<&Address>) -> Option<Pubkey> {
-    address.map(address_to_pubkey)
-}
-
 #[inline]
 fn encode_amount_ix(disc: u8, amount: u64) -> [u8; 9] {
     let mut data = [0u8; 9];
@@ -810,12 +799,12 @@ pub fn initialize_account3<'a>(
     ctx: CpiContext<'a, InitializeAccount3<'a>>,
 ) -> Result<(), ProgramError> {
     validate_spl_token_program(ctx.program)?;
-    let owner = address_to_pubkey(ctx.accounts.authority.address());
+    let owner = *ctx.accounts.authority.address();
     ctx.invoke(&build_data(
         spl_token_2022::instruction::initialize_account3(
-            &address_to_pubkey(ctx.program),
-            &address_to_pubkey(ctx.accounts.account.address()),
-            &address_to_pubkey(ctx.accounts.mint.address()),
+            ctx.program,
+            ctx.accounts.account.address(),
+            ctx.accounts.mint.address(),
             &owner,
         ),
     )?);
@@ -879,11 +868,11 @@ pub fn set_authority<'a>(
 ) -> Result<(), ProgramError> {
     validate_spl_token_program(ctx.program)?;
     let data = spl_token_2022::instruction::set_authority(
-        &address_to_pubkey(ctx.program),
-        &address_to_pubkey(ctx.accounts.account_or_mint.address()),
-        optional_address_to_pubkey(new_authority).as_ref(),
+        ctx.program,
+        ctx.accounts.account_or_mint.address(),
+        new_authority,
         authority_type,
-        &address_to_pubkey(ctx.accounts.current_authority.address()),
+        ctx.accounts.current_authority.address(),
         &[],
     )
     .map(IntoInstructionData::into_data)?;
@@ -1000,6 +989,7 @@ pub fn initialize_permanent_delegate<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solana_pubkey::Pubkey;
 
     #[test]
     fn token_2022_program_check_accepts_canonical_id() {
@@ -1045,10 +1035,10 @@ mod tests {
         let data =
             encode_initialize_mint_ix(DISC_INITIALIZE_MINT, 9, &authority, Some(&freeze_authority));
         let expected = spl_token_2022::instruction::initialize_mint(
-            &address_to_pubkey(&Token2022::id()),
+            &Token2022::id(),
             &Pubkey::new_unique(),
-            &address_to_pubkey(&authority),
-            Some(&address_to_pubkey(&freeze_authority)),
+            &authority,
+            Some(&freeze_authority),
             9,
         )
         .unwrap()
@@ -1063,9 +1053,9 @@ mod tests {
         assert_eq!(
             encode_initialize_mint_ix(DISC_INITIALIZE_MINT, 9, &authority, None),
             spl_token_2022::instruction::initialize_mint(
-                &address_to_pubkey(&Token2022::id()),
+                &Token2022::id(),
                 &Pubkey::new_unique(),
-                &address_to_pubkey(&authority),
+                &authority,
                 None,
                 9,
             )
@@ -1081,9 +1071,9 @@ mod tests {
         assert_eq!(
             encode_address_option_ix(DISC_INITIALIZE_MINT_CLOSE_AUTHORITY, Some(&address)),
             spl_token_2022::instruction::initialize_mint_close_authority(
-                &address_to_pubkey(&Token2022::id()),
+                &Token2022::id(),
                 &Pubkey::new_unique(),
-                Some(&address_to_pubkey(&address)),
+                Some(&address),
             )
             .unwrap()
             .data
@@ -1091,7 +1081,7 @@ mod tests {
         assert_eq!(
             encode_address_option_ix(DISC_INITIALIZE_MINT_CLOSE_AUTHORITY, None),
             spl_token_2022::instruction::initialize_mint_close_authority(
-                &address_to_pubkey(&Token2022::id()),
+                &Token2022::id(),
                 &Pubkey::new_unique(),
                 None,
             )
@@ -1101,7 +1091,7 @@ mod tests {
         assert_eq!(
             encode_ui_amount_to_amount_ix("1.25"),
             spl_token_2022::instruction::ui_amount_to_amount(
-                &address_to_pubkey(&Token2022::id()),
+                &Token2022::id(),
                 &Pubkey::new_unique(),
                 "1.25",
             )

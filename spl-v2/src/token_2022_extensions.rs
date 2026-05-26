@@ -41,16 +41,6 @@ fn validate_token_2022_program(_program: &Address) -> Result<(), ProgramError> {
     Ok(())
 }
 
-fn address_to_pubkey(address: &Address) -> Pubkey {
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(address.as_ref());
-    Pubkey::new_from_array(bytes)
-}
-
-fn optional_address_to_pubkey(address: Option<&Address>) -> Option<Pubkey> {
-    address.map(address_to_pubkey)
-}
-
 fn build_data(instruction: Result<Instruction, ProgramError>) -> Result<Vec<u8>, ProgramError> {
     instruction.map(|ix| ix.data)
 }
@@ -766,11 +756,11 @@ pub fn token_metadata_remove_key<'a>(
     idempotent: bool,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let ix = spl_token_metadata_interface::instruction::remove_key(
         &program,
-        &address_to_pubkey(ctx.accounts.metadata.address()),
-        &address_to_pubkey(ctx.accounts.update_authority.address()),
+        ctx.accounts.metadata.address(),
+        ctx.accounts.update_authority.address(),
         key,
         idempotent,
     );
@@ -783,11 +773,11 @@ pub fn default_account_state_initialize<'a>(
     state: &spl_token_2022::state::AccountState,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::default_account_state::instruction::initialize_default_account_state(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
+            ctx.accounts.mint.address(),
             state,
         ),
     )?;
@@ -800,12 +790,12 @@ pub fn default_account_state_update<'a>(
     state: &spl_token_2022::state::AccountState,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::default_account_state::instruction::update_default_account_state(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            &address_to_pubkey(ctx.accounts.freeze_authority.address()),
+            ctx.accounts.mint.address(),
+            ctx.accounts.freeze_authority.address(),
             &[],
             state,
         ),
@@ -818,10 +808,10 @@ pub fn immutable_owner_initialize<'a>(
     ctx: CpiContext<'a, ImmutableOwnerInitialize<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(spl_token_2022::instruction::initialize_immutable_owner(
         &program,
-        &address_to_pubkey(ctx.accounts.token_account.address()),
+        ctx.accounts.token_account.address(),
     ))?;
     ctx.invoke(&data);
     Ok(())
@@ -833,12 +823,12 @@ pub fn interest_bearing_mint_initialize<'a>(
     rate: i16,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::interest_bearing_mint::instruction::initialize(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            optional_address_to_pubkey(rate_authority),
+            ctx.accounts.mint.address(),
+            rate_authority.copied(),
             rate,
         ),
     )?;
@@ -851,12 +841,12 @@ pub fn interest_bearing_mint_update_rate<'a>(
     rate: i16,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::interest_bearing_mint::instruction::update_rate(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            &address_to_pubkey(ctx.accounts.rate_authority.address()),
+            ctx.accounts.mint.address(),
+            ctx.accounts.rate_authority.address(),
             &[],
             rate,
         ),
@@ -869,12 +859,12 @@ pub fn memo_transfer_initialize<'a>(
     ctx: CpiContext<'a, MemoTransfer<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::memo_transfer::instruction::enable_required_transfer_memos(
             &program,
-            &address_to_pubkey(ctx.accounts.account.address()),
-            &address_to_pubkey(ctx.accounts.owner.address()),
+            ctx.accounts.account.address(),
+            ctx.accounts.owner.address(),
             &[],
         ),
     )?;
@@ -886,12 +876,12 @@ pub fn memo_transfer_disable<'a>(
     ctx: CpiContext<'a, MemoTransfer<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::memo_transfer::instruction::disable_required_transfer_memos(
             &program,
-            &address_to_pubkey(ctx.accounts.account.address()),
-            &address_to_pubkey(ctx.accounts.owner.address()),
+            ctx.accounts.account.address(),
+            ctx.accounts.owner.address(),
             &[],
         ),
     )?;
@@ -905,13 +895,13 @@ pub fn metadata_pointer_initialize<'a>(
     metadata_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::metadata_pointer::instruction::initialize(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            optional_address_to_pubkey(authority),
-            optional_address_to_pubkey(metadata_address),
+            ctx.accounts.mint.address(),
+            authority.copied(),
+            metadata_address.copied(),
         ),
     )?;
     ctx.invoke(&data);
@@ -923,14 +913,14 @@ pub fn metadata_pointer_update<'a>(
     metadata_address: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::metadata_pointer::instruction::update(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            &address_to_pubkey(ctx.accounts.authority.address()),
+            ctx.accounts.mint.address(),
+            ctx.accounts.authority.address(),
             &[],
-            optional_address_to_pubkey(metadata_address),
+            metadata_address.copied(),
         ),
     )?;
     ctx.invoke(&data);
@@ -942,12 +932,12 @@ pub fn mint_close_authority_initialize<'a>(
     close_authority: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
-    let close_authority = optional_address_to_pubkey(close_authority);
+    let program = *ctx.program;
+    let close_authority = close_authority.copied();
     let data = build_data(
         spl_token_2022::instruction::initialize_mint_close_authority(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
+            ctx.accounts.mint.address(),
             close_authority.as_ref(),
         ),
     )?;
@@ -959,11 +949,11 @@ pub fn non_transferable_mint_initialize<'a>(
     ctx: CpiContext<'a, NonTransferableMintInitialize<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::instruction::initialize_non_transferable_mint(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
+            ctx.accounts.mint.address(),
         ),
     )?;
     ctx.invoke(&data);
@@ -975,11 +965,11 @@ pub fn permanent_delegate_initialize<'a>(
     permanent_delegate: &Address,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(spl_token_2022::instruction::initialize_permanent_delegate(
         &program,
-        &address_to_pubkey(ctx.accounts.mint.address()),
-        &address_to_pubkey(permanent_delegate),
+        ctx.accounts.mint.address(),
+        permanent_delegate,
     ))?;
     ctx.invoke(&data);
     Ok(())
@@ -992,13 +982,13 @@ pub fn token_metadata_initialize<'a>(
     uri: String,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let ix = spl_token_metadata_interface::instruction::initialize(
         &program,
-        &address_to_pubkey(ctx.accounts.metadata.address()),
-        &address_to_pubkey(ctx.accounts.update_authority.address()),
-        &address_to_pubkey(ctx.accounts.mint.address()),
-        &address_to_pubkey(ctx.accounts.mint_authority.address()),
+        ctx.accounts.metadata.address(),
+        ctx.accounts.update_authority.address(),
+        ctx.accounts.mint.address(),
+        ctx.accounts.mint_authority.address(),
         name,
         symbol,
         uri,
@@ -1012,13 +1002,13 @@ pub fn token_metadata_update_authority<'a>(
     new_authority: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
-    let new_authority = OptionalNonZeroPubkey::try_from(optional_address_to_pubkey(new_authority))
+    let program = *ctx.program;
+    let new_authority = OptionalNonZeroPubkey::try_from(new_authority.copied())
         .map_err(|_| ProgramError::InvalidArgument)?;
     let ix = spl_token_metadata_interface::instruction::update_authority(
         &program,
-        &address_to_pubkey(ctx.accounts.metadata.address()),
-        &address_to_pubkey(ctx.accounts.current_authority.address()),
+        ctx.accounts.metadata.address(),
+        ctx.accounts.current_authority.address(),
         new_authority,
     );
     ctx.invoke(&ix.data);
@@ -1031,11 +1021,11 @@ pub fn token_metadata_update_field<'a>(
     value: String,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let ix = spl_token_metadata_interface::instruction::update_field(
         &program,
-        &address_to_pubkey(ctx.accounts.metadata.address()),
-        &address_to_pubkey(ctx.accounts.update_authority.address()),
+        ctx.accounts.metadata.address(),
+        ctx.accounts.update_authority.address(),
         field,
         value,
     );
@@ -1049,13 +1039,13 @@ pub fn token_group_initialize<'a>(
     max_size: u64,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let ix = spl_token_group_interface::instruction::initialize_group(
         &program,
-        &address_to_pubkey(ctx.accounts.group.address()),
-        &address_to_pubkey(ctx.accounts.mint.address()),
-        &address_to_pubkey(ctx.accounts.mint_authority.address()),
-        optional_address_to_pubkey(update_authority),
+        ctx.accounts.group.address(),
+        ctx.accounts.mint.address(),
+        ctx.accounts.mint_authority.address(),
+        update_authority.copied(),
         max_size,
     );
     ctx.invoke(&ix.data);
@@ -1066,14 +1056,14 @@ pub fn token_member_initialize<'a>(
     ctx: CpiContext<'a, TokenMemberInitialize<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let ix = spl_token_group_interface::instruction::initialize_member(
         &program,
-        &address_to_pubkey(ctx.accounts.member.address()),
-        &address_to_pubkey(ctx.accounts.member_mint.address()),
-        &address_to_pubkey(ctx.accounts.member_mint_authority.address()),
-        &address_to_pubkey(ctx.accounts.group.address()),
-        &address_to_pubkey(ctx.accounts.group_update_authority.address()),
+        ctx.accounts.member.address(),
+        ctx.accounts.member_mint.address(),
+        ctx.accounts.member_mint_authority.address(),
+        ctx.accounts.group.address(),
+        ctx.accounts.group_update_authority.address(),
     );
     ctx.invoke(&ix.data);
     Ok(())
@@ -1087,13 +1077,13 @@ pub fn transfer_fee_initialize<'a>(
     maximum_fee: u64,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
-    let transfer_fee_config_authority = optional_address_to_pubkey(transfer_fee_config_authority);
-    let withdraw_withheld_authority = optional_address_to_pubkey(withdraw_withheld_authority);
+    let program = *ctx.program;
+    let transfer_fee_config_authority = transfer_fee_config_authority.copied();
+    let withdraw_withheld_authority = withdraw_withheld_authority.copied();
     let data = build_data(
         spl_token_2022::extension::transfer_fee::instruction::initialize_transfer_fee_config(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
+            ctx.accounts.mint.address(),
             transfer_fee_config_authority.as_ref(),
             withdraw_withheld_authority.as_ref(),
             transfer_fee_basis_points,
@@ -1110,12 +1100,12 @@ pub fn transfer_fee_set<'a>(
     maximum_fee: u64,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::transfer_fee::instruction::set_transfer_fee(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            &address_to_pubkey(ctx.accounts.authority.address()),
+            ctx.accounts.mint.address(),
+            ctx.accounts.authority.address(),
             &[],
             transfer_fee_basis_points,
             maximum_fee,
@@ -1132,14 +1122,14 @@ pub fn transfer_checked_with_fee<'a>(
     fee: u64,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::transfer_fee::instruction::transfer_checked_with_fee(
             &program,
-            &address_to_pubkey(ctx.accounts.source.address()),
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            &address_to_pubkey(ctx.accounts.destination.address()),
-            &address_to_pubkey(ctx.accounts.authority.address()),
+            ctx.accounts.source.address(),
+            ctx.accounts.mint.address(),
+            ctx.accounts.destination.address(),
+            ctx.accounts.authority.address(),
             &[],
             amount,
             decimals,
@@ -1155,16 +1145,13 @@ pub fn harvest_withheld_tokens_to_mint<'a>(
     sources: Vec<CpiHandle<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
-    let source_pubkeys: Vec<Pubkey> = sources
-        .iter()
-        .map(|source| address_to_pubkey(source.address()))
-        .collect();
+    let program = *ctx.program;
+    let source_pubkeys: Vec<Pubkey> = sources.iter().map(|source| *source.address()).collect();
     let source_refs = pubkey_refs(&source_pubkeys);
     let data = build_data(
         spl_token_2022::extension::transfer_fee::instruction::harvest_withheld_tokens_to_mint(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
+            ctx.accounts.mint.address(),
             &source_refs,
         ),
     )?;
@@ -1176,13 +1163,13 @@ pub fn withdraw_withheld_tokens_from_mint<'a>(
     ctx: CpiContext<'a, WithdrawWithheldTokensFromMint<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::transfer_fee::instruction::withdraw_withheld_tokens_from_mint(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            &address_to_pubkey(ctx.accounts.destination.address()),
-            &address_to_pubkey(ctx.accounts.authority.address()),
+            ctx.accounts.mint.address(),
+            ctx.accounts.destination.address(),
+            ctx.accounts.authority.address(),
             &[],
         ),
     )?;
@@ -1195,18 +1182,15 @@ pub fn withdraw_withheld_tokens_from_accounts<'a>(
     sources: Vec<CpiHandle<'a>>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
-    let source_pubkeys: Vec<Pubkey> = sources
-        .iter()
-        .map(|source| address_to_pubkey(source.address()))
-        .collect();
+    let program = *ctx.program;
+    let source_pubkeys: Vec<Pubkey> = sources.iter().map(|source| *source.address()).collect();
     let source_refs = pubkey_refs(&source_pubkeys);
     let data = build_data(
         spl_token_2022::extension::transfer_fee::instruction::withdraw_withheld_tokens_from_accounts(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            &address_to_pubkey(ctx.accounts.destination.address()),
-            &address_to_pubkey(ctx.accounts.authority.address()),
+            ctx.accounts.mint.address(),
+            ctx.accounts.destination.address(),
+            ctx.accounts.authority.address(),
             &[],
             &source_refs,
         ),
@@ -1221,13 +1205,13 @@ pub fn transfer_hook_initialize<'a>(
     transfer_hook_program_id: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::transfer_hook::instruction::initialize(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            optional_address_to_pubkey(authority),
-            optional_address_to_pubkey(transfer_hook_program_id),
+            ctx.accounts.mint.address(),
+            authority.copied(),
+            transfer_hook_program_id.copied(),
         ),
     )?;
     ctx.invoke(&data);
@@ -1239,14 +1223,14 @@ pub fn transfer_hook_update<'a>(
     transfer_hook_program_id: Option<&Address>,
 ) -> Result<(), ProgramError> {
     validate_token_2022_program(ctx.program)?;
-    let program = address_to_pubkey(ctx.program);
+    let program = *ctx.program;
     let data = build_data(
         spl_token_2022::extension::transfer_hook::instruction::update(
             &program,
-            &address_to_pubkey(ctx.accounts.mint.address()),
-            &address_to_pubkey(ctx.accounts.authority.address()),
+            ctx.accounts.mint.address(),
+            ctx.accounts.authority.address(),
             &[],
-            optional_address_to_pubkey(transfer_hook_program_id),
+            transfer_hook_program_id.copied(),
         ),
     )?;
     ctx.invoke(&data);
