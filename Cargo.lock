@@ -2471,31 +2471,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "equivalence-metadata-spy"
-version = "0.1.0"
-dependencies = [
- "anchor-lang-v2",
- "wincode 0.5.4",
-]
-
-[[package]]
-name = "equivalence-metadata-v1"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
-]
-
-[[package]]
-name = "equivalence-metadata-v2"
-version = "0.1.0"
-dependencies = [
- "anchor-lang-v2",
- "anchor-spl-v2",
- "wincode 0.5.4",
-]
-
-[[package]]
 name = "equivalence-programs"
 version = "0.1.0"
 
