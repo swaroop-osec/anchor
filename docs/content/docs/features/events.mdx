@@ -147,12 +147,11 @@ macro emits events through Cross Program Invocations (CPIs) to the program
 itself. The event data is encoded and included in the CPI's instruction data
 (instead of program logs).
 
-To emit events through CPIs, you need to enable the `event-cpi` feature in your
-program's `Cargo.toml`:
+Event CPI support is available by default:
 
 ```toml title="Cargo.toml"
 [dependencies]
-anchor-lang = { version = "1.0.0", features = ["event-cpi"] }
+anchor-lang = { version = "1.0.0" }
 ```
 
 Example usage:

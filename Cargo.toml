@@ -39,7 +39,6 @@ members = [
     "tests-v2/programs/spl",
     "tests-v2/programs/spl-ata",
     "tests-v2/programs/token-2022-extensions/*",
-    "tests-v2/programs/token-2022-spy",
     "tests-v2/programs/token-interface",
     "tests-v2/programs/declare-program/constants",
     "tests-v2/programs/declare-program/cpi",

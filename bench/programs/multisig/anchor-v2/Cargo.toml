@@ -19,10 +19,9 @@ idl-build = []
 profile = ["anchor-v2-testing/profile"]
 
 [dependencies]
-# Opt out of `account-resize` (multisig never reallocs) and `guardrails`
-# (the executable check on Program<T> and Slab borrow-state assertions are
-# development aids — the runtime already rejects CPI to non-executable
-# accounts, and borrow violations are caught by the VM).
+# Opt out of `guardrails` (the executable check on Program<T> and Slab
+# borrow-state assertions are development aids — the runtime already rejects
+# CPI to non-executable accounts, and borrow violations are caught by the VM).
 anchor-lang-v2 = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
 borsh = { version = "1", optional = true }
 pinocchio = { version = "0.11", default-features = false, features = ["copy"] }

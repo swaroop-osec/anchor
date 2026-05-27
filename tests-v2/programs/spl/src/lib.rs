@@ -821,10 +821,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke the Token-2022 group pointer update helper against the spy program.
+    /// Invoke the Token-2022 group pointer update helper against the supplied Token-2022 program.
     #[discrim = 41]
-    pub fn spy_group_pointer_update(
-        ctx: &mut Context<SpyGroupPointerUpdate>,
+    pub fn token_2022_group_pointer_update(
+        ctx: &mut Context<Token2022GroupPointerUpdate>,
         group_address: Address,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::GroupPointerUpdate {
@@ -836,10 +836,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke the Token-2022 group member pointer update helper against the spy program.
+    /// Invoke the Token-2022 group member pointer update helper against the supplied Token-2022 program.
     #[discrim = 42]
-    pub fn spy_group_member_pointer_update(
-        ctx: &mut Context<SpyGroupMemberPointerUpdate>,
+    pub fn token_2022_group_member_pointer_update(
+        ctx: &mut Context<Token2022GroupMemberPointerUpdate>,
         member_address: Address,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::GroupMemberPointerUpdate {
@@ -851,9 +851,11 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke the Token-2022 reallocate helper against the spy program.
+    /// Invoke the Token-2022 reallocate helper against the supplied Token-2022 program.
     #[discrim = 43]
-    pub fn spy_reallocate_group_pointer(ctx: &mut Context<SpyReallocate>) -> Result<()> {
+    pub fn token_2022_reallocate_immutable_owner(
+        ctx: &mut Context<Token2022Reallocate>,
+    ) -> Result<()> {
         let accs = token_2022_cpi::Reallocate {
             account: ctx.accounts.account.cpi_handle_mut(),
             payer: ctx.accounts.payer.cpi_handle_mut(),
@@ -861,15 +863,15 @@ pub mod spl_test {
             authority: ctx.accounts.authority.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token_2022_cpi::reallocate(cpi_ctx, &[token_2022_cpi::ExtensionType::GroupPointer])?;
+        token_2022_cpi::reallocate(cpi_ctx, &[token_2022_cpi::ExtensionType::ImmutableOwner])?;
 
         Ok(())
     }
 
-    /// Invoke the direct Token-2022 immutable owner helper against the spy program.
+    /// Invoke the direct Token-2022 immutable owner helper against the supplied Token-2022 program.
     #[discrim = 68]
-    pub fn spy_token_2022_immutable_owner_initialize(
-        ctx: &mut Context<SpyImmutableOwnerInitialize>,
+    pub fn direct_token_2022_immutable_owner_initialize(
+        ctx: &mut Context<Token2022ImmutableOwnerInitialize>,
     ) -> Result<()> {
         let accs = token_2022_cpi::InitializeImmutableOwner {
             account: ctx.accounts.token_account.cpi_handle_mut(),
@@ -879,10 +881,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke the direct Token-2022 mint close authority helper against the spy program.
+    /// Invoke the direct Token-2022 mint close authority helper against the supplied Token-2022 program.
     #[discrim = 69]
-    pub fn spy_token_2022_mint_close_authority_initialize(
-        ctx: &mut Context<SpyMintCloseAuthorityInitialize>,
+    pub fn direct_token_2022_mint_close_authority_initialize(
+        ctx: &mut Context<Token2022MintCloseAuthorityInitialize>,
         close_authority: Address,
     ) -> Result<()> {
         let accs = token_2022_cpi::InitializeMintCloseAuthority {
@@ -893,10 +895,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke the direct Token-2022 non-transferable mint helper against the spy program.
+    /// Invoke the direct Token-2022 non-transferable mint helper against the supplied Token-2022 program.
     #[discrim = 70]
-    pub fn spy_token_2022_non_transferable_mint_initialize(
-        ctx: &mut Context<SpyNonTransferableMintInitialize>,
+    pub fn direct_token_2022_non_transferable_mint_initialize(
+        ctx: &mut Context<Token2022NonTransferableMintInitialize>,
     ) -> Result<()> {
         let accs = token_2022_cpi::InitializeNonTransferableMint {
             mint: ctx.accounts.mint.cpi_handle_mut(),
@@ -906,10 +908,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke the direct Token-2022 permanent delegate helper against the spy program.
+    /// Invoke the direct Token-2022 permanent delegate helper against the supplied Token-2022 program.
     #[discrim = 71]
-    pub fn spy_token_2022_permanent_delegate_initialize(
-        ctx: &mut Context<SpyPermanentDelegateInitialize>,
+    pub fn direct_token_2022_permanent_delegate_initialize(
+        ctx: &mut Context<Token2022PermanentDelegateInitialize>,
         permanent_delegate: Address,
     ) -> Result<()> {
         let accs = token_2022_cpi::PermanentDelegateInitialize {
@@ -922,8 +924,8 @@ pub mod spl_test {
 
     /// Invoke the direct Token-2022 get-account-data-size helper and assert its return data.
     #[discrim = 72]
-    pub fn spy_token_2022_get_account_data_size(
-        ctx: &mut Context<SpyToken2022ReturnDataMint>,
+    pub fn direct_token_2022_get_account_data_size(
+        ctx: &mut Context<Token2022ReturnDataMint>,
     ) -> Result<()> {
         let accs = token_2022_cpi::GetAccountDataSize {
             mint: ctx.accounts.mint.cpi_handle(),
@@ -931,19 +933,23 @@ pub mod spl_test {
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         let size = token_2022_cpi::get_account_data_size(
             cpi_ctx,
-            &[
-                token_2022_cpi::ExtensionType::ImmutableOwner,
-                token_2022_cpi::ExtensionType::NonTransferable,
-            ],
+            &[token_2022_cpi::ExtensionType::ImmutableOwner],
         )?;
-        require_eq!(size, 4242u64, ProgramError::InvalidInstructionData);
+        require_eq!(
+            size,
+            token_2022_cpi::ExtensionType::try_calculate_account_len::<
+                token_2022_cpi::spl_token_2022::state::Account,
+            >(&[token_2022_cpi::ExtensionType::ImmutableOwner])
+            .map_err(|_| ProgramError::InvalidInstructionData)? as u64,
+            ProgramError::InvalidInstructionData
+        );
         Ok(())
     }
 
     /// Invoke the direct Token-2022 amount-to-ui-amount helper and assert its return data.
     #[discrim = 73]
-    pub fn spy_token_2022_amount_to_ui_amount(
-        ctx: &mut Context<SpyToken2022ReturnDataMint>,
+    pub fn direct_token_2022_amount_to_ui_amount(
+        ctx: &mut Context<Token2022ReturnDataMint>,
     ) -> Result<()> {
         let accs = token_2022_cpi::AmountToUiAmount {
             account: ctx.accounts.mint.cpi_handle(),
@@ -951,56 +957,30 @@ pub mod spl_test {
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         let ui_amount = token_2022_cpi::amount_to_ui_amount(cpi_ctx, 123456789)?;
         require!(
-            ui_amount.as_bytes() == b"1234.56789",
+            ui_amount.as_bytes() == b"123.456789",
             ProgramError::InvalidInstructionData
         );
         Ok(())
     }
 
-    /// Invoke amount-to-ui-amount against a callee that returns invalid UTF-8.
-    #[discrim = 74]
-    pub fn spy_token_2022_amount_to_ui_amount_invalid_utf8(
-        ctx: &mut Context<SpyToken2022ReturnDataMint>,
-    ) -> Result<()> {
-        let accs = token_2022_cpi::AmountToUiAmount {
-            account: ctx.accounts.mint.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        let _ = token_2022_cpi::amount_to_ui_amount(cpi_ctx, 987654321)?;
-        Ok(())
-    }
-
     /// Invoke the direct Token-2022 ui-amount-to-amount helper and assert its return data.
     #[discrim = 75]
-    pub fn spy_token_2022_ui_amount_to_amount(
-        ctx: &mut Context<SpyToken2022ReturnDataMint>,
+    pub fn direct_token_2022_ui_amount_to_amount(
+        ctx: &mut Context<Token2022ReturnDataMint>,
     ) -> Result<()> {
         let accs = token_2022_cpi::UiAmountToAmount {
             account: ctx.accounts.mint.cpi_handle(),
         };
         let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
         let amount = token_2022_cpi::ui_amount_to_amount(cpi_ctx, "42.125")?;
-        require_eq!(amount, 42125u64, ProgramError::InvalidInstructionData);
+        require_eq!(amount, 42125000u64, ProgramError::InvalidInstructionData);
         Ok(())
     }
 
-    /// Invoke ui-amount-to-amount against a callee that returns too few bytes.
-    #[discrim = 76]
-    pub fn spy_token_2022_ui_amount_to_amount_short_return(
-        ctx: &mut Context<SpyToken2022ReturnDataMint>,
-    ) -> Result<()> {
-        let accs = token_2022_cpi::UiAmountToAmount {
-            account: ctx.accounts.mint.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        let _ = token_2022_cpi::ui_amount_to_amount(cpi_ctx, "badret")?;
-        Ok(())
-    }
-
-    /// Invoke Token-2022 immutable owner initialization against the spy program.
+    /// Invoke Token-2022 immutable owner initialization against the supplied Token-2022 program.
     #[discrim = 57]
-    pub fn spy_immutable_owner_initialize(
-        ctx: &mut Context<SpyImmutableOwnerInitialize>,
+    pub fn token_2022_immutable_owner_initialize(
+        ctx: &mut Context<Token2022ImmutableOwnerInitialize>,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::ImmutableOwnerInitialize {
             token_account: ctx.accounts.token_account.cpi_handle_mut(),
@@ -1010,10 +990,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 non-transferable mint initialization against the spy program.
+    /// Invoke Token-2022 non-transferable mint initialization against the supplied Token-2022 program.
     #[discrim = 58]
-    pub fn spy_non_transferable_mint_initialize(
-        ctx: &mut Context<SpyNonTransferableMintInitialize>,
+    pub fn token_2022_non_transferable_mint_initialize(
+        ctx: &mut Context<Token2022NonTransferableMintInitialize>,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::NonTransferableMintInitialize {
             mint: ctx.accounts.mint.cpi_handle_mut(),
@@ -1023,10 +1003,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 mint close authority initialization against the spy program.
+    /// Invoke Token-2022 mint close authority initialization against the supplied Token-2022 program.
     #[discrim = 59]
-    pub fn spy_mint_close_authority_initialize(
-        ctx: &mut Context<SpyMintCloseAuthorityInitialize>,
+    pub fn token_2022_mint_close_authority_initialize(
+        ctx: &mut Context<Token2022MintCloseAuthorityInitialize>,
         close_authority: Address,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::MintCloseAuthorityInitialize {
@@ -1037,10 +1017,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 permanent delegate initialization against the spy program.
+    /// Invoke Token-2022 permanent delegate initialization against the supplied Token-2022 program.
     #[discrim = 60]
-    pub fn spy_permanent_delegate_initialize(
-        ctx: &mut Context<SpyPermanentDelegateInitialize>,
+    pub fn token_2022_permanent_delegate_initialize(
+        ctx: &mut Context<Token2022PermanentDelegateInitialize>,
         permanent_delegate: Address,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::PermanentDelegateInitialize {
@@ -1051,10 +1031,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 default account state initialization against the spy program.
+    /// Invoke Token-2022 default account state initialization against the supplied Token-2022 program.
     #[discrim = 61]
-    pub fn spy_default_account_state_initialize(
-        ctx: &mut Context<SpyDefaultAccountStateInitialize>,
+    pub fn token_2022_default_account_state_initialize(
+        ctx: &mut Context<Token2022DefaultAccountStateInitialize>,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::DefaultAccountStateInitialize {
             mint: ctx.accounts.mint.cpi_handle_mut(),
@@ -1067,9 +1047,11 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 memo transfer enablement against the spy program.
+    /// Invoke Token-2022 memo transfer enablement against the supplied Token-2022 program.
     #[discrim = 62]
-    pub fn spy_memo_transfer_initialize(ctx: &mut Context<SpyMemoTransfer>) -> Result<()> {
+    pub fn token_2022_memo_transfer_initialize(
+        ctx: &mut Context<Token2022MemoTransfer>,
+    ) -> Result<()> {
         let accs = token_2022_ext_cpi::MemoTransfer {
             account: ctx.accounts.account.cpi_handle_mut(),
             owner: ctx.accounts.owner.cpi_handle(),
@@ -1079,10 +1061,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 metadata pointer initialization against the spy program.
+    /// Invoke Token-2022 metadata pointer initialization against the supplied Token-2022 program.
     #[discrim = 63]
-    pub fn spy_metadata_pointer_initialize(
-        ctx: &mut Context<SpyMetadataPointerInitialize>,
+    pub fn token_2022_metadata_pointer_initialize(
+        ctx: &mut Context<Token2022MetadataPointerInitialize>,
         authority: Address,
         metadata_address: Address,
     ) -> Result<()> {
@@ -1098,10 +1080,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 transfer hook initialization against the spy program.
+    /// Invoke Token-2022 transfer hook initialization against the supplied Token-2022 program.
     #[discrim = 64]
-    pub fn spy_transfer_hook_initialize(
-        ctx: &mut Context<SpyTransferHookInitialize>,
+    pub fn token_2022_transfer_hook_initialize(
+        ctx: &mut Context<Token2022TransferHookInitialize>,
         authority: Address,
         hook_program: Address,
     ) -> Result<()> {
@@ -1117,10 +1099,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 interest-bearing mint initialization against the spy program.
+    /// Invoke Token-2022 interest-bearing mint initialization against the supplied Token-2022 program.
     #[discrim = 65]
-    pub fn spy_interest_bearing_mint_initialize(
-        ctx: &mut Context<SpyInterestBearingMintInitialize>,
+    pub fn token_2022_interest_bearing_mint_initialize(
+        ctx: &mut Context<Token2022InterestBearingMintInitialize>,
         rate_authority: Address,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::InterestBearingMintInitialize {
@@ -1131,10 +1113,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 pausable initialization against the spy program.
+    /// Invoke Token-2022 pausable initialization against the supplied Token-2022 program.
     #[discrim = 66]
-    pub fn spy_pausable_initialize(
-        ctx: &mut Context<SpyPausableInitialize>,
+    pub fn token_2022_pausable_initialize(
+        ctx: &mut Context<Token2022PausableInitialize>,
         authority: Address,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::PausableInitialize {
@@ -1145,10 +1127,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 transfer fee initialization against the spy program.
+    /// Invoke Token-2022 transfer fee initialization against the supplied Token-2022 program.
     #[discrim = 67]
-    pub fn spy_transfer_fee_initialize(
-        ctx: &mut Context<SpyTransferFeeInitialize>,
+    pub fn token_2022_transfer_fee_initialize(
+        ctx: &mut Context<Token2022TransferFeeInitialize>,
         config_authority: Address,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::TransferFeeInitialize {
@@ -1165,9 +1147,11 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 native mint creation against the spy program.
+    /// Invoke Token-2022 native mint creation against the supplied Token-2022 program.
     #[discrim = 100]
-    pub fn spy_create_native_mint(ctx: &mut Context<SpyCreateNativeMint>) -> Result<()> {
+    pub fn token_2022_create_native_mint(
+        ctx: &mut Context<Token2022CreateNativeMint>,
+    ) -> Result<()> {
         let accs = token_2022_cpi::CreateNativeMint {
             payer: ctx.accounts.payer.cpi_handle_mut(),
             native_mint: ctx.accounts.native_mint.cpi_handle_mut(),
@@ -1178,10 +1162,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token-2022 excess lamport withdrawal against the spy program.
+    /// Invoke Token-2022 excess lamport withdrawal against the supplied Token-2022 program.
     #[discrim = 101]
-    pub fn spy_withdraw_excess_lamports(
-        ctx: &mut Context<SpyWithdrawExcessLamports>,
+    pub fn token_2022_withdraw_excess_lamports(
+        ctx: &mut Context<Token2022WithdrawExcessLamports>,
     ) -> Result<()> {
         let accs = token_2022_cpi::WithdrawExcessLamports {
             source: ctx.accounts.source.cpi_handle_mut(),
@@ -1193,10 +1177,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token Metadata remove_key against the spy program.
+    /// Invoke Token Metadata remove_key against the supplied Token-2022 program.
     #[discrim = 47]
-    pub fn spy_token_metadata_remove_key(
-        ctx: &mut Context<SpyTokenMetadataRemoveKey>,
+    pub fn token_2022_token_metadata_remove_key(
+        ctx: &mut Context<Token2022TokenMetadataRemoveKey>,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::TokenMetadataRemoveKey {
             metadata: ctx.accounts.metadata.cpi_handle_mut(),
@@ -1207,10 +1191,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token Metadata initialize against the spy program.
+    /// Invoke Token Metadata initialize against the supplied Token-2022 program.
     #[discrim = 48]
-    pub fn spy_token_metadata_initialize(
-        ctx: &mut Context<SpyTokenMetadataInitialize>,
+    pub fn token_2022_token_metadata_initialize(
+        ctx: &mut Context<Token2022TokenMetadataInitialize>,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::TokenMetadataInitialize {
             metadata: ctx.accounts.metadata.cpi_handle_mut(),
@@ -1228,10 +1212,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token Metadata update_authority against the spy program.
+    /// Invoke Token Metadata update_authority against the supplied Token-2022 program.
     #[discrim = 49]
-    pub fn spy_token_metadata_update_authority(
-        ctx: &mut Context<SpyTokenMetadataUpdateAuthority>,
+    pub fn token_2022_token_metadata_update_authority(
+        ctx: &mut Context<Token2022TokenMetadataUpdateAuthority>,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::TokenMetadataUpdateAuthority {
             metadata: ctx.accounts.metadata.cpi_handle_mut(),
@@ -1246,10 +1230,10 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token Metadata update_field against the spy program.
+    /// Invoke Token Metadata update_field against the supplied Token-2022 program.
     #[discrim = 50]
-    pub fn spy_token_metadata_update_field(
-        ctx: &mut Context<SpyTokenMetadataUpdateField>,
+    pub fn token_2022_token_metadata_update_field(
+        ctx: &mut Context<Token2022TokenMetadataUpdateField>,
     ) -> Result<()> {
         let accs = token_2022_ext_cpi::TokenMetadataUpdateField {
             metadata: ctx.accounts.metadata.cpi_handle_mut(),
@@ -1264,9 +1248,11 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token Group initialize against the spy program.
+    /// Invoke Token Group initialize against the supplied Token-2022 program.
     #[discrim = 51]
-    pub fn spy_token_group_initialize(ctx: &mut Context<SpyTokenGroupInitialize>) -> Result<()> {
+    pub fn token_2022_token_group_initialize(
+        ctx: &mut Context<Token2022TokenGroupInitialize>,
+    ) -> Result<()> {
         let accs = token_2022_ext_cpi::TokenGroupInitialize {
             group: ctx.accounts.group.cpi_handle_mut(),
             mint: ctx.accounts.mint.cpi_handle(),
@@ -1277,9 +1263,11 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Invoke Token Group member initialize against the spy program.
+    /// Invoke Token Group member initialize against the supplied Token-2022 program.
     #[discrim = 52]
-    pub fn spy_token_member_initialize(ctx: &mut Context<SpyTokenMemberInitialize>) -> Result<()> {
+    pub fn token_2022_token_member_initialize(
+        ctx: &mut Context<Token2022TokenMemberInitialize>,
+    ) -> Result<()> {
         let accs = token_2022_ext_cpi::TokenMemberInitialize {
             member: ctx.accounts.member.cpi_handle_mut(),
             member_mint: ctx.accounts.member_mint.cpi_handle(),
@@ -1799,7 +1787,7 @@ pub struct ReadUncheckedTokenAccountTransferFeeConfig {
 }
 
 #[derive(Accounts)]
-pub struct SpyGroupPointerUpdate {
+pub struct Token2022GroupPointerUpdate {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub authority: Signer,
@@ -1807,7 +1795,7 @@ pub struct SpyGroupPointerUpdate {
 }
 
 #[derive(Accounts)]
-pub struct SpyGroupMemberPointerUpdate {
+pub struct Token2022GroupMemberPointerUpdate {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub authority: Signer,
@@ -1815,7 +1803,7 @@ pub struct SpyGroupMemberPointerUpdate {
 }
 
 #[derive(Accounts)]
-pub struct SpyReallocate {
+pub struct Token2022Reallocate {
     #[account(mut)]
     pub account: UncheckedAccount,
     #[account(mut)]
@@ -1826,48 +1814,48 @@ pub struct SpyReallocate {
 }
 
 #[derive(Accounts)]
-pub struct SpyImmutableOwnerInitialize {
+pub struct Token2022ImmutableOwnerInitialize {
     #[account(mut)]
     pub token_account: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyNonTransferableMintInitialize {
+pub struct Token2022NonTransferableMintInitialize {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyMintCloseAuthorityInitialize {
+pub struct Token2022MintCloseAuthorityInitialize {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyPermanentDelegateInitialize {
+pub struct Token2022PermanentDelegateInitialize {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyToken2022ReturnDataMint {
+pub struct Token2022ReturnDataMint {
     pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyDefaultAccountStateInitialize {
+pub struct Token2022DefaultAccountStateInitialize {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyMemoTransfer {
+pub struct Token2022MemoTransfer {
     #[account(mut)]
     pub account: UncheckedAccount,
     pub owner: Signer,
@@ -1875,42 +1863,42 @@ pub struct SpyMemoTransfer {
 }
 
 #[derive(Accounts)]
-pub struct SpyMetadataPointerInitialize {
+pub struct Token2022MetadataPointerInitialize {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyTransferHookInitialize {
+pub struct Token2022TransferHookInitialize {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyInterestBearingMintInitialize {
+pub struct Token2022InterestBearingMintInitialize {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyPausableInitialize {
+pub struct Token2022PausableInitialize {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyTransferFeeInitialize {
+pub struct Token2022TransferFeeInitialize {
     #[account(mut)]
     pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 
 #[derive(Accounts)]
-pub struct SpyCreateNativeMint {
+pub struct Token2022CreateNativeMint {
     #[account(mut)]
     pub payer: Signer,
     #[account(mut)]
@@ -1920,7 +1908,7 @@ pub struct SpyCreateNativeMint {
 }
 
 #[derive(Accounts)]
-pub struct SpyWithdrawExcessLamports {
+pub struct Token2022WithdrawExcessLamports {
     #[account(mut)]
     pub source: UncheckedAccount,
     #[account(mut)]
@@ -1930,7 +1918,7 @@ pub struct SpyWithdrawExcessLamports {
 }
 
 #[derive(Accounts)]
-pub struct SpyTokenMetadataRemoveKey {
+pub struct Token2022TokenMetadataRemoveKey {
     #[account(mut)]
     pub metadata: UncheckedAccount,
     pub update_authority: Signer,
@@ -1938,7 +1926,7 @@ pub struct SpyTokenMetadataRemoveKey {
 }
 
 #[derive(Accounts)]
-pub struct SpyTokenMetadataInitialize {
+pub struct Token2022TokenMetadataInitialize {
     #[account(mut)]
     pub metadata: UncheckedAccount,
     pub update_authority: UncheckedAccount,
@@ -1948,7 +1936,7 @@ pub struct SpyTokenMetadataInitialize {
 }
 
 #[derive(Accounts)]
-pub struct SpyTokenMetadataUpdateAuthority {
+pub struct Token2022TokenMetadataUpdateAuthority {
     #[account(mut)]
     pub metadata: UncheckedAccount,
     pub current_authority: Signer,
@@ -1957,7 +1945,7 @@ pub struct SpyTokenMetadataUpdateAuthority {
 }
 
 #[derive(Accounts)]
-pub struct SpyTokenMetadataUpdateField {
+pub struct Token2022TokenMetadataUpdateField {
     #[account(mut)]
     pub metadata: UncheckedAccount,
     pub update_authority: Signer,
@@ -1965,7 +1953,7 @@ pub struct SpyTokenMetadataUpdateField {
 }
 
 #[derive(Accounts)]
-pub struct SpyTokenGroupInitialize {
+pub struct Token2022TokenGroupInitialize {
     #[account(mut)]
     pub group: UncheckedAccount,
     pub mint: UncheckedAccount,
@@ -1974,7 +1962,7 @@ pub struct SpyTokenGroupInitialize {
 }
 
 #[derive(Accounts)]
-pub struct SpyTokenMemberInitialize {
+pub struct Token2022TokenMemberInitialize {
     #[account(mut)]
     pub member: UncheckedAccount,
     pub member_mint: UncheckedAccount,
