@@ -34,8 +34,8 @@ pub use cpi::realloc_account;
 pub use pinocchio::address::address_eq;
 #[cfg(feature = "compat")]
 pub use solana_address::address as pubkey;
-/// Re-export declare_id from solana-address.
-pub use solana_address::declare_id;
+/// Re-export address helpers from solana-address.
+pub use solana_address::{address, declare_id};
 /// Implementation detail of [`solana_msg`] - re-exported for macro access only.
 #[doc(hidden)]
 pub use solana_msg;

@@ -129,8 +129,8 @@ impl Ids for TokenInterface {
     #[inline(always)]
     fn ids() -> &'static [Address] {
         static IDS: [Address; 2] = [
-            Address::from_str_const("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
-            Address::from_str_const("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
+            anchor_lang_v2::address!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+            anchor_lang_v2::address!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"),
         ];
         &IDS
     }
@@ -307,100 +307,97 @@ impl SlabInit for Interface<crate::Mint> {
 // Constraint impls — token::* on InterfaceAccount<TokenAccount>
 // ---------------------------------------------------------------------------
 
-macro_rules! impl_token_account_constraints {
-    ($target:ty) => {
-        impl AccountConstraint<$target> for crate::token::MintConstraint {
-            type Value = Address;
-            #[inline(always)]
-            fn check(account: &$target, expected: &Address) -> Result<(), ProgramError> {
-                if !anchor_lang_v2::address_eq(account.mint(), expected) {
-                    Err(ProgramError::InvalidAccountData)
-                } else {
-                    Ok(())
-                }
-            }
+impl AccountConstraint<InterfaceAccount<TokenAccount>> for crate::token::MintConstraint {
+    type Value = Address;
+    #[inline(always)]
+    fn check(
+        account: &InterfaceAccount<TokenAccount>,
+        expected: &Address,
+    ) -> Result<(), ProgramError> {
+        if !anchor_lang_v2::address_eq(account.mint(), expected) {
+            Err(ProgramError::InvalidAccountData)
+        } else {
+            Ok(())
         }
-
-        impl AccountConstraint<$target> for crate::token::AuthorityConstraint {
-            type Value = Address;
-            #[inline(always)]
-            fn check(account: &$target, expected: &Address) -> Result<(), ProgramError> {
-                if !anchor_lang_v2::address_eq(account.owner(), expected) {
-                    Err(ProgramError::InvalidAccountData)
-                } else {
-                    Ok(())
-                }
-            }
-        }
-
-        impl AccountConstraint<$target> for crate::token::TokenProgramConstraint {
-            type Value = Address;
-            #[inline(always)]
-            fn check(account: &$target, expected: &Address) -> Result<(), ProgramError> {
-                if !AsRef::<AccountView>::as_ref(account).owned_by(expected) {
-                    Err(ProgramError::IllegalOwner)
-                } else {
-                    Ok(())
-                }
-            }
-        }
-    };
+    }
 }
 
-impl_token_account_constraints!(InterfaceAccount<TokenAccount>);
+impl AccountConstraint<InterfaceAccount<TokenAccount>> for crate::token::AuthorityConstraint {
+    type Value = Address;
+    #[inline(always)]
+    fn check(
+        account: &InterfaceAccount<TokenAccount>,
+        expected: &Address,
+    ) -> Result<(), ProgramError> {
+        if !anchor_lang_v2::address_eq(account.owner(), expected) {
+            Err(ProgramError::InvalidAccountData)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl AccountConstraint<InterfaceAccount<TokenAccount>> for crate::token::TokenProgramConstraint {
+    type Value = Address;
+    #[inline(always)]
+    fn check(
+        account: &InterfaceAccount<TokenAccount>,
+        expected: &Address,
+    ) -> Result<(), ProgramError> {
+        if !AsRef::<AccountView>::as_ref(account).owned_by(expected) {
+            Err(ProgramError::IllegalOwner)
+        } else {
+            Ok(())
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Constraint impls — mint::* on InterfaceAccount<Mint>
 // ---------------------------------------------------------------------------
 
-macro_rules! impl_mint_constraints {
-    ($target:ty) => {
-        impl AccountConstraint<$target> for crate::mint::AuthorityConstraint {
-            type Value = Address;
-            #[inline(always)]
-            fn check(account: &$target, expected: &Address) -> Result<(), ProgramError> {
-                match account.mint_authority() {
-                    Some(addr) if addr == expected => Ok(()),
-                    _ => Err(ProgramError::InvalidAccountData),
-                }
-            }
+impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::AuthorityConstraint {
+    type Value = Address;
+    #[inline(always)]
+    fn check(account: &InterfaceAccount<Mint>, expected: &Address) -> Result<(), ProgramError> {
+        match account.mint_authority() {
+            Some(addr) if addr == expected => Ok(()),
+            _ => Err(ProgramError::InvalidAccountData),
         }
-
-        impl AccountConstraint<$target> for crate::mint::FreezeAuthorityConstraint {
-            type Value = Address;
-            #[inline(always)]
-            fn check(account: &$target, expected: &Address) -> Result<(), ProgramError> {
-                match account.freeze_authority() {
-                    Some(addr) if addr == expected => Ok(()),
-                    _ => Err(ProgramError::InvalidAccountData),
-                }
-            }
-        }
-
-        impl AccountConstraint<$target> for crate::mint::DecimalsConstraint {
-            type Value = u8;
-            #[inline(always)]
-            fn check(account: &$target, expected: &u8) -> Result<(), ProgramError> {
-                if account.decimals() != *expected {
-                    Err(ProgramError::InvalidAccountData)
-                } else {
-                    Ok(())
-                }
-            }
-        }
-
-        impl AccountConstraint<$target> for crate::mint::TokenProgramConstraint {
-            type Value = Address;
-            #[inline(always)]
-            fn check(account: &$target, expected: &Address) -> Result<(), ProgramError> {
-                if !AsRef::<AccountView>::as_ref(account).owned_by(expected) {
-                    Err(ProgramError::IllegalOwner)
-                } else {
-                    Ok(())
-                }
-            }
-        }
-    };
+    }
 }
 
-impl_mint_constraints!(InterfaceAccount<Mint>);
+impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::FreezeAuthorityConstraint {
+    type Value = Address;
+    #[inline(always)]
+    fn check(account: &InterfaceAccount<Mint>, expected: &Address) -> Result<(), ProgramError> {
+        match account.freeze_authority() {
+            Some(addr) if addr == expected => Ok(()),
+            _ => Err(ProgramError::InvalidAccountData),
+        }
+    }
+}
+
+impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::DecimalsConstraint {
+    type Value = u8;
+    #[inline(always)]
+    fn check(account: &InterfaceAccount<Mint>, expected: &u8) -> Result<(), ProgramError> {
+        if account.decimals() != *expected {
+            Err(ProgramError::InvalidAccountData)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::TokenProgramConstraint {
+    type Value = Address;
+    #[inline(always)]
+    fn check(account: &InterfaceAccount<Mint>, expected: &Address) -> Result<(), ProgramError> {
+        if !AsRef::<AccountView>::as_ref(account).owned_by(expected) {
+            Err(ProgramError::IllegalOwner)
+        } else {
+            Ok(())
+        }
+    }
+}

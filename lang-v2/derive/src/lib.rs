@@ -2410,7 +2410,7 @@ fn gen_declared_program(name: &Ident, idl: &serde_json::Value) -> syn::Result<To
             use super::*;
 
             pub const ID: anchor_lang_v2::Address =
-                anchor_lang_v2::Address::from_str_const(#address_lit);
+                anchor_lang_v2::address!(#address_lit);
 
             pub mod program {
                 pub struct #marker_name;
@@ -3237,7 +3237,7 @@ fn gen_declare_program_constant(
         let value = syn::LitStr::new(&value, span);
         return Ok(quote! {
             pub const #ident: anchor_lang_v2::Address =
-                anchor_lang_v2::Address::from_str_const(#value);
+                anchor_lang_v2::address!(#value);
         });
     }
 

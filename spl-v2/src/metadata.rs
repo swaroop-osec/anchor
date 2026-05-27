@@ -21,7 +21,7 @@ use {
     solana_pubkey::Pubkey,
 };
 
-pub const ID: Address = Address::from_str_const("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+pub const ID: Address = anchor_lang_v2::address!("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 pub fn approve_collection_authority<'info>(
     ctx: CpiContext<'info, ApproveCollectionAuthority<'info>>,
 ) -> Result<()> {

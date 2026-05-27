@@ -15,7 +15,7 @@ use {
 
 pub use crate::programs::System;
 
-pub const ID: Address = Address::from_str_const("11111111111111111111111111111111");
+pub const ID: Address = crate::address!("11111111111111111111111111111111");
 
 const NONCE_ACCOUNT_LENGTH: u64 = 80;
 

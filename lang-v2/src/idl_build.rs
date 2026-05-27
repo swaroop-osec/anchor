@@ -255,7 +255,7 @@ mod const_seed_json_tests {
         // The const-fallback case: `<Marker>::id()` returns Address; the
         // helper has to accept it via the AsRef<[u8]> blanket. Pick a
         // base58 with a recognizable byte pattern.
-        let addr = Address::from_str_const("11111111111111111111111111111111");
+        let addr = crate::address!("11111111111111111111111111111111");
         let json = __idl_const_seed_json(addr);
         assert!(
             json.starts_with(r#"{"kind":"const","value":["#),

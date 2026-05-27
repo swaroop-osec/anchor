@@ -2,8 +2,10 @@
 
 extern crate alloc;
 
+#[cfg(feature = "guardrails")]
+use anchor_lang_v2::Id;
 use {
-    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
+    anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
     spl_token_2022_interface as spl_token_2022,

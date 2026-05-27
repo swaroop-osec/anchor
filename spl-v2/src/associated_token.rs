@@ -24,7 +24,7 @@ use {
 
 pub use anchor_lang_v2::programs::AssociatedToken;
 
-pub const ID: Address = Address::from_str_const("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+pub const ID: Address = anchor_lang_v2::address!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
 /// Derive the associated token account address for a given wallet and mint.
 pub fn get_associated_token_address(wallet: &Address, mint: &Address) -> Address {
