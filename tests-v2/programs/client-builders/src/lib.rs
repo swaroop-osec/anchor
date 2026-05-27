@@ -65,7 +65,6 @@ pub struct InitializeVault {
     #[account(
         init,
         payer = payer,
-        space = 8 + core::mem::size_of::<Vault>(),
         seeds = [b"vault", authority.address().as_ref()],
         bump,
     )]

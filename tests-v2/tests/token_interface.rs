@@ -129,6 +129,42 @@ fn init_token_account(
     send_instruction(svm, program_id(), vec![2], metas, payer, &[token_account])
 }
 
+fn init_mint_pda(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: Pubkey,
+    authority: Pubkey,
+    token_program: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(authority, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![9], metas, payer, &[])
+}
+
+fn init_token_account_pda(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: Pubkey,
+    token_account: Pubkey,
+    authority: Pubkey,
+    token_program: Pubkey,
+) -> anyhow::Result<litesvm::types::TransactionMetadata> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(authority, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new(token_account, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    send_instruction(svm, program_id(), vec![10], metas, payer, &[])
+}
+
 fn check_token_constraints(
     svm: &mut LiteSVM,
     payer: &Keypair,
@@ -322,6 +358,121 @@ fn interface_init_creates_token_2022_mint_and_token_account() {
         token_owner.pubkey(),
         0,
     );
+}
+
+#[test]
+fn interface_mint_init_supports_program_derived_addresses() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("interface-pda-mint-authority");
+    let (mint, _bump) = Pubkey::find_program_address(
+        &[b"interface-mint", mint_authority.pubkey().as_ref()],
+        &program_id(),
+    );
+
+    init_mint_pda(
+        &mut svm,
+        &payer,
+        mint,
+        mint_authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("interface mint PDA init should create and initialize a Token-2022 mint");
+
+    assert_mint_state(&svm, mint, token_2022_program_id(), mint_authority.pubkey());
+}
+
+#[test]
+fn interface_mint_init_rejects_wrong_program_derived_address() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("interface-pda-mint-reject-authority");
+    let wrong_mint = Pubkey::new_unique();
+
+    let result = init_mint_pda(
+        &mut svm,
+        &payer,
+        wrong_mint,
+        mint_authority.pubkey(),
+        token_2022_program_id(),
+    );
+    assert!(
+        result.is_err(),
+        "interface mint PDA init should reject a non-canonical PDA"
+    );
+    assert!(svm.get_account(&wrong_mint).is_none());
+}
+
+#[test]
+fn interface_token_account_init_supports_program_derived_addresses() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("interface-token-pda-mint-authority");
+    let token_owner = keypair_for("interface-token-pda-owner");
+    let mint = Keypair::new();
+    init_mint(
+        &mut svm,
+        &payer,
+        &mint,
+        &mint_authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("seed Token-2022 mint");
+    let (token_account, _bump) = Pubkey::find_program_address(
+        &[
+            b"interface-token-account",
+            mint.pubkey().as_ref(),
+            token_owner.pubkey().as_ref(),
+        ],
+        &program_id(),
+    );
+
+    init_token_account_pda(
+        &mut svm,
+        &payer,
+        mint.pubkey(),
+        token_account,
+        token_owner.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("interface token account PDA init should create and initialize a Token-2022 account");
+
+    assert_token_state(
+        &svm,
+        token_account,
+        token_2022_program_id(),
+        mint.pubkey(),
+        token_owner.pubkey(),
+        0,
+    );
+}
+
+#[test]
+fn interface_token_account_init_rejects_wrong_program_derived_address() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("interface-token-pda-reject-mint-authority");
+    let token_owner = keypair_for("interface-token-pda-reject-owner");
+    let mint = Keypair::new();
+    let wrong_token_account = Pubkey::new_unique();
+    init_mint(
+        &mut svm,
+        &payer,
+        &mint,
+        &mint_authority.pubkey(),
+        token_2022_program_id(),
+    )
+    .expect("seed Token-2022 mint");
+
+    let result = init_token_account_pda(
+        &mut svm,
+        &payer,
+        mint.pubkey(),
+        wrong_token_account,
+        token_owner.pubkey(),
+        token_2022_program_id(),
+    );
+    assert!(
+        result.is_err(),
+        "interface token account PDA init should reject a non-canonical PDA"
+    );
+    assert!(svm.get_account(&wrong_token_account).is_none());
 }
 
 #[test]

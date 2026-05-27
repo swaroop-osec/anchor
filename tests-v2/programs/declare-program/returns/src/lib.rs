@@ -176,7 +176,6 @@ pub struct InitializeResult {
     #[account(
         init,
         payer = payer,
-        space = 8 + core::mem::size_of::<ProxyResult>(),
         seeds = [PROXY_SEED, authority.address().as_ref()],
         bump,
     )]

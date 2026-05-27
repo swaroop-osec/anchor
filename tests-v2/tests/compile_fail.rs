@@ -173,7 +173,7 @@ pub mod declared {
     use super::*;
 
     pub const ID: Address =
-        Address::from_str_const("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
+        anchor_lang_v2::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 
     #[derive(Accounts)]
     pub struct Invoke {
@@ -224,7 +224,7 @@ use anchor_lang_v2::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 const EXTERNAL_ID: Address =
-    Address::from_str_const("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
+    anchor_lang_v2::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 
 #[derive(Accounts)]
 pub struct Maybe {
@@ -257,7 +257,7 @@ use anchor_lang_v2::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 const EXTERNAL_ID: Address =
-    Address::from_str_const("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
+    anchor_lang_v2::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 
 #[derive(Accounts)]
 pub struct Empty {}
@@ -286,7 +286,7 @@ use anchor_lang_v2::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 const EXTERNAL_ID: Address =
-    Address::from_str_const("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
+    anchor_lang_v2::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 
 #[derive(Accounts)]
 pub struct Empty {}
@@ -769,7 +769,7 @@ use anchor_lang_v2::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 const EXTERNAL_ID: Address =
-    Address::from_str_const("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
+    anchor_lang_v2::address!("Con9ukTn9BRPXWcjS2UBbuN3NnCwy1hcaDNZ9Hb8QMNp");
 
 #[derive(Accounts)]
 pub struct Empty {}

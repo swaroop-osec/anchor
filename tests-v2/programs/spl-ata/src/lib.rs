@@ -1,4 +1,4 @@
-//! Focused associated-token-account coverage for `anchor-spl-v2`.
+//! Examples for associated-token-account workflows with `anchor-spl-v2`.
 
 use {
     anchor_lang_v2::prelude::*,
@@ -128,6 +128,23 @@ pub mod spl_ata_test {
             },
         );
         associated_token::create(cpi_ctx)?;
+        Ok(())
+    }
+
+    #[discrim = 15]
+    pub fn direct_create_idempotent_ata(ctx: &mut Context<DirectCreateAta>) -> Result<()> {
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.associated_token_program.address(),
+            associated_token::Create {
+                payer: ctx.accounts.payer.cpi_handle_mut(),
+                associated_token: ctx.accounts.associated_token.cpi_handle_mut(),
+                authority: ctx.accounts.authority.cpi_handle(),
+                mint: ctx.accounts.mint.cpi_handle(),
+                system_program: ctx.accounts.system_program.cpi_handle(),
+                token_program: ctx.accounts.token_program.cpi_handle(),
+            },
+        );
+        associated_token::create_idempotent(cpi_ctx)?;
         Ok(())
     }
 

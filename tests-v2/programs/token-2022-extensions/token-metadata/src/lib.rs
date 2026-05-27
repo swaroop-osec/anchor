@@ -68,9 +68,10 @@ pub mod token_2022_ext_token_metadata {
 
 #[derive(Accounts)]
 pub struct Initialize {
-    #[account(mut)]
+    #[account(mut, unsafe(dup))]
     pub metadata: UncheckedAccount,
     pub update_authority: UncheckedAccount,
+    #[account(unsafe(dup))]
     pub mint: UncheckedAccount,
     pub mint_authority: Signer,
     pub token_program: UncheckedAccount,

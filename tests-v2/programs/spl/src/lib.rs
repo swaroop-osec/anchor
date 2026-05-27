@@ -1,9 +1,7 @@
-//! Test program exercising `anchor-spl-v2`'s Mint/TokenAccount surface.
+//! Examples for `anchor-spl-v2` Mint and TokenAccount workflows.
 //!
-//! Each handler targets a specific area of the SPL module — init codegen,
-//! CPI helpers, accessor methods, namespaced constraints — so the
-//! integration tests in `tests/spl.rs` can trip each path from a known
-//! state and coverage attributes the execution back to the right file.
+//! The handlers show common SPL initialization, CPI helpers, account
+//! accessors, namespaced constraints, and Token Interface patterns.
 
 use {
     anchor_lang_v2::prelude::*,
@@ -28,21 +26,21 @@ declare_id!("SpL1111111111111111111111111111111111111111");
 pub mod spl_test {
     use super::*;
 
-    /// Create a new Mint account. Hits `mint::SlabInit::create_and_initialize`
-    /// → `pinocchio_token::InitializeMint2`.
+    /// Creates a new Mint account with the standard mint initialization
+    /// constraint.
     #[discrim = 0]
     pub fn init_mint(_ctx: &mut Context<InitMint>) -> Result<()> {
         Ok(())
     }
 
-    /// Create a new TokenAccount. Hits `token::SlabInit::create_and_initialize`
-    /// → `pinocchio_token::InitializeAccount3`.
+    /// Creates a new TokenAccount with the standard token initialization
+    /// constraint.
     #[discrim = 1]
     pub fn init_token_account(_ctx: &mut Context<InitTokenAccount>) -> Result<()> {
         Ok(())
     }
 
-    /// Mint `amount` tokens into `to`. Hits `token::mint_to`.
+    /// Mints `amount` tokens into `to`.
     #[discrim = 2]
     pub fn do_mint_to(ctx: &mut Context<DoMintTo>, amount: u64) -> Result<()> {
         ctx.accounts.token_program.mint_to(
@@ -54,7 +52,7 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Transfer `amount` tokens from `from` to `to`. Hits `token::transfer`.
+    /// Transfers `amount` tokens from `from` to `to`.
     #[discrim = 3]
     pub fn do_transfer(ctx: &mut Context<DoTransfer>, amount: u64) -> Result<()> {
         ctx.accounts.token_program.transfer(
@@ -66,8 +64,7 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// TransferChecked (also verifies decimals match mint). Hits
-    /// `token::transfer_checked`.
+    /// Transfers tokens while verifying the mint decimals.
     #[discrim = 4]
     pub fn do_transfer_checked(
         ctx: &mut Context<DoTransferChecked>,
@@ -85,7 +82,7 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Burn `amount` tokens from `account`. Hits `token::burn`.
+    /// Burns `amount` tokens from `account`.
     #[discrim = 5]
     pub fn do_burn(ctx: &mut Context<DoBurn>, amount: u64) -> Result<()> {
         ctx.accounts.token_program.burn(
@@ -97,8 +94,7 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Approve `delegate` to spend `amount` from `source`. Hits
-    /// `token::approve`.
+    /// Approves `delegate` to spend `amount` from `source`.
     #[discrim = 6]
     pub fn do_approve(ctx: &mut Context<DoApprove>, amount: u64) -> Result<()> {
         ctx.accounts.token_program.approve(
@@ -110,7 +106,7 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Revoke delegation. Hits `token::revoke`.
+    /// Revokes the current delegate from `source`.
     #[discrim = 7]
     pub fn do_revoke(ctx: &mut Context<DoRevoke>) -> Result<()> {
         ctx.accounts
@@ -119,8 +115,7 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Close `account`, reclaiming lamports to `destination`. Hits
-    /// `token::close_account`.
+    /// Closes `account`, reclaiming lamports to `destination`.
     #[discrim = 8]
     pub fn do_close_account(ctx: &mut Context<DoCloseAccount>) -> Result<()> {
         ctx.accounts.token_program.close_account(
@@ -215,9 +210,8 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Direct CPI wrappers for token initialization helpers. These are separate
-    /// from Anchor's `#[account(init, ...)]` path so the shared CPI helpers are
-    /// exercised directly.
+    /// Direct CPI helpers initialize token accounts and mints that have
+    /// already been created.
     #[discrim = 83]
     pub fn do_initialize_mint(
         ctx: &mut Context<DoInitializeMint>,
@@ -285,40 +279,60 @@ pub mod spl_test {
         Ok(())
     }
 
-    /// Reads every `Mint` accessor — supply, decimals, authority flags,
-    /// freeze flags. Logs nothing (logging costs CUs); the assertion is that
-    /// the call succeeds and the traces cover the accessor methods.
+    /// Reads every `Mint` accessor: supply, decimals, authority flags, and
+    /// freeze-authority fields.
     #[discrim = 9]
-    pub fn read_mint(ctx: &mut Context<ReadMint>) -> Result<()> {
+    pub fn read_mint(
+        ctx: &mut Context<ReadMint>,
+        expected_authority: Address,
+        expected_supply: u64,
+        expected_decimals: u8,
+    ) -> Result<()> {
         let m = &*ctx.accounts.mint;
-        let _ = m.supply();
-        let _ = m.decimals();
-        let _ = m.has_mint_authority();
-        let _ = m.mint_authority();
-        let _ = m.is_initialized();
-        let _ = m.has_freeze_authority();
-        let _ = m.freeze_authority();
+        require_eq!(
+            m.supply(),
+            expected_supply,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            m.decimals(),
+            expected_decimals,
+            ProgramError::InvalidAccountData
+        );
+        require!(m.has_mint_authority(), ProgramError::InvalidAccountData);
+        require_eq!(
+            m.mint_authority(),
+            Some(&expected_authority),
+            ProgramError::InvalidAccountData
+        );
+        require!(m.is_initialized(), ProgramError::InvalidAccountData);
         Ok(())
     }
 
-    /// Reads every `TokenAccount` accessor — amount, delegate flags, state,
-    /// native/close flags. See `read_mint` for rationale.
+    /// Reads every `TokenAccount` accessor: balances, delegate fields, state,
+    /// native SOL fields, and close authority.
     #[discrim = 10]
-    pub fn read_token_account(ctx: &mut Context<ReadTokenAccount>) -> Result<()> {
+    pub fn read_token_account(
+        ctx: &mut Context<ReadTokenAccount>,
+        expected_mint: Address,
+        expected_owner: Address,
+        expected_amount: u64,
+    ) -> Result<()> {
         let ta = &*ctx.accounts.token_account;
-        let _ = ta.mint();
-        let _ = ta.owner();
-        let _ = ta.amount();
-        let _ = ta.delegated_amount();
-        let _ = ta.has_delegate();
-        let _ = ta.delegate();
-        let _ = ta.state();
-        let _ = ta.is_native();
-        let _ = ta.native_amount();
-        let _ = ta.has_close_authority();
-        let _ = ta.close_authority();
-        let _ = ta.is_initialized();
-        let _ = ta.is_frozen();
+        require!(
+            anchor_lang_v2::address_eq(ta.mint(), &expected_mint),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            anchor_lang_v2::address_eq(ta.owner(), &expected_owner),
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ta.amount(),
+            expected_amount,
+            ProgramError::InvalidAccountData
+        );
+        require!(ta.is_initialized(), ProgramError::InvalidAccountData);
         Ok(())
     }
 
@@ -427,6 +441,18 @@ pub mod spl_test {
         Ok(())
     }
 
+    /// `mint::freeze_authority = expected` constraint on strict `Account<Mint>`.
+    #[discrim = 90]
+    pub fn check_mint_freeze_authority(_ctx: &mut Context<CheckMintFreezeAuthority>) -> Result<()> {
+        Ok(())
+    }
+
+    /// `mint::token_program = token_program` constraint on strict `Account<Mint>`.
+    #[discrim = 91]
+    pub fn check_mint_token_program(_ctx: &mut Context<CheckMintTokenProgram>) -> Result<()> {
+        Ok(())
+    }
+
     /// `token::mint = mint` constraint.
     #[discrim = 13]
     pub fn check_token_mint(_ctx: &mut Context<CheckTokenMint>) -> Result<()> {
@@ -439,48 +465,85 @@ pub mod spl_test {
         Ok(())
     }
 
+    /// `token::token_program = token_program` constraint on strict `Account<TokenAccount>`.
+    #[discrim = 92]
+    pub fn check_token_program(_ctx: &mut Context<CheckTokenProgram>) -> Result<()> {
+        Ok(())
+    }
+
     /// Verifies that `vault` is the canonical ATA for `(authority, mint)`.
-    /// Exercises `get_associated_token_address`.
     #[discrim = 15]
     pub fn check_ata(ctx: &mut Context<CheckAta>) -> Result<()> {
         let expected = get_associated_token_address(
             ctx.accounts.authority.account().address(),
             ctx.accounts.mint.account().address(),
         );
-        if *ctx.accounts.vault.account().address() != expected {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require!(
+            anchor_lang_v2::address_eq(ctx.accounts.vault.account().address(), &expected),
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
-    // ---- InterfaceAccount read path ---------------------------------------
+    // ---- InterfaceAccount validation --------------------------------------
 
-    /// Load an `InterfaceAccount<Mint>` and touch accessors. Succeeds when the
-    /// underlying account is owned by either Token or Token-2022.
+    /// Validates an `InterfaceAccount<Mint>` owned by either Token or
+    /// Token-2022 against the expected mint state.
     #[discrim = 16]
-    pub fn read_interface_mint(ctx: &mut Context<ReadInterfaceMint>) -> Result<()> {
+    pub fn read_interface_mint(
+        ctx: &mut Context<ReadInterfaceMint>,
+        expected_authority: Address,
+        expected_supply: u64,
+        expected_decimals: u8,
+    ) -> Result<()> {
         let m = &*ctx.accounts.mint;
-        let _ = m.supply();
-        let _ = m.decimals();
-        let _ = m.mint_authority();
-        let _ = m.freeze_authority();
-        let _ = m.is_initialized();
+        require_eq!(
+            m.supply(),
+            expected_supply,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            m.decimals(),
+            expected_decimals,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            m.mint_authority(),
+            Some(&expected_authority),
+            ProgramError::InvalidAccountData
+        );
+        require!(m.is_initialized(), ProgramError::InvalidAccountData);
         Ok(())
     }
 
-    /// Load an `InterfaceAccount<TokenAccount>` and touch accessors.
+    /// Validates an `InterfaceAccount<TokenAccount>` against the expected
+    /// token account state.
     #[discrim = 17]
     pub fn read_interface_token_account(
         ctx: &mut Context<ReadInterfaceTokenAccount>,
+        expected_mint: Address,
+        expected_owner: Address,
+        expected_amount: u64,
     ) -> Result<()> {
         let ta = &*ctx.accounts.token_account;
-        let _ = ta.mint();
-        let _ = ta.owner();
-        let _ = ta.amount();
+        require!(
+            anchor_lang_v2::address_eq(ta.mint(), &expected_mint),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            anchor_lang_v2::address_eq(ta.owner(), &expected_owner),
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ta.amount(),
+            expected_amount,
+            ProgramError::InvalidAccountData
+        );
+        require!(ta.is_initialized(), ProgramError::InvalidAccountData);
         Ok(())
     }
 
-    // ---- InterfaceAccount init path ---------------------------------------
+    // ---- InterfaceAccount initialization ----------------------------------
 
     /// Create a new Mint through the `InterfaceAccount<Mint>` init path with
     /// the legacy Token program (InitializeMint2 is hardcoded to legacy).
@@ -570,16 +633,41 @@ pub mod spl_test {
         expected_newer_bps: u16,
     ) -> Result<()> {
         let ext: &TransferFeeConfig = ctx.accounts.mint.get_extension()?;
-        if ext.withheld_amount() != expected_withheld
-            || ext.older_transfer_fee.epoch() != expected_older_epoch
-            || ext.older_transfer_fee.maximum_fee() != expected_older_max_fee
-            || ext.older_transfer_fee.basis_points() != expected_older_bps
-            || ext.newer_transfer_fee.epoch() != expected_newer_epoch
-            || ext.newer_transfer_fee.maximum_fee() != expected_newer_max_fee
-            || ext.newer_transfer_fee.basis_points() != expected_newer_bps
-        {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.withheld_amount(),
+            expected_withheld,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ext.older_transfer_fee.epoch(),
+            expected_older_epoch,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ext.older_transfer_fee.maximum_fee(),
+            expected_older_max_fee,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ext.older_transfer_fee.basis_points(),
+            expected_older_bps,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ext.newer_transfer_fee.epoch(),
+            expected_newer_epoch,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ext.newer_transfer_fee.maximum_fee(),
+            expected_newer_max_fee,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ext.newer_transfer_fee.basis_points(),
+            expected_newer_bps,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -591,9 +679,11 @@ pub mod spl_test {
         expected_bps: u16,
     ) -> Result<()> {
         let ext: &TransferFeeConfig = ctx.accounts.mint.get_extension()?;
-        if ext.newer_transfer_fee.basis_points() != expected_bps {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.newer_transfer_fee.basis_points(),
+            expected_bps,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -606,9 +696,16 @@ pub mod spl_test {
         expected_metadata: Address,
     ) -> Result<()> {
         let ext: &MetadataPointer = ctx.accounts.mint.get_extension()?;
-        if ext.authority != expected_authority || ext.metadata_address != expected_metadata {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.authority,
+            expected_authority,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ext.metadata_address,
+            expected_metadata,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -619,9 +716,11 @@ pub mod spl_test {
         expected_program_id: Address,
     ) -> Result<()> {
         let ext: &TransferHook = ctx.accounts.mint.get_extension()?;
-        if ext.program_id != expected_program_id {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.program_id,
+            expected_program_id,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -635,11 +734,16 @@ pub mod spl_test {
     ) -> Result<()> {
         let ext: &MintCloseAuthority = ctx.accounts.mint.get_extension()?;
         let authority = extensions::optional_address(&ext.close_authority);
-        match (expect_none != 0, authority) {
-            (true, None) => Ok(()),
-            (false, Some(addr)) if *addr == expected_authority => Ok(()),
-            _ => Err(ProgramError::InvalidAccountData.into()),
+        if expect_none != 0 {
+            require!(authority.is_none(), ProgramError::InvalidAccountData);
+        } else {
+            require_eq!(
+                authority,
+                Some(&expected_authority),
+                ProgramError::InvalidAccountData
+            );
         }
+        Ok(())
     }
 
     /// Parse `PermanentDelegate` and compare via `optional_address`.
@@ -651,11 +755,16 @@ pub mod spl_test {
     ) -> Result<()> {
         let ext: &PermanentDelegate = ctx.accounts.mint.get_extension()?;
         let delegate = extensions::optional_address(&ext.delegate);
-        match (expect_none != 0, delegate) {
-            (true, None) => Ok(()),
-            (false, Some(addr)) if *addr == expected_delegate => Ok(()),
-            _ => Err(ProgramError::InvalidAccountData.into()),
+        if expect_none != 0 {
+            require!(delegate.is_none(), ProgramError::InvalidAccountData);
+        } else {
+            require_eq!(
+                delegate,
+                Some(&expected_delegate),
+                ProgramError::InvalidAccountData
+            );
         }
+        Ok(())
     }
 
     /// Parse `TransferFeeAmount` from a Token-2022 token account.
@@ -665,9 +774,11 @@ pub mod spl_test {
         expected_withheld: u64,
     ) -> Result<()> {
         let ext: &TransferFeeAmount = ctx.accounts.token_account.get_extension()?;
-        if ext.withheld_amount() != expected_withheld {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.withheld_amount(),
+            expected_withheld,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -679,9 +790,11 @@ pub mod spl_test {
         expected_withheld: u64,
     ) -> Result<()> {
         let ext: &TransferFeeAmount = ctx.accounts.token_account.get_extension()?;
-        if ext.withheld_amount() != expected_withheld {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.withheld_amount(),
+            expected_withheld,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -692,9 +805,11 @@ pub mod spl_test {
         expected_transferring: u8,
     ) -> Result<()> {
         let ext: &TransferHookAccount = ctx.accounts.token_account.get_extension()?;
-        if ext.transferring != expected_transferring {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.transferring,
+            expected_transferring,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -705,9 +820,7 @@ pub mod spl_test {
         expected_state: u8,
     ) -> Result<()> {
         let ext: &DefaultAccountState = ctx.accounts.mint.get_extension()?;
-        if ext.state != expected_state {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(ext.state, expected_state, ProgramError::InvalidAccountData);
         Ok(())
     }
 
@@ -719,9 +832,16 @@ pub mod spl_test {
         expected_group: Address,
     ) -> Result<()> {
         let ext: &GroupPointer = ctx.accounts.mint.get_extension()?;
-        if ext.authority != expected_authority || ext.group_address != expected_group {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.authority,
+            expected_authority,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ext.group_address,
+            expected_group,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -733,9 +853,16 @@ pub mod spl_test {
         expected_member: Address,
     ) -> Result<()> {
         let ext: &GroupMemberPointer = ctx.accounts.mint.get_extension()?;
-        if ext.authority != expected_authority || ext.member_address != expected_member {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.authority,
+            expected_authority,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ext.member_address,
+            expected_member,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -743,9 +870,11 @@ pub mod spl_test {
     #[discrim = 37]
     pub fn read_cpi_guard(ctx: &mut Context<ReadCpiGuard>, expected_enabled: u8) -> Result<()> {
         let ext: &CpiGuard = ctx.accounts.token_account.get_extension()?;
-        if u8::from(ext.is_enabled()) != expected_enabled {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            u8::from(ext.is_enabled()),
+            expected_enabled,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -757,9 +886,16 @@ pub mod spl_test {
         expected_paused: u8,
     ) -> Result<()> {
         let ext: &PausableConfig = ctx.accounts.mint.get_extension()?;
-        if ext.authority != expected_authority || u8::from(ext.is_paused()) != expected_paused {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.authority,
+            expected_authority,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            u8::from(ext.is_paused()),
+            expected_paused,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -780,9 +916,11 @@ pub mod spl_test {
         expected_bps: u16,
     ) -> Result<()> {
         let ext: &TransferFeeConfig = ctx.accounts.mint.get_extension()?;
-        if ext.newer_transfer_fee.basis_points() != expected_bps {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.newer_transfer_fee.basis_points(),
+            expected_bps,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -795,9 +933,11 @@ pub mod spl_test {
         expected_withheld: u64,
     ) -> Result<()> {
         let ext: &TransferFeeAmount = ctx.accounts.token_account.get_extension()?;
-        if ext.withheld_amount() != expected_withheld {
-            return Err(ProgramError::InvalidAccountData.into());
-        }
+        require_eq!(
+            ext.withheld_amount(),
+            expected_withheld,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -1537,6 +1677,20 @@ pub struct CheckMintAuthority {
 }
 
 #[derive(Accounts)]
+pub struct CheckMintFreezeAuthority {
+    pub expected: UncheckedAccount,
+    #[account(mut, mint::freeze_authority = expected)]
+    pub mint: Account<Mint>,
+}
+
+#[derive(Accounts)]
+pub struct CheckMintTokenProgram {
+    pub token_program: UncheckedAccount,
+    #[account(mut, mint::token_program = token_program)]
+    pub mint: Account<Mint>,
+}
+
+#[derive(Accounts)]
 pub struct CheckTokenMint {
     pub mint: Account<Mint>,
     #[account(mut, token::mint = mint)]
@@ -1547,6 +1701,13 @@ pub struct CheckTokenMint {
 pub struct CheckTokenAuthority {
     pub expected: UncheckedAccount,
     #[account(mut, token::authority = expected)]
+    pub token_account: Account<TokenAccount>,
+}
+
+#[derive(Accounts)]
+pub struct CheckTokenProgram {
+    pub token_program: UncheckedAccount,
+    #[account(mut, token::token_program = token_program)]
     pub token_account: Account<TokenAccount>,
 }
 

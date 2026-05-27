@@ -15,7 +15,7 @@ pub mod token_2022_ext_token_group {
         };
         token_2022_ext::token_group_initialize(
             CpiContext::new(ctx.accounts.token_program.address(), accs),
-            None,
+            Some(ctx.accounts.mint_authority.address()),
             10,
         )?;
         Ok(())
@@ -40,8 +40,9 @@ pub mod token_2022_ext_token_group {
 
 #[derive(Accounts)]
 pub struct InitializeGroup {
-    #[account(mut)]
+    #[account(mut, unsafe(dup))]
     pub group: UncheckedAccount,
+    #[account(unsafe(dup))]
     pub mint: UncheckedAccount,
     pub mint_authority: Signer,
     pub token_program: UncheckedAccount,
@@ -49,8 +50,9 @@ pub struct InitializeGroup {
 
 #[derive(Accounts)]
 pub struct InitializeMember {
-    #[account(mut)]
+    #[account(mut, unsafe(dup))]
     pub member: UncheckedAccount,
+    #[account(unsafe(dup))]
     pub member_mint: UncheckedAccount,
     pub member_mint_authority: Signer,
     #[account(mut)]

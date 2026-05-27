@@ -54,7 +54,7 @@ pub struct NestedSignerOuter {
 pub struct InitKeypair {
     #[account(mut)]
     pub payer: Signer,
-    #[account(init, payer = payer, space = 8 + core::mem::size_of::<Fresh>())]
+    #[account(init, payer = payer)]
     pub fresh: Account<Fresh>,
     pub system_program: Program<System>,
 }

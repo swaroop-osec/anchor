@@ -183,6 +183,27 @@ fn send_direct_create_ata(
     send_instruction(svm, program_id(), vec![13], metas, payer, &[]).map(|_| ())
 }
 
+fn send_direct_create_idempotent_ata(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: Pubkey,
+    owner: Pubkey,
+    ata: Pubkey,
+    token_program: Pubkey,
+    ata_program: Pubkey,
+) -> anyhow::Result<()> {
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(ata, false),
+        AccountMeta::new_readonly(owner, false),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        AccountMeta::new_readonly(token_program, false),
+        AccountMeta::new_readonly(ata_program, false),
+    ];
+    send_instruction(svm, program_id(), vec![15], metas, payer, &[]).map(|_| ())
+}
+
 fn send_init_interface_ata_with_token_program(
     svm: &mut LiteSVM,
     payer: &Keypair,
@@ -434,6 +455,64 @@ fn direct_create_rejects_wrong_associated_token_program() {
     init_mint(&mut svm, &payer, &mint, &mint_authority.pubkey());
 
     assert!(send_direct_create_ata(
+        &mut svm,
+        &payer,
+        mint.pubkey(),
+        owner.pubkey(),
+        ata,
+        token_program_id(),
+        token_program_id(),
+    )
+    .is_err());
+    assert!(svm.get_account(&ata).is_none());
+}
+
+#[test]
+fn direct_create_idempotent_creates_and_accepts_existing_ata() {
+    let (mut svm, payer) = setup();
+    let second_payer = keypair_for("spl-ata-idempotent-second-payer");
+    svm.airdrop(&second_payer.pubkey(), 1_000_000_000).unwrap();
+    let mint_authority = keypair_for("spl-ata-idempotent-mint-authority");
+    let owner = keypair_for("spl-ata-idempotent-owner");
+    let mint = Keypair::new();
+    let ata = associated_token_address(&owner.pubkey(), &mint.pubkey(), &token_program_id());
+    init_mint(&mut svm, &payer, &mint, &mint_authority.pubkey());
+
+    send_direct_create_idempotent_ata(
+        &mut svm,
+        &second_payer,
+        mint.pubkey(),
+        owner.pubkey(),
+        ata,
+        token_program_id(),
+        ata_program_id(),
+    )
+    .expect("idempotent create should create a missing ATA");
+    assert_token_account_state(&svm, ata, mint.pubkey(), owner.pubkey(), token_program_id());
+
+    send_direct_create_idempotent_ata(
+        &mut svm,
+        &payer,
+        mint.pubkey(),
+        owner.pubkey(),
+        ata,
+        token_program_id(),
+        ata_program_id(),
+    )
+    .expect("idempotent create should accept the existing canonical ATA");
+    assert_token_account_state(&svm, ata, mint.pubkey(), owner.pubkey(), token_program_id());
+}
+
+#[test]
+fn direct_create_idempotent_rejects_wrong_associated_token_program() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("spl-ata-idempotent-bad-program-mint-authority");
+    let owner = keypair_for("spl-ata-idempotent-bad-program-owner");
+    let mint = Keypair::new();
+    let ata = associated_token_address(&owner.pubkey(), &mint.pubkey(), &token_program_id());
+    init_mint(&mut svm, &payer, &mint, &mint_authority.pubkey());
+
+    assert!(send_direct_create_idempotent_ata(
         &mut svm,
         &payer,
         mint.pubkey(),

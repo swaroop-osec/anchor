@@ -95,11 +95,7 @@ impl<H, T> crate::Space for Slab<H, T>
 where
     H: Pod + Zeroable + SlabSchema,
 {
-    const INIT_SPACE: usize = if Self::HAS_TAIL {
-        Self::ITEMS_OFFSET
-    } else {
-        H::MIN_DATA_LEN
-    };
+    const INIT_SPACE: usize = Slab::<H, T>::MIN_DATA_LEN;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +191,12 @@ where
         }
     };
 
+    const MIN_DATA_LEN: usize = if Self::HAS_TAIL {
+        Self::ITEMS_OFFSET
+    } else {
+        H::MIN_DATA_LEN
+    };
+
     #[inline(always)]
     fn assert_header_alignment() {
         // Solana guarantees account data buffers are 8-byte aligned. Headers
@@ -279,12 +281,9 @@ where
         Self::assert_header_alignment();
         // SAFETY: AccountView's data pointer is valid for the instruction lifetime.
         // Duplicate mutable accounts are rejected at deserialization.
-        #[cfg(feature = "guardrails")]
-        {
-            let data = unsafe { view.borrow_unchecked() };
-            if data.len() < Self::ITEMS_OFFSET {
-                return Err(ProgramError::AccountDataTooSmall);
-            }
+        let data = unsafe { view.borrow_unchecked() };
+        if data.len() < Self::MIN_DATA_LEN {
+            return Err(ProgramError::AccountDataTooSmall);
         }
         // Derive header_ptr through data_mut_ptr to preserve write provenance.
         // Using data_ptr → *const would lose it under Stacked Borrows / Tree Borrows.
@@ -659,11 +658,7 @@ where
     H: Pod + Zeroable + SlabSchema,
 {
     type Data = H;
-    const MIN_DATA_LEN: usize = if Self::HAS_TAIL {
-        Self::ITEMS_OFFSET
-    } else {
-        H::MIN_DATA_LEN
-    };
+    const MIN_DATA_LEN: usize = Slab::<H, T>::MIN_DATA_LEN;
 
     #[inline(always)]
     fn load(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {

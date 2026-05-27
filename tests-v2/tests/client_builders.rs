@@ -167,6 +167,7 @@ fn generated_accounts_still_allow_runtime_validation_failures() {
         err.contains("InvalidSeeds")
             || err.contains("InvalidAccountData")
             || err.contains("UninitializedAccount")
+            || err.contains("AccountDataTooSmall")
             || err.contains("Custom("),
         "wrong required account should fail validation, got: {err}"
     );

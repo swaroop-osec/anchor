@@ -134,7 +134,6 @@ pub struct Initialize {
     #[account(
         init,
         payer = payer,
-        space = 8 + core::mem::size_of::<Data>(),
         seeds = [b"d", &seed.to_le_bytes()],
         bump,
     )]

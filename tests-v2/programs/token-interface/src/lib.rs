@@ -1,4 +1,4 @@
-//! Dedicated `anchor-spl-v2::token_interface` e2e program.
+//! Examples for `anchor-spl-v2::token_interface` accounts and CPIs.
 
 use {
     anchor_lang_v2::prelude::*,
@@ -83,6 +83,18 @@ pub mod token_interface_test {
     ) -> Result<()> {
         Ok(())
     }
+
+    #[discrim = 9]
+    pub fn init_interface_mint_pda(_ctx: &mut Context<InitInterfaceMintPda>) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 10]
+    pub fn init_interface_token_account_pda(
+        _ctx: &mut Context<InitInterfaceTokenAccountPda>,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -108,6 +120,25 @@ pub struct InitInterfaceMint {
 }
 
 #[derive(Accounts)]
+pub struct InitInterfaceMintPda {
+    #[account(mut)]
+    pub payer: Signer,
+    pub authority: UncheckedAccount,
+    pub token_program: Interface<'static, TokenInterface>,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [b"interface-mint", authority.address().as_ref()],
+        bump,
+        mint::decimals = 6,
+        mint::authority = authority,
+        mint::token_program = token_program,
+    )]
+    pub mint: InterfaceAccount<Mint>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
 pub struct InitInterfaceTokenAccount {
     #[account(mut)]
     pub payer: Signer,
@@ -117,6 +148,30 @@ pub struct InitInterfaceTokenAccount {
     #[account(
         init,
         payer = payer,
+        token::mint = mint,
+        token::authority = authority,
+        token::token_program = token_program,
+    )]
+    pub token_account: InterfaceAccount<TokenAccount>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct InitInterfaceTokenAccountPda {
+    #[account(mut)]
+    pub payer: Signer,
+    pub mint: InterfaceAccount<Mint>,
+    pub authority: UncheckedAccount,
+    pub token_program: Interface<'static, TokenInterface>,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [
+            b"interface-token-account",
+            mint.account().address().as_ref(),
+            authority.address().as_ref()
+        ],
+        bump,
         token::mint = mint,
         token::authority = authority,
         token::token_program = token_program,

@@ -58,7 +58,6 @@ pub struct Initialize {
     #[account(
         init,
         payer = payer,
-        space = 8 + core::mem::size_of::<OptionalStore>(),
         seeds = [OPTIONAL_SEED, authority.address().as_ref()],
         bump,
     )]

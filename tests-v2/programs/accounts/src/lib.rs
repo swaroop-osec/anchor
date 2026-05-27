@@ -1,6 +1,6 @@
-//! Test program exercising account-wrapper types that sit outside the
-//! constraints/seeds/cpi suites — Sysvar, Box<Account>, SystemAccount,
-//! and bare UncheckedAccount read paths.
+//! Examples for account-wrapper types that sit outside the constraints,
+//! seeds, and CPI suites: Sysvar, Box<Account>, SystemAccount, and bare
+//! UncheckedAccount values.
 
 extern crate alloc;
 
@@ -18,9 +18,9 @@ use {
 declare_id!("Acc1111111111111111111111111111111111111111");
 
 const PROGRAM_OWNER: Address =
-    Address::from_str_const("Acc1111111111111111111111111111111111111111");
+    anchor_lang_v2::address!("Acc1111111111111111111111111111111111111111");
 const FOREIGN_BORSH_OWNER: Address =
-    Address::from_str_const("Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u");
+    anchor_lang_v2::address!("Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u");
 const SYSTEM_SEED: &str = "anchor-v2-seed";
 const SYSTEM_TRANSFER_SEED: &str = "anchor-v2-transfer";
 
@@ -72,9 +72,7 @@ impl anchor_lang_v2::IdlAccountType for ForeignBorshCounter {}
 pub mod accounts_test {
     use super::*;
 
-    /// Initialize a counter. Exercises `BorshAccount`'s init path through a
-    /// regular `Account<T>` — also kicks the `Box<Account<T>>` handler below
-    /// into a known state.
+    /// Initializes the canonical counter used by the boxed-account handlers.
     #[discrim = 0]
     pub fn initialize(ctx: &mut Context<Initialize>) -> Result<()> {
         ctx.accounts.counter.value = 1;
@@ -82,18 +80,20 @@ pub mod accounts_test {
     }
 
     /// Loads the counter inside a `Box` and mutates it through `Deref`.
-    /// Hits `AnchorAccount for Box<T>` (`accounts/boxed.rs`).
     #[discrim = 1]
     pub fn bump_boxed(ctx: &mut Context<BumpBoxed>) -> Result<()> {
         ctx.accounts.counter.value = ctx.accounts.counter.value.wrapping_add(1);
         Ok(())
     }
 
-    /// Loads the counter immutably inside a `Box` and only reads through
-    /// `Deref`. Hits `AnchorAccount::load` for `Box<T>`.
+    /// Loads the counter immutably inside a `Box` and reads through `Deref`.
     #[discrim = 2]
-    pub fn read_boxed(ctx: &mut Context<ReadBoxed>) -> Result<()> {
-        let _ = ctx.accounts.counter.value;
+    pub fn read_boxed(ctx: &mut Context<ReadBoxed>, expected_value: u64) -> Result<()> {
+        require_eq!(
+            ctx.accounts.counter.value,
+            expected_value,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -110,61 +110,79 @@ pub mod accounts_test {
         Ok(())
     }
 
-    /// Reads the Clock sysvar. Exercises `Sysvar<Clock>::load` and `Deref`
-    /// forwarding to the inner pinocchio type.
+    /// Reads the Clock sysvar through `Deref` forwarding to the inner type.
     #[discrim = 5]
     pub fn read_clock(ctx: &mut Context<ReadClock>) -> Result<()> {
-        // Touch several Clock fields so the register trace covers the
-        // deref/getter path.
+        // Touch several Clock fields to show ordinary typed sysvar access.
         let clock = &*ctx.accounts.clock;
-        let _ = clock.slot;
-        let _ = clock.epoch;
-        let _ = clock.unix_timestamp;
+        require!(clock.epoch <= clock.slot, ProgramError::InvalidAccountData);
+        require!(clock.unix_timestamp >= 0, ProgramError::InvalidAccountData);
         Ok(())
     }
 
-    /// Reads the Rent sysvar. Same rationale as `read_clock`.
+    /// Reads the Rent sysvar through typed helper methods.
     #[discrim = 6]
     pub fn read_rent(ctx: &mut Context<ReadRent>) -> Result<()> {
         let rent = &*ctx.accounts.rent;
-        let _ = rent.try_minimum_balance(100);
+        require!(
+            rent.try_minimum_balance(100)? > 0,
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
-    /// Take a `SystemAccount` — validates the passed account is owned by
-    /// the System program. Exercises `accounts/system_account.rs`.
+    /// Takes a `SystemAccount`, which validates that the account is owned by
+    /// the System program.
     #[discrim = 7]
-    pub fn check_system(ctx: &mut Context<CheckSystem>) -> Result<()> {
-        let _ = ctx.accounts.wallet.address();
+    pub fn check_system(ctx: &mut Context<CheckSystem>, expected_wallet: Address) -> Result<()> {
+        require!(
+            anchor_lang_v2::address_eq(ctx.accounts.wallet.address(), &expected_wallet),
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
-    /// Read-only UncheckedAccount — exercises load + accessor paths on
-    /// `accounts/unchecked_account.rs`.
+    /// Reads the address from an unchecked account when the program does its
+    /// own validation.
     #[discrim = 8]
-    pub fn touch_unchecked(ctx: &mut Context<TouchUnchecked>) -> Result<()> {
-        let _ = ctx.accounts.any_account.address();
+    pub fn touch_unchecked(
+        ctx: &mut Context<TouchUnchecked>,
+        expected_account: Address,
+    ) -> Result<()> {
+        require!(
+            anchor_lang_v2::address_eq(ctx.accounts.any_account.address(), &expected_account),
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
     /// Checks the well-known System program marker address.
     #[discrim = 9]
     pub fn check_system_program(ctx: &mut Context<CheckSystemProgram>) -> Result<()> {
-        let _ = ctx.accounts.program.address();
+        require!(
+            anchor_lang_v2::address_eq(ctx.accounts.program.address(), &system_program::ID),
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
     /// Checks the well-known SPL Token program marker address.
     #[discrim = 10]
     pub fn check_token_program(ctx: &mut Context<CheckTokenProgram>) -> Result<()> {
-        let _ = ctx.accounts.program.address();
+        require!(
+            anchor_lang_v2::address_eq(ctx.accounts.program.address(), &Token::id()),
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
     /// Checks the well-known Token-2022 program marker address.
     #[discrim = 11]
     pub fn check_token_2022_program(ctx: &mut Context<CheckToken2022Program>) -> Result<()> {
-        let _ = ctx.accounts.program.address();
+        require!(
+            anchor_lang_v2::address_eq(ctx.accounts.program.address(), &Token2022::id()),
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -173,14 +191,20 @@ pub mod accounts_test {
     pub fn check_associated_token_program(
         ctx: &mut Context<CheckAssociatedTokenProgram>,
     ) -> Result<()> {
-        let _ = ctx.accounts.program.address();
+        require!(
+            anchor_lang_v2::address_eq(ctx.accounts.program.address(), &AssociatedToken::id()),
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
     /// Checks the well-known Memo program marker address.
     #[discrim = 13]
     pub fn check_memo_program(ctx: &mut Context<CheckMemoProgram>) -> Result<()> {
-        let _ = ctx.accounts.program.address();
+        require!(
+            anchor_lang_v2::address_eq(ctx.accounts.program.address(), &Memo::id()),
+            ProgramError::InvalidAccountData
+        );
         Ok(())
     }
 
@@ -557,7 +581,7 @@ pub mod accounts_test {
         Ok(())
     }
 
-    /// Initializes a borsh-backed counter for lamport-helper coverage.
+    /// Initializes a borsh-backed counter for the lamport-helper examples.
     #[discrim = 30]
     pub fn initialize_borsh_counter(ctx: &mut Context<InitializeBorshCounter>) -> Result<()> {
         ctx.accounts.counter.value = 11;
@@ -595,8 +619,8 @@ pub mod accounts_test {
         Ok(())
     }
 
-    /// Tops up a loaded `Account<T>` to its rent-exempt floor. This exercises
-    /// `Slab::top_up` while the slab-backed account's borrow flag is held.
+    /// Tops up a loaded `Account<T>` to its rent-exempt floor while the
+    /// slab-backed account is already borrowed.
     #[discrim = 34]
     pub fn top_up_counter(ctx: &mut Context<TopUpCounter>) -> Result<()> {
         ctx.accounts.counter.top_up(ctx.accounts.payer.as_ref())?;
@@ -757,7 +781,7 @@ pub struct InitializeWithLaterSeed {
 
 #[derive(Accounts)]
 pub struct InitializeTargetBeforePayer {
-    #[account(init, payer = payer, space = 8 + core::mem::size_of::<Counter>(), unsafe(dup))]
+    #[account(init, payer = payer, unsafe(dup))]
     pub counter: Account<Counter>,
     #[account(mut, unsafe(dup))]
     pub payer: Signer,

@@ -17,6 +17,35 @@ build-cli:
 # install lcov or apt install lcov — provides lcov + genhtml).
 COVERAGE_DIR := target/coverage
 COVERAGE_HTML := $(COVERAGE_DIR)/html
+TESTS_V2_COVERAGE_TESTS := \
+	account_address_constraints \
+	account_meta_signer_overrides \
+	accounts \
+	borsh_realloc \
+	client_builders \
+	constraints \
+	cpi \
+	custom_constraints \
+	declare_program \
+	derives \
+	dispatch_remaining \
+	dup_mut \
+	equivalence_metadata \
+	equivalence_spl \
+	event_cpi \
+	idl_convert \
+	idl_metadata \
+	init_space_usability \
+	ix_macro \
+	optional_accounts \
+	program_interface \
+	seeds \
+	spl \
+	spl_ata \
+	sysvar_idl \
+	token_2022_extensions \
+	token_interface
+TESTS_V2_COVERAGE_ARGS := $(foreach test,$(TESTS_V2_COVERAGE_TESTS),--test $(test))
 
 .PHONY: coverage-v2
 coverage-v2: coverage-v2-sbf coverage-v2-host coverage-v2-merge coverage-v2-html
@@ -69,10 +98,16 @@ coverage-v2-host:
 	# fail when `anchor-spl-v2` / `tests-v2` don't define it.
 	CARGO_PROFILE_RELEASE_DEBUG=2 \
 	cargo llvm-cov --no-report -p anchor-lang-v2 --features testing
-	# Second pass: the other v2 crates under default features.
+	# Second pass: `anchor-spl-v2` under default features.
 	CARGO_PROFILE_RELEASE_DEBUG=2 \
-	cargo llvm-cov --no-report -p anchor-spl-v2 -p tests-v2
-	# Third pass: the test programs that declare a local `idl-build` feature,
+	cargo llvm-cov --no-report -p anchor-spl-v2
+	# Third pass: the tests-v2 runtime/e2e suite under default features.
+	# Keep compile_fail.rs out of the coverage path: it exercises diagnostics
+	# by repeatedly compiling throwaway fixtures, which is slow and does not
+	# execute framework runtime paths for source coverage.
+	CARGO_PROFILE_RELEASE_DEBUG=2 \
+	cargo llvm-cov --no-report -p tests-v2 $(TESTS_V2_COVERAGE_ARGS)
+	# Fourth pass: the test programs that declare a local `idl-build` feature,
 	# run with `--features idl-build` so the IDL-emission code paths fire —
 	# derive-emitted `IdlAccountType` impls, `__idl_accounts()` /
 	# `__idl_register_deps()` / `__idl_errors()` fns, and the

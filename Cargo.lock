@@ -8715,6 +8715,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "space-annotation"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang-v2",
+ "bytemuck",
+ "pinocchio",
+ "pinocchio-system",
+ "solana-program-error 3.0.0",
+ "wincode 0.5.4",
+]
+
+[[package]]
 name = "spinning_top"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9264,11 +9276,13 @@ dependencies = [
  "solana-sdk-ids 3.1.0",
  "solana-signer",
  "solana-transaction",
+ "space-annotation",
  "spl-ata-test",
  "spl-test",
  "spl-token",
  "spl-token-2022-interface",
  "spl-token-group-interface",
+ "spl-token-metadata-interface",
  "token-interface-test",
 ]
 

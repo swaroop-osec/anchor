@@ -46,7 +46,6 @@ pub struct Initialize {
     #[account(
         init,
         payer = payer,
-        space = 8 + core::mem::size_of::<Counter>(),
         seeds = [COUNTER_SEED],
         bump,
     )]

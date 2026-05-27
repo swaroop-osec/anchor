@@ -97,7 +97,6 @@ pub struct InitRequired {
     #[account(
         init,
         payer = payer,
-        space = 8 + core::mem::size_of::<Data>(),
         seeds = [b"data"],
         bump,
     )]
@@ -143,7 +142,6 @@ pub struct OptionalInitIfNeeded {
     #[account(
         init_if_needed,
         payer = payer,
-        space = 8 + core::mem::size_of::<Data>(),
         seeds = [b"maybe"],
         bump,
     )]

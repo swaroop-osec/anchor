@@ -306,11 +306,7 @@ pub struct Bad {{
         compile_fail_case(name, &source, &["ForeignOwnerInit", "is not implemented"]);
     }
 
-    case(
-        "init_owner_override_account",
-        "#[account]",
-        "Account<Data>",
-    );
+    case("init_owner_override_account", "#[account]", "Account<Data>");
     case(
         "init_owner_override_boxed_account",
         "#[account]",

@@ -1,9 +1,8 @@
-//! Compile-time coverage for account-like field refs in SPL constraints.
+//! Examples for account-like field references in SPL constraints.
 //!
-//! The important cases are boxed and optional account wrappers used as
-//! `mint::authority` / `token::authority` sibling fields. These compile only
-//! when derive-generated constraint code projects the account address through
-//! `anchor_lang_v2::AccountAddress` rather than raw `AsRef`.
+//! These examples use boxed and optional account wrappers as
+//! `mint::authority` / `token::authority` sibling fields, showing that SPL
+//! constraints can refer to any account wrapper with an account address.
 
 use {
     anchor_lang_v2::prelude::*,

@@ -109,6 +109,27 @@ fn setup() -> (LiteSVM, Keypair) {
     (svm, payer)
 }
 
+fn data_with_mint_expectation(disc: u8, authority: &Pubkey, supply: u64, decimals: u8) -> Vec<u8> {
+    let mut data = vec![disc];
+    data.extend_from_slice(&authority.to_bytes());
+    data.extend_from_slice(&supply.to_le_bytes());
+    data.push(decimals);
+    data
+}
+
+fn data_with_token_account_expectation(
+    disc: u8,
+    mint: &Pubkey,
+    owner: &Pubkey,
+    amount: u64,
+) -> Vec<u8> {
+    let mut data = vec![disc];
+    data.extend_from_slice(&mint.to_bytes());
+    data.extend_from_slice(&owner.to_bytes());
+    data.extend_from_slice(&amount.to_le_bytes());
+    data
+}
+
 /// Build the send_instruction args for `init_mint` (discrim = 0).
 fn do_init_mint(svm: &mut LiteSVM, payer: &Keypair, mint_kp: &Keypair, authority: &Pubkey) {
     let metas = vec![
@@ -666,18 +687,22 @@ fn set_close_authority_helper_updates_token_account() {
 // ---- Accessor methods ------------------------------------------------------
 
 #[test]
-fn read_mint_touches_all_accessors() {
+fn read_mint_asserts_expected_state() {
     let (mut svm, payer) = setup();
     let authority = keypair_for("mint-authority");
     let mint = Keypair::new();
     do_init_mint(&mut svm, &payer, &mint, &authority.pubkey());
 
-    // read_mint (discrim = 9). Program-side assertion is that the call
-    // succeeds — CPU-bound accessors exercised along the way show up in
-    // the coverage trace as hits on `Mint::supply`/`::decimals`/etc.
     let metas = vec![AccountMeta::new_readonly(mint.pubkey(), false)];
-    send_instruction(&mut svm, program_id(), vec![9], metas, &payer, &[])
-        .expect("read_mint should succeed");
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_mint_expectation(9, &authority.pubkey(), 0, 6),
+        metas,
+        &payer,
+        &[],
+    )
+    .expect("read_mint should succeed");
 }
 
 #[test]
@@ -689,7 +714,14 @@ fn read_mint_rejects_uninitialized_token_owned_mint() {
 
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     assert_uninitialized_account_error(
-        send_instruction(&mut svm, program_id(), vec![9], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_mint_expectation(9, &Pubkey::new_unique(), 0, 6),
+            metas,
+            &payer,
+            &[],
+        ),
         "uninitialized Token-owned mint should not load as Account<Mint>",
     );
 }
@@ -707,7 +739,14 @@ fn read_mint_rejects_invalid_coption_tag() {
 
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     assert_invalid_account_data_error(
-        send_instruction(&mut svm, program_id(), vec![9], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_mint_expectation(9, &authority.pubkey(), 0, 6),
+            metas,
+            &payer,
+            &[],
+        ),
         "mint with malformed COption tag should not load as Account<Mint>",
     );
 }
@@ -725,22 +764,35 @@ fn read_mint_rejects_invalid_initialized_state() {
 
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     assert_invalid_account_data_error(
-        send_instruction(&mut svm, program_id(), vec![9], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_mint_expectation(9, &authority.pubkey(), 0, 6),
+            metas,
+            &payer,
+            &[],
+        ),
         "mint with invalid initialized byte should not load as Account<Mint>",
     );
 }
 
 #[test]
-fn read_token_account_touches_all_accessors() {
+fn read_token_account_asserts_expected_state() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("mint-auth");
     let owner = keypair_for("owner");
-    let (_mint, token) = mint_and_fund(&mut svm, &payer, &mint_authority, &owner.pubkey(), 100);
+    let (mint, token) = mint_and_fund(&mut svm, &payer, &mint_authority, &owner.pubkey(), 100);
 
-    // read_token_account (discrim = 10). See read_mint rationale.
     let metas = vec![AccountMeta::new_readonly(token, false)];
-    send_instruction(&mut svm, program_id(), vec![10], metas, &payer, &[])
-        .expect("read_token_account should succeed");
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_token_account_expectation(10, &mint, &owner.pubkey(), 100),
+        metas,
+        &payer,
+        &[],
+    )
+    .expect("read_token_account should succeed");
 }
 
 #[test]
@@ -757,7 +809,19 @@ fn read_token_account_rejects_uninitialized_token_owned_account() {
 
     let metas = vec![AccountMeta::new_readonly(token, false)];
     assert_uninitialized_account_error(
-        send_instruction(&mut svm, program_id(), vec![10], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_token_account_expectation(
+                10,
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                0,
+            ),
+            metas,
+            &payer,
+            &[],
+        ),
         "uninitialized Token-owned token account should not load as Account<TokenAccount>",
     );
 }
@@ -776,7 +840,14 @@ fn read_token_account_rejects_invalid_coption_tag() {
 
     let metas = vec![AccountMeta::new_readonly(token, false)];
     assert_invalid_account_data_error(
-        send_instruction(&mut svm, program_id(), vec![10], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_token_account_expectation(10, &mint, &owner.pubkey(), 0),
+            metas,
+            &payer,
+            &[],
+        ),
         "token account with malformed COption tag should not load as Account<TokenAccount>",
     );
 }
@@ -795,7 +866,14 @@ fn read_token_account_rejects_invalid_state() {
 
     let metas = vec![AccountMeta::new_readonly(token, false)];
     assert_invalid_account_data_error(
-        send_instruction(&mut svm, program_id(), vec![10], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_token_account_expectation(10, &mint, &owner.pubkey(), 0),
+            metas,
+            &payer,
+            &[],
+        ),
         "token account with invalid state byte should not load as Account<TokenAccount>",
     );
 }
@@ -942,6 +1020,123 @@ fn token_authority_constraint_accepts_matching() {
     ];
     send_instruction(&mut svm, program_id(), vec![14], metas, &payer, &[])
         .expect("token::authority match should pass");
+}
+
+#[test]
+fn strict_mint_freeze_authority_constraint_accepts_matching() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("strict-freeze-mint-authority");
+    let freeze_authority = keypair_for("strict-freeze-authority");
+    let mint = Pubkey::new_unique();
+    seed_token_owned_account(
+        &mut svm,
+        mint,
+        token_program_id(),
+        pack_base_mint_with_freeze(&authority.pubkey(), &freeze_authority.pubkey(), 6, 0).to_vec(),
+    );
+
+    let metas = vec![
+        AccountMeta::new_readonly(freeze_authority.pubkey(), false),
+        AccountMeta::new(mint, false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![90], metas, &payer, &[])
+        .expect("strict mint::freeze_authority should accept the configured authority");
+}
+
+#[test]
+fn strict_mint_freeze_authority_constraint_rejects_unset_and_mismatch() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("strict-freeze-reject-mint-authority");
+    let freeze_authority = keypair_for("strict-freeze-reject-authority");
+    let wrong = keypair_for("strict-freeze-reject-wrong");
+    let unset_mint = Pubkey::new_unique();
+    let frozen_mint = Pubkey::new_unique();
+    seed_token_owned_account(
+        &mut svm,
+        unset_mint,
+        token_program_id(),
+        pack_base_mint(&authority.pubkey(), 6, 0).to_vec(),
+    );
+    seed_token_owned_account(
+        &mut svm,
+        frozen_mint,
+        token_program_id(),
+        pack_base_mint_with_freeze(&authority.pubkey(), &freeze_authority.pubkey(), 6, 0).to_vec(),
+    );
+
+    let unset_metas = vec![
+        AccountMeta::new_readonly(freeze_authority.pubkey(), false),
+        AccountMeta::new(unset_mint, false),
+    ];
+    assert!(
+        send_instruction(&mut svm, program_id(), vec![90], unset_metas, &payer, &[]).is_err(),
+        "strict mint::freeze_authority should reject an unset freeze authority",
+    );
+
+    let mismatch_metas = vec![
+        AccountMeta::new_readonly(wrong.pubkey(), false),
+        AccountMeta::new(frozen_mint, false),
+    ];
+    assert!(
+        send_instruction(
+            &mut svm,
+            program_id(),
+            vec![90],
+            mismatch_metas,
+            &payer,
+            &[]
+        )
+        .is_err(),
+        "strict mint::freeze_authority should reject a mismatched authority",
+    );
+}
+
+#[test]
+fn strict_mint_token_program_constraint_checks_owner() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("strict-mint-token-program-authority");
+    let mint = Keypair::new();
+    do_init_mint(&mut svm, &payer, &mint, &authority.pubkey());
+
+    let ok_metas = vec![
+        AccountMeta::new_readonly(token_program_id(), false),
+        AccountMeta::new(mint.pubkey(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![91], ok_metas, &payer, &[])
+        .expect("strict mint::token_program should accept the owning token program");
+
+    let bad_metas = vec![
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+        AccountMeta::new(mint.pubkey(), false),
+    ];
+    assert!(
+        send_instruction(&mut svm, program_id(), vec![91], bad_metas, &payer, &[]).is_err(),
+        "strict mint::token_program should reject a different owner program",
+    );
+}
+
+#[test]
+fn strict_token_account_token_program_constraint_checks_owner() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("strict-token-program-mint-authority");
+    let owner = keypair_for("strict-token-program-owner");
+    let (_mint, token) = mint_and_fund(&mut svm, &payer, &mint_authority, &owner.pubkey(), 0);
+
+    let ok_metas = vec![
+        AccountMeta::new_readonly(token_program_id(), false),
+        AccountMeta::new(token, false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![92], ok_metas, &payer, &[])
+        .expect("strict token::token_program should accept the owning token program");
+
+    let bad_metas = vec![
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+        AccountMeta::new(token, false),
+    ];
+    assert!(
+        send_instruction(&mut svm, program_id(), vec![92], bad_metas, &payer, &[]).is_err(),
+        "strict token::token_program should reject a different owner program",
+    );
 }
 
 // ---- CPI negative tests ---------------------------------------------------
@@ -1577,7 +1772,7 @@ fn assert_illegal_owner_error<T, E: std::fmt::Display>(result: Result<T, E>, con
     );
 }
 
-// ---- InterfaceAccount read path --------------------------------------------
+// ---- InterfaceAccount validation -------------------------------------------
 
 #[test]
 fn read_interface_mint_accepts_legacy_token_owned() {
@@ -1586,10 +1781,16 @@ fn read_interface_mint_accepts_legacy_token_owned() {
     let mint = Keypair::new();
     do_init_mint(&mut svm, &payer, &mint, &authority.pubkey());
 
-    // read_interface_mint (discrim = 16)
     let metas = vec![AccountMeta::new_readonly(mint.pubkey(), false)];
-    send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[])
-        .expect("legacy-owned mint should pass interface load");
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_mint_expectation(16, &authority.pubkey(), 0, 6),
+        metas,
+        &payer,
+        &[],
+    )
+    .expect("legacy-owned mint should pass interface load");
 }
 
 #[test]
@@ -1602,8 +1803,15 @@ fn read_interface_mint_accepts_token_2022_owned() {
     seed_token_2022_account(&mut svm, mint, data);
 
     let metas = vec![AccountMeta::new_readonly(mint, false)];
-    send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[])
-        .expect("token-2022-owned mint should pass interface load");
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_mint_expectation(16, &authority.pubkey(), 0, 9),
+        metas,
+        &payer,
+        &[],
+    )
+    .expect("token-2022-owned mint should pass interface load");
 }
 
 #[test]
@@ -1627,13 +1835,27 @@ fn read_interface_mint_rejects_uninitialized_legacy_and_token_2022_owned() {
 
     let metas = vec![AccountMeta::new_readonly(legacy_mint, false)];
     assert_uninitialized_account_error(
-        send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_mint_expectation(16, &Pubkey::new_unique(), 0, 6),
+            metas,
+            &payer,
+            &[],
+        ),
         "uninitialized legacy mint should not load as InterfaceAccount<Mint>",
     );
 
     let metas = vec![AccountMeta::new_readonly(token_2022_mint, false)];
     assert_uninitialized_account_error(
-        send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_mint_expectation(16, &Pubkey::new_unique(), 0, 6),
+            metas,
+            &payer,
+            &[],
+        ),
         "uninitialized Token-2022 mint should not load as InterfaceAccount<Mint>",
     );
 }
@@ -1650,7 +1872,14 @@ fn read_interface_mint_rejects_token_2022_account_type_mismatch() {
 
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     assert_invalid_account_data_error(
-        send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_mint_expectation(16, &authority.pubkey(), 0, 6),
+            metas,
+            &payer,
+            &[],
+        ),
         "Token-2022 account type marker must match InterfaceAccount<Mint>",
     );
 }
@@ -1672,7 +1901,14 @@ fn read_interface_mint_rejects_token_account() {
 
     let metas = vec![AccountMeta::new_readonly(token, false)];
     assert_invalid_account_data_error(
-        send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_mint_expectation(16, &owner.pubkey(), 42, 6),
+            metas,
+            &payer,
+            &[],
+        ),
         "a token account must not load as InterfaceAccount<Mint>",
     );
 }
@@ -1689,7 +1925,14 @@ fn read_interface_mint_rejects_nonzero_token_2022_mint_padding() {
 
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     assert_invalid_account_data_error(
-        send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_mint_expectation(16, &authority.pubkey(), 0, 6),
+            metas,
+            &payer,
+            &[],
+        ),
         "Token-2022 mint padding must be zero before the account type marker",
     );
 }
@@ -1716,7 +1959,14 @@ fn read_interface_mint_rejects_foreign_owner() {
     .unwrap();
 
     let metas = vec![AccountMeta::new_readonly(mint, false)];
-    let result = send_instruction(&mut svm, program_id(), vec![16], metas, &payer, &[]);
+    let result = send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_mint_expectation(16, &authority.pubkey(), 0, 6),
+        metas,
+        &payer,
+        &[],
+    );
     assert!(
         result.is_err(),
         "foreign-owned account should not load as InterfaceAccount<Mint>",
@@ -1733,8 +1983,15 @@ fn read_interface_token_account_accepts_legacy_and_token_2022() {
     let (_mint, legacy_token) =
         mint_and_fund(&mut svm, &payer, &mint_authority, &owner.pubkey(), 10);
     let metas = vec![AccountMeta::new_readonly(legacy_token, false)];
-    send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[])
-        .expect("legacy-owned token account should pass interface load");
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_token_account_expectation(17, &_mint, &owner.pubkey(), 10),
+        metas,
+        &payer,
+        &[],
+    )
+    .expect("legacy-owned token account should pass interface load");
 
     // Token-2022 branch: seed a raw extended account.
     let t22_mint = Pubkey::new_unique();
@@ -1750,8 +2007,15 @@ fn read_interface_token_account_accepts_legacy_and_token_2022() {
         build_token_account_data(&t22_mint, &owner.pubkey(), 42, &[]),
     );
     let metas = vec![AccountMeta::new_readonly(t22_token, false)];
-    send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[])
-        .expect("token-2022-owned token account should pass interface load");
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_token_account_expectation(17, &t22_mint, &owner.pubkey(), 42),
+        metas,
+        &payer,
+        &[],
+    )
+    .expect("token-2022-owned token account should pass interface load");
 }
 
 #[test]
@@ -1775,13 +2039,37 @@ fn read_interface_token_account_rejects_uninitialized_legacy_and_token_2022_owne
 
     let metas = vec![AccountMeta::new_readonly(legacy_token, false)];
     assert_uninitialized_account_error(
-        send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_token_account_expectation(
+                17,
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                0,
+            ),
+            metas,
+            &payer,
+            &[],
+        ),
         "uninitialized legacy token account should not load as InterfaceAccount<TokenAccount>",
     );
 
     let metas = vec![AccountMeta::new_readonly(token_2022_token, false)];
     assert_uninitialized_account_error(
-        send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_token_account_expectation(
+                17,
+                &Pubkey::new_unique(),
+                &Pubkey::new_unique(),
+                0,
+            ),
+            metas,
+            &payer,
+            &[],
+        ),
         "uninitialized Token-2022 token account should not load as InterfaceAccount<TokenAccount>",
     );
 }
@@ -1799,7 +2087,14 @@ fn read_interface_token_account_rejects_token_2022_account_type_mismatch() {
 
     let metas = vec![AccountMeta::new_readonly(token, false)];
     assert_invalid_account_data_error(
-        send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[]),
+        send_instruction(
+            &mut svm,
+            program_id(),
+            data_with_token_account_expectation(17, &mint, &owner.pubkey(), 42),
+            metas,
+            &payer,
+            &[],
+        ),
         "Token-2022 account type marker must match InterfaceAccount<TokenAccount>",
     );
 }
@@ -1824,7 +2119,14 @@ fn read_interface_token_account_rejects_foreign_owner() {
     .unwrap();
 
     let metas = vec![AccountMeta::new_readonly(token, false)];
-    let result = send_instruction(&mut svm, program_id(), vec![17], metas, &payer, &[]);
+    let result = send_instruction(
+        &mut svm,
+        program_id(),
+        data_with_token_account_expectation(17, &mint, &owner.pubkey(), 42),
+        metas,
+        &payer,
+        &[],
+    );
     assert!(
         result.is_err(),
         "foreign-owned account should not load as InterfaceAccount<TokenAccount>",
