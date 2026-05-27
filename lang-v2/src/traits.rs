@@ -141,8 +141,9 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// account was created via CreateAccount/Allocate (which requires
     /// signing), and `invoke_signed` already includes the curve check.
     ///
-    /// Slab-backed types: `8`. UncheckedAccount / zero-data wrappers: `0`
-    /// (forces the curve check).
+    /// Non-empty wrappers override this with their schema-specific minimum.
+    /// UncheckedAccount / zero-data wrappers leave it at `0` (forces the curve
+    /// check).
     const MIN_DATA_LEN: usize = 0;
 
     fn load(view: AccountView, program_id: &Address) -> core::result::Result<Self, ProgramError>;
@@ -521,8 +522,9 @@ pub trait Discriminator {
 /// which read directly from `AccountView` borrows; this is purely the
 /// off-chain client helper.
 pub trait AccountDeserialize: Sized {
-    /// Verify the leading discriminator and decode. Default implementation
-    /// strips the disc and forwards to `try_deserialize_unchecked`.
+    /// Verify the leading discriminator and decode. Generated impls perform
+    /// the discriminator check; the default forwards to
+    /// `try_deserialize_unchecked`.
     fn try_deserialize(buf: &mut &[u8]) -> Result<Self, ProgramError> {
         Self::try_deserialize_unchecked(buf)
     }

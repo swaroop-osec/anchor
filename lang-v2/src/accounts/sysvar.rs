@@ -46,7 +46,7 @@ impl SysvarId for pinocchio::sysvars::rent::Rent {
 ///
 /// `Sysvar<T>` validates the address against `T::SYSVAR_ID` inside `load`,
 /// before any derive-level constraint hook. A mismatch surfaces as
-/// `ProgramError::IncorrectProgramId`, never as the user's `@ MyErr` code.
+/// `ProgramError::InvalidArgument`, never as the user's `@ MyErr` code.
 /// If you need a custom error code on a sysvar address mismatch, use
 /// `UncheckedAccount` and add `address = X @ MyErr` in the derive.
 pub struct Sysvar<T: PinocchioSysvar + SysvarId + Copy> {

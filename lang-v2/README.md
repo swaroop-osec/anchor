@@ -1,6 +1,6 @@
 # anchor-lang-v2
 
-v2 is a drop-in speedup for Anchor v1, but up to **94% smaller** and **3–6× faster** per instruction (see the [Examples](#examples) table).
+v2 is a drop-in speedup for Anchor v1, but up to **94% smaller** and **3× faster or more** per instruction in the example programs below.
 
 **Compatibility is a priority.** Most v1 programs port with the renames in [Migrating from v1](#migrating-from-v1). A `compat` feature restores v1-shaped helpers to ease migrations for larger programs. v2 also comes with first-class tooling like `anchor debugger` to help give you full visibility into your program.
 
@@ -129,7 +129,7 @@ In v1, the caller built the `AccountMeta` vector by hand on every call — deriv
 
 An important implication of our trait-based framework is: **you can write your own Anchor extensions.**
 
-In v1, anything the macro didn't already support meant forking the derive. v2 moves most logic out of the macro and behind traits, so anyone can ship new behavior from a separate crate — no fork, no upstream PR. The core derive shrinks from ~11,400 LoC to ~3,700 as a nice side effect.
+In v1, anything the macro didn't already support meant forking the derive. v2 moves much of the account behavior behind traits, so anyone can ship new behavior from a separate crate — no fork, no upstream PR.
 
 For example, [anchor-dynamic-account](https://github.com/chen-robert/anchor-dynamic-account) adds a brand-new primitive — zero-copy accounts with a `Vec<T>` / `String` tail that auto-reallocates to fit — behind a single `#[wrapped_account]` macro, with no changes to `anchor-lang-v2`:
 

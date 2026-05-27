@@ -2045,9 +2045,9 @@ pub fn derive_idl_type(input: TokenStream) -> TokenStream {
                     idl::TypeKind::Borsh,
                 ),
             };
-            // Walk named fields for the transitive dep registration. Unnamed
-            // / unit structs contribute nothing to the walker (no inner
-            // fields to recurse into) — the empty expansion is correct.
+            // Walk fields for the transitive dep registration. Tuple structs
+            // still contribute their field types; unit structs have no inner
+            // fields to recurse into.
             let field_tys: Vec<&Type> = match &data.fields {
                 Fields::Named(named) => named.named.iter().map(|f| &f.ty).collect(),
                 Fields::Unnamed(unnamed) => unnamed.unnamed.iter().map(|f| &f.ty).collect(),
@@ -4504,8 +4504,8 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
             #(#accounts_reexports)*
         }
 
-        /// CPI module — gated on the `cpi` feature, on by convention when a
-        /// caller crate depends on this program for cross-program invocation.
+        /// CPI module — gated on the `cpi` feature for normal programs and
+        /// emitted unconditionally for interface modules.
         /// `accounts::*` re-exports the auto-generated CPI accounts structs
         /// (one per `#[derive(Accounts)]` Accounts struct, emitted as
         /// `__cpi_accounts_<lowercase>` at this same scope). The free
@@ -4891,7 +4891,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
         name_str, event_disc_json,
     );
     // Field types for the transitive type walk. The event itself pushes
-    // `type_def_json` into the types accumulator via its `__IDL_TYPE`
+    // `type_def_json` into the types accumulator via its `__IDL_TYPE_DEF`
     // const; field-type deps fan out from there so plain user structs
     // referenced by `pub inner: Inner` land in `types[]` too.
     let idl_field_tys: Vec<&Type> = match fields {
@@ -4904,7 +4904,7 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
         name_str.to_lowercase()
     );
     // The event's own `IdlAccountType` impl (emitted further down) owns
-    // `__IDL_TYPE = Some(#type_def_json)` and a `__register_idl_deps` that
+    // `__IDL_TYPE_DEF = Some(#type_def_json)` and a `__register_idl_deps` that
     // pushes both self and every field-type dep. The test here just walks
     // that deps list at runtime and assembles the `--- IDL begin event ---`
     // payload — so `types[]` picks up nested user structs without the test
@@ -4981,10 +4981,10 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
             impl anchor_lang_v2::Event for #name {
                 fn data(&self) -> anchor_lang_v2::__alloc::vec::Vec<u8> {
                     let disc = <Self as anchor_lang_v2::Discriminator>::DISCRIMINATOR;
-                    // 256-byte preallocation matches the instruction-data
-                    // emission site (derive/src/lib.rs ~line 971). Wincode
-                    // has no `encoded_size()` yet, so this is a best-guess
-                    // that avoids a reallocation for typical event shapes.
+                    // 256-byte preallocation matches instruction-data
+                    // emission. Wincode has no `encoded_size()` yet, so this
+                    // is a best-guess that avoids a reallocation for typical
+                    // event shapes.
                     let mut buf = anchor_lang_v2::__alloc::vec::Vec::with_capacity(
                         disc.len() + 256,
                     );
@@ -5418,10 +5418,9 @@ pub fn event_cpi(_attr: TokenStream, input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// This pattern is useful for invariants that depend on instruction
-/// arguments — `#[derive(Accounts)]` constraints fire before args are
-/// unpacked, so any check that needs both an account and an arg goes
-/// here.
+/// This pattern is useful for invariants that do not fit naturally in an
+/// account attribute, or for checks that should live next to ordinary Rust
+/// validation code.
 #[proc_macro_attribute]
 pub fn access_control(args: TokenStream, input: TokenStream) -> TokenStream {
     access_control::expand(args, input)

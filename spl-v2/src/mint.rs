@@ -55,7 +55,7 @@ unsafe impl Pod for Mint {}
 unsafe impl Zeroable for Mint {}
 
 // Mint is defined by the SPL Token program, not by the user's program — its
-// layout is known to any SPL-aware client. Default `__IDL_TYPE = None` keeps
+// layout is known to any SPL-aware client. Default `__IDL_TYPE_DEF = None` keeps
 // it out of the user's IDL `types[]` array (matches v1's `impl_idl_build!`
 // behavior for this type).
 #[doc(hidden)]
@@ -206,7 +206,7 @@ impl AccountConstraint<Account<Mint>> for FreezeAuthorityConstraint {
     }
 }
 
-/// `mint::Decimals = 6` — non-address constraint, compares u8.
+/// `mint::decimals = 6` — non-address constraint, compares u8.
 impl AccountConstraint<Account<Mint>> for DecimalsConstraint {
     type Value = u8;
     #[inline(always)]
@@ -220,7 +220,7 @@ impl AccountConstraint<Account<Mint>> for DecimalsConstraint {
     }
 }
 
-/// `mint::TokenProgram = token_program` — check mint is owned by given program.
+/// `mint::token_program = token_program` — check mint is owned by given program.
 impl AccountConstraint<Account<Mint>> for TokenProgramConstraint {
     type Value = Address;
     #[inline(always)]

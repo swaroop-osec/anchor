@@ -27,8 +27,8 @@
 //! pub struct PodMarketMode(pub u8);
 //!
 //! impl PodMarketMode {
-//!     pub const LIVE: Self = Self(MarketMode::Live as u8);
-//!     pub const RESOLVED: Self = Self(MarketMode::Resolved as u8);
+//!     pub const Live: Self = Self(MarketMode::Live as u8);
+//!     pub const Resolved: Self = Self(MarketMode::Resolved as u8);
 //! }
 //!
 //! // bytemuck traits — safe because the wrapper is `#[repr(transparent)]`
@@ -38,8 +38,8 @@
 //! // variant panics. The raw-byte read via `pod.0` remains unvalidated —
 //! // it's the intentional escape hatch for callers that want to inspect
 //! // bytes without triggering the variant check.
-//! unsafe impl bytemuck::Pod for PodMarketMode {}
-//! unsafe impl bytemuck::Zeroable for PodMarketMode {}
+//! unsafe impl anchor_lang_v2::bytemuck::Pod for PodMarketMode {}
+//! unsafe impl anchor_lang_v2::bytemuck::Zeroable for PodMarketMode {}
 //!
 //! // Cross-type comparisons let existing `engine.market_mode == MarketMode::Live`
 //! // keep working untouched after migrating the field from `MarketMode` to
@@ -60,8 +60,6 @@
 //! * The annotated item must be an `enum`.
 //! * The enum must be declared `#[repr(u8)]` (explicit discriminant size).
 //! * Every variant must be a bare unit variant (no tuple/struct payload).
-//! * The downstream crate must have `anchor_lang_v2::bytemuck` in scope
-//!   (this is the default when using the lang-v2 prelude).
 
 use {
     proc_macro::TokenStream,

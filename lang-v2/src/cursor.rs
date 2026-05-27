@@ -256,7 +256,7 @@ mod test {
     // reads through the raw input pointer written by the SBF loader.
     // The same logic is witnessed at runtime by
     // `lang-v2/tests/miri_cursor_walk.rs`, which uses the `SbfInputBuffer`
-    // mock in `tests/common/mod.rs`.
+    // mock exported from `anchor_lang_v2::testing`.
     #[test]
     fn test_bitvec() {
         let mut bv = AccountBitvec::default();

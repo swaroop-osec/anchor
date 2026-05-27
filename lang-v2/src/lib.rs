@@ -87,9 +87,9 @@ macro_rules! debug {
 pub use wincode;
 
 /// Borsh-compatible wincode config: u8 enum tags + fixed u32 LE length
-/// prefixes. Used for all serialization in v2 (instruction args, events,
-/// `BorshAccount<T>`) so the on-chain wire format matches borsh exactly,
-/// while keeping wincode's faster encoding path.
+/// prefixes. Used for borsh-compatible v2 serialization paths (instruction
+/// args, default events, `BorshAccount<T>`) so the on-chain wire format matches
+/// borsh exactly, while keeping wincode's faster encoding path.
 ///
 /// # ⚠ Incompatibilities with the borsh crate
 ///

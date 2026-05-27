@@ -10,13 +10,12 @@ use {
 /// Sequential account loader for `#[derive(Accounts)]`.
 ///
 /// Thin wrapper around an [`AccountCursor`] and a borrowed `program_id`.
-/// The macro emits one `loader.next*()` call per declared field and the
-/// loader forwards to the underlying cursor, which walks the serialized
-/// input buffer on demand.
+/// The dispatcher bulk-walks the declared account region with [`Self::walk_n`],
+/// and specialized init paths can still walk individual accounts through
+/// `next_view` / `load_next` / `next_mut`.
 ///
-/// Bounds checking is not re-done per field: the dispatcher has already
-/// verified `num_accounts >= T::HEADER_SIZE` before constructing the
-/// cursor, so each `next*()` call is safe to unwrap.
+/// Bounds checking is done before the declared-region walk: the dispatcher has
+/// already verified `num_accounts >= T::HEADER_SIZE`.
 pub struct AccountLoader<'a> {
     program_id: &'a Address,
     cursor: &'a mut AccountCursor,

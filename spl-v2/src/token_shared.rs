@@ -55,7 +55,7 @@ pub struct InitializeMint2<'a> {
     pub mint: CpiHandleMut<'a>,
 }
 
-/// `spl_token::instruction::transfer` — accounts list:
+/// Token / Token-2022 transfer instruction — accounts list:
 ///   0. `[writable]` from
 ///   1. `[writable]` to
 ///   2. `[signer]` authority (owner/delegate)
@@ -67,8 +67,8 @@ pub struct Transfer<'a> {
     pub authority: CpiHandle<'a>,
 }
 
-/// `spl_token::instruction::transfer_checked` — adds the mint and verifies the
-/// declared decimals match on-chain.
+/// Token / Token-2022 checked transfer instruction — adds the mint and verifies
+/// the declared decimals match on-chain.
 ///   0. `[writable]` from
 ///   1. `[]` mint
 ///   2. `[writable]` to

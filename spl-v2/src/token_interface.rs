@@ -1,7 +1,8 @@
 //! Interface account types that accept both Token and Token-2022 programs.
 //!
-//! Provides `InterfaceAccount<T>` — a type alias for accounts that can be
-//! owned by either `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA` (Token) or
+//! Provides `TokenAccount` and `Mint` aliases for use with
+//! `anchor_lang_v2::prelude::InterfaceAccount`, accepting either
+//! `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA` (Token) or
 //! `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` (Token-2022).
 //!
 //! # Usage

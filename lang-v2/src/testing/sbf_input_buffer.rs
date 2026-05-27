@@ -16,8 +16,6 @@
 //!     if dup:
 //!       dup_marker (1 byte, value = index of earlier account)
 //!       padding (7 bytes) to round to 8-byte alignment
-//!   instruction data
-//!   program_id (32 bytes)
 
 use {
     alloc::{vec, vec::Vec},

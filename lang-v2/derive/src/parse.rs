@@ -701,11 +701,10 @@ pub struct AccountField {
     /// has no `seeds = [...]` attr.
     pub idl_pda: Option<IdlPdaMeta>,
     /// The raw field type, post-`Option<T>` unwrap. Used by the generated
-    /// `__idl_types()` function to dispatch `<Ty as IdlAccountType>::__IDL_TYPE`
-    /// on the wrapper type (`Program<T>`, `Account<T>`, …) rather than on its
-    /// `::Data` associated type. `None` only for non-`Type::Path` fields that
-    /// can't appear as accounts (defensive — this path shouldn't trigger in
-    /// practice).
+    /// IDL dependency registration to dispatch on the wrapper type
+    /// (`Program<T>`, `Account<T>`, …) rather than on its `::Data` associated
+    /// type. `None` only for non-`Type::Path` fields that can't appear as
+    /// accounts (defensive — this path shouldn't trigger in practice).
     pub idl_field_ty: Option<syn::Type>,
 }
 
@@ -916,8 +915,8 @@ fn emit_seeds_check(
     // Fallback: runtime find loop fused with the equality check.
     //
     // Skip `sol_curve_validate_point` when the account is provably
-    // signed-for (init path or MIN_DATA_LEN > 0), since CreateAccount
-    // already validates the PDA via `create_program_address`.
+    // signed-for (`MIN_DATA_LEN > 0`), since account creation already
+    // validates the PDA via `create_program_address`.
     //
     // Otherwise (`UncheckedAccount` with zero data, non-init): the curve
     // check is the only proof the address is a real PDA.

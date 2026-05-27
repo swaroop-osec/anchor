@@ -1,15 +1,11 @@
 //! Associated Token Account address derivation and CPI helpers.
 //!
-//! Users can validate ATA accounts via `constraint = expr`:
+//! Users can validate ATA accounts via `associated_token::*` constraints:
 //! ```ignore
 //! #[account(
-//!     token::mint = mint,
-//!     token::authority = authority,
-//!     constraint = *vault.account().address() == anchor_spl_v2::get_associated_token_address_with_program_id(
-//!         authority.account().address(),
-//!         mint.account().address(),
-//!         &Token::id(),
-//!     )
+//!     associated_token::mint = mint,
+//!     associated_token::authority = authority,
+//!     associated_token::token_program = token_program,
 //! )]
 //! pub vault: Account<TokenAccount>,
 //! ```

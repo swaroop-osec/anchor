@@ -129,8 +129,8 @@ pub(crate) fn seeds_as_byte_literals(seeds: &[&syn::Expr]) -> Option<Vec<Vec<u8>
 
 /// Host-side re-implementation of `find_program_address`. Iterates bumps
 /// from `255` down to `0`, hashing `[seeds..., bump, program_id,
-/// PDA_MARKER]` with sha256, returning the first bump whose hash decodes
-/// to an off-curve Edwards25519 point — along with that hash, which is
+/// PDA_MARKER]` with sha256, returning the first bump whose hash does not
+/// decode to a valid Edwards25519 point — along with that hash, which is
 /// the canonical PDA address.
 ///
 /// Returns both the PDA address and bump — the address is emitted as a

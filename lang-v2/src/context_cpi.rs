@@ -126,8 +126,9 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
         // SAFETY:
         // - All CpiAccounts initialized by init_from_account_view above.
         // - CpiHandles hold Rust borrows preventing typed data access.
-        // - Pinocchio borrow_state remains set, blocking raw borrows on
-        //   stale AccountView copies.
+        // - Mutable handles carry the borrow state established by their
+        //   account wrappers, blocking conflicting raw borrows on stale
+        //   AccountView copies.
         unsafe {
             pinocchio::cpi::invoke_signed_unchecked(
                 &instruction,

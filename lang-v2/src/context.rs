@@ -31,11 +31,8 @@ pub struct Context<'a, T: Bumps> {
     /// region. Starts from `T::MUT_MASK` and includes optional mutable fields
     /// only when the loaded account is `Some`. Used by
     /// [`Self::remaining_accounts`] to re-check each trailing account against
-    /// declared mut slots —
-    /// without this, a trailing account whose dup index points at a
-    /// mut declared account would silently alias it (bug 3: the
-    /// `HEADER_SIZE`-only check in `run_handler` can't see dups that
-    /// only surface during the trailing walk).
+    /// declared mut slots. The `HEADER_SIZE` check in `run_handler` cannot see
+    /// duplicates that only surface while walking the trailing region.
     mut_mask: MutMask,
 }
 

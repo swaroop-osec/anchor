@@ -53,8 +53,8 @@ const fn capacity_for(data_len: usize, items_offset: usize, item_size: usize) ->
     }
 }
 
-/// `Account<H>` / `BorshAccount<H>` get `AccountInitialize` for free by
-/// running `H::SlabInit::create_and_initialize(...)` and then loading.
+/// `Slab<H, T>` initialization delegates account creation to `H::SlabInit`,
+/// then loads the freshly initialized slab.
 impl<H, T> AccountInitialize for Slab<H, T>
 where
     H: SlabInit + Pod + Zeroable + SlabSchema,
@@ -339,8 +339,8 @@ where
     /// Move excess lamports (current - min_lamports) from the account to
     /// `recipient`. No-op if the account is already at the rent floor.
     ///
-    /// Direct lamport arithmetic, no CPI — safe because the account is
-    /// program-owned (which is always the case when you hold a `Slab`).
+    /// Direct lamport arithmetic, no CPI — callers must only use this for
+    /// accounts whose owner permits in-program lamport mutation.
     pub fn refund(&mut self, recipient: &mut AccountView) -> Result<(), ProgramError> {
         let required = self.min_lamports()?;
         let current = self.view.lamports();
@@ -736,9 +736,9 @@ where
         // `DATA_OFFSET = 0`, no discriminator) don't have their first 8
         // bytes corrupted.
         if Self::HEADER_OFFSET >= 8 {
-            // SAFETY: `&mut self` plus `is_mutable` (close is only emitted
-            // by the derive for mutable contexts) means no aliasing borrow
-            // exists; the view's data is valid for the instruction lifetime.
+            // SAFETY: `close` requires the same exclusive account-data access
+            // as `DerefMut`; generated callers only emit it for mutable
+            // accounts. The view's data is valid for the instruction lifetime.
             let data = unsafe { self_view.borrow_unchecked_mut() };
             if data.len() >= 8 {
                 data[..8].copy_from_slice(&[u8::MAX; 8]);

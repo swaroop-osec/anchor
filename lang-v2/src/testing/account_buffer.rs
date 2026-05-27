@@ -8,9 +8,7 @@
 //! ## Usage
 //!
 //! ```ignore
-//! #[path = "common/account_buffer.rs"]
-//! mod account_buffer;
-//! use account_buffer::AccountBuffer;
+//! use anchor_lang_v2::testing::AccountBuffer;
 //!
 //! let mut buf = AccountBuffer::<256>::new();
 //! buf.init([1; 32], [0; 32], /*data_len*/ 0, /*is_signer*/ true,

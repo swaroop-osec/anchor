@@ -402,8 +402,9 @@ pub enum TypeKind {
 /// Pre-split IDL type strings emitted by the derive at macro-expansion time.
 ///
 /// The runtime print test no longer parses JSON — it concatenates these
-/// strings directly. Eliminating runtime `serde_json` is what lets the
-/// `idl-build` feature/cfg disappear from `lang-v2` entirely.
+/// strings directly. That lets `lang-v2` avoid a runtime `serde_json`
+/// dependency or local `idl-build` feature; derive output still emits
+/// `feature = "idl-build"` cfgs into user crates.
 pub struct IdlTypeStrings {
     /// `{"name":"X","discriminator":[…]}` for the program-level
     /// `accounts[]` array (spec:137-140). `None` when the discriminator
@@ -420,9 +421,9 @@ pub struct IdlTypeStrings {
 /// Build pre-split IDL type strings from struct fields.
 ///
 /// `kind` selects the `serialization` / `repr` metadata emitted onto the
-/// type definition. Zero-copy `#[account]` / default `#[event]` pass
-/// `TypeKind::BytemuckRepr`; their borsh-mode counterparts pass
-/// `TypeKind::Borsh` (the default, which suppresses both fields).
+/// type definition. Zero-copy `#[account]` and `#[event(bytemuck)]` pass
+/// `TypeKind::BytemuckRepr`; borsh/wincode shapes pass `TypeKind::Borsh`
+/// (the default, which suppresses both fields).
 pub fn build_type_strings(
     name: &str,
     disc: &[u8],

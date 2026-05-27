@@ -219,8 +219,8 @@ pub fn find_and_verify_program_address(
 /// Create a program-derived address (PDA) from `seeds` and `program_id`.
 ///
 /// Uses `sol_sha256` + `sol_curve_validate_point` directly instead of
-/// `sol_create_program_address`. The seeds slice should already include
-/// the bump byte.
+/// `sol_create_program_address`. The seeds slice should already be
+/// runtime-valid and include the bump byte.
 #[inline(always)]
 pub fn create_program_address(
     seeds: &[&[u8]],
@@ -241,9 +241,11 @@ pub fn create_program_address(
 
 /// Verify that `expected` matches the PDA derived from `seeds` and `program_id`.
 ///
-/// Hash-only (no curve check) — assumes the bump is canonical. For
-/// untrusted bumps use `find_and_verify_program_address`. Seeds should
-/// already include the bump byte.
+/// On-chain this is hash-only and assumes the seeds are runtime-valid and the
+/// bump is canonical. Off-chain it uses `Address::create_program_address`,
+/// which also performs host-side seed and curve validation. For untrusted bumps
+/// use `find_and_verify_program_address`. Seeds should already include the bump
+/// byte.
 #[inline(always)]
 pub fn verify_program_address(
     seeds: &[&[u8]],

@@ -1,21 +1,21 @@
 //! Miri baseline for spl-v2 Pod types.
 //!
-//! Verifies that `TokenAccount` and `Mint` can be cast to/from their
-//! byte representations without UB under Tree Borrows. The types are
-//! declared `unsafe impl Pod + Zeroable` based on a manual layout check
-//! (`repr(C)`, alignment-1 fields, no padding); Miri verifies that the
-//! Pod contract actually holds under aliasing rules.
+//! Exercises representative byte casts for the bare `TokenAccount` and `Mint`
+//! wrappers under Tree Borrows. The types are declared `unsafe impl Pod +
+//! Zeroable` based on a manual layout check (`repr(C)`, alignment-1 fields, no
+//! padding); these tests cover the size and byte-cast assumptions for those two
+//! wrapper types.
 //!
 //! Run: `MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p anchor-spl-v2 --test miri_spl_pod`
 
 use anchor_spl_v2::{Mint, TokenAccount};
 use solana_program_pack::Pack;
 
-// --- Layout cross-check against canonical `spl-token-interface` packed sizes.
+// --- Size cross-check against canonical `spl-token-interface` packed sizes.
 //
-// `size_of::<MyType>()` == `Pack::LEN` ties the anchor-spl-v2 Pod layout to
-// the protocol-level packed size exposed by the interface crate. If SPL Token
-// ever changes the wire layout, this test fails until we catch up.
+// `size_of::<MyType>()` == `Pack::LEN` catches total-size drift. Field
+// order/offset/encoding parity is covered by manual layout review and
+// accessor/validation tests, not by this assertion alone.
 
 #[test]
 fn mint_size_matches_spl_token_interface() {
@@ -35,8 +35,8 @@ fn token_account_size_matches_spl_token_interface() {
 
 #[test]
 fn token_account_zeroed_is_valid() {
-    // `Zeroable` produces a valid TokenAccount. If the Pod impl is
-    // unsound (hidden padding), Miri would flag the cast below.
+    // `Zeroable` produces a byte-castable TokenAccount value. If the Pod impl
+    // is unsound (hidden padding), Miri would flag the cast below.
     let acct: TokenAccount = bytemuck::Zeroable::zeroed();
     let bytes: &[u8] = bytemuck::bytes_of(&acct);
     assert_eq!(bytes.len(), 165);
