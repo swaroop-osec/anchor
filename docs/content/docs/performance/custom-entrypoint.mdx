@@ -86,8 +86,9 @@ executable `#[program]` mode is all-or-nothing: if any handler uses
 `#[discrim = N]`, every handler must use a one-byte discriminator, and
 duplicates are rejected at compile time. The
 [`tests-v2/programs/spl`](https://github.com/otter-sec/anchor/tree/anchor-next/tests-v2/programs/spl)
-program uses this pattern with `#[discrim = 0..22]` across its full
-SPL surface for a complete reference.
+program uses this pattern across its full SPL surface (handlers
+numbered `#[discrim = 0]` through `#[discrim = 54]`) for a complete
+reference.
 
 ## Custom entrypoint (asm or Rust)
 
@@ -166,6 +167,14 @@ for everything else:
 ```text title="src/asm/entrypoint.s"
 .globl entrypoint
 entrypoint:
+    // Guard for empty ix data, matching the `ix_data_len == 0` check
+    // in the Rust example. agave writes the ix-data length as a u64
+    // immediately before `ix_data_ptr` (r2). Hand off to
+    // `__anchor_dispatch` so it returns the typed
+    // `InstructionFallbackNotFound`. Remove these two lines if you
+    // know the fast path is never invoked with empty ix data.
+    ldxdw r3, [r2-8]
+    jeq r3, 0, dispatch
     ldxb r3, [r2+0]
     jne r3, 0, dispatch
     mov64 r0, 0
@@ -209,9 +218,10 @@ pub unsafe extern "C" fn entrypoint(input: *mut u8, ix_data_ptr: *const u8) -> u
 
     let disc = *ix_data_ptr;
     match disc {
-        // Fast path: `ping` is a no-op, so the inline branch just returns
-        // success. Real fast paths would walk `input` for accounts +
-        // read args past `ix_data_ptr.add(1)`.
+        // Fast path for `#[discrim = 0]` (the `update` handler above).
+        // Treated here as a no-op for illustration — the inline branch
+        // just returns success. Real fast paths would walk `input` for
+        // accounts and read args past `ix_data_ptr.add(1)`.
         0 => 0,
         // Anything else: hand off to Anchor's typed dispatcher.
         _ => crate::__anchor_dispatch(input, ix_data_ptr),
