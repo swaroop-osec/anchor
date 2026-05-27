@@ -1,12 +1,12 @@
 [package]
-name = "event-cpi-test"
+name = "token-2022-ext-default-account-state"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "event_cpi_test"
+name = "token_2022_ext_default_account_state"
 
 [features]
 default = ["no-log-ix-name"]
@@ -14,13 +14,10 @@ no-entrypoint = []
 cpi = ["no-entrypoint"]
 no-idl = []
 no-log-ix-name = []
-idl-build = []
 
 [dependencies]
-anchor-lang-v2 = { path = "../../../lang-v2", default-features = false, features = ["alloc"] }
-bytemuck = { version = "1", features = ["derive"] }
-pinocchio = { version = "0.11", default-features = false, features = ["copy"] }
-pinocchio-system = "0.6"
+anchor-lang-v2 = { path = "../../../../lang-v2", default-features = false, features = ["alloc"] }
+anchor-spl-v2 = { path = "../../../../spl-v2", features = ["guardrails"] }
 solana-program-error = "3.0"
 wincode = { version = "0.5", features = ["derive"] }
 

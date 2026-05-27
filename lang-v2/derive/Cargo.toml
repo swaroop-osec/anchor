@@ -8,9 +8,6 @@ license = "Apache-2.0"
 [lib]
 proc-macro = true
 
-[features]
-event-cpi = []
-
 [dependencies]
 proc-macro2 = "1"
 quote = "1"

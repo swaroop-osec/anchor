@@ -90,7 +90,6 @@ pub use crate::{
     ToCpiHandleMut,
     TryAccounts,
 };
-#[cfg(feature = "event-cpi")]
 pub use crate::{emit_cpi, event_cpi};
 #[cfg(feature = "compat")]
 pub use crate::{err, error, pubkey};

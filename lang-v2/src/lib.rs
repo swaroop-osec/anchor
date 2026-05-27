@@ -149,7 +149,6 @@ pub use idl_build::IdlAccountType;
 // ---------------------------------------------------------------------------
 // Client-side types — for building instructions off-chain (tests, CPI, SDK)
 // ---------------------------------------------------------------------------
-#[cfg(feature = "event-cpi")]
 pub use anchor_derive_accounts_v2::{emit_cpi, event_cpi};
 /// Metadata for a single account in a transaction instruction.
 ///

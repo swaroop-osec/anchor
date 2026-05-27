@@ -4425,51 +4425,42 @@ fn impl_program(module: &ItemMod, config: &ProgramConfig) -> TokenStream2 {
                 ::core::slice::from_raw_parts(__ix_data_ptr.add(8), __ix_data_len - 8);
         }
     };
-    let event_cpi_dispatch = {
-        #[cfg(feature = "event-cpi")]
-        {
-            quote! {
-                // Reserve the full event-CPI tag before user dispatch. A custom
-                // 1-byte discriminator can overlap the first tag byte, but it
-                // must not intercept self-CPI event instructions.
-                if __ix_data_len >= 8 {
-                    let __event_disc: u64 = u64::from_le_bytes(
-                        *(__ix_data_ptr as *const [u8; 8])
-                    );
-                    if __event_disc == anchor_lang_v2::event::EVENT_IX_TAG {
-                        if __num < 1 {
-                            return anchor_lang_v2::Error::from(
-                                anchor_lang_v2::ErrorCode::AccountNotEnoughKeys,
-                            ).into();
-                        }
-                        let mut __cursor = anchor_lang_v2::AccountCursor::new(__input, __lookup);
-                        let __event_authority = __cursor.next();
-                        if !__event_authority.is_signer() {
-                            return anchor_lang_v2::Error::from(
-                                anchor_lang_v2::ErrorCode::ConstraintSigner,
-                            ).into();
-                        }
-                        let (__expected_event_authority, _) =
-                            anchor_lang_v2::find_program_address(
-                                &[b"__event_authority"],
-                                __program_id,
-                            );
-                        if !anchor_lang_v2::address_eq(
-                            __event_authority.address(),
-                            &__expected_event_authority,
-                        ) {
-                            return anchor_lang_v2::Error::from(
-                                anchor_lang_v2::ErrorCode::ConstraintSeeds,
-                            ).into();
-                        }
-                        return 0;
-                    }
+    let event_cpi_dispatch = quote! {
+        // Reserve the full event-CPI tag before user dispatch. A custom
+        // 1-byte discriminator can overlap the first tag byte, but it
+        // must not intercept self-CPI event instructions.
+        if __ix_data_len >= 8 {
+            let __event_disc: u64 = u64::from_le_bytes(
+                *(__ix_data_ptr as *const [u8; 8])
+            );
+            if __event_disc == anchor_lang_v2::event::EVENT_IX_TAG {
+                if __num < 1 {
+                    return anchor_lang_v2::Error::from(
+                        anchor_lang_v2::ErrorCode::AccountNotEnoughKeys,
+                    ).into();
                 }
+                let mut __cursor = anchor_lang_v2::AccountCursor::new(__input, __lookup);
+                let __event_authority = __cursor.next();
+                if !__event_authority.is_signer() {
+                    return anchor_lang_v2::Error::from(
+                        anchor_lang_v2::ErrorCode::ConstraintSigner,
+                    ).into();
+                }
+                let (__expected_event_authority, _) =
+                    anchor_lang_v2::find_program_address(
+                        &[b"__event_authority"],
+                        __program_id,
+                    );
+                if !anchor_lang_v2::address_eq(
+                    __event_authority.address(),
+                    &__expected_event_authority,
+                ) {
+                    return anchor_lang_v2::Error::from(
+                        anchor_lang_v2::ErrorCode::ConstraintSeeds,
+                    ).into();
+                }
+                return 0;
             }
-        }
-        #[cfg(not(feature = "event-cpi"))]
-        {
-            quote! {}
         }
     };
 
