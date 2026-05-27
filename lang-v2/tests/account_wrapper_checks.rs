@@ -16,7 +16,8 @@
 use {
     anchor_lang_v2::{
         accounts::{
-            Account, BorshAccount, Program, Signer, SystemAccount, Sysvar, UncheckedAccount,
+            Account, BorshAccount, Program, Signer, SlabSchema, SystemAccount, Sysvar,
+            UncheckedAccount,
         },
         programs::{System, Token},
         testing::AccountBuffer,
@@ -66,6 +67,41 @@ impl Owner for PodCounter {
 impl Discriminator for PodCounter {
     // sha256("account:PodCounter")[..8]
     const DISCRIMINATOR: &'static [u8] = &[0x4c, 0xde, 0x7f, 0x28, 0x61, 0x2f, 0x07, 0x73];
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ShortDiscBytes {
+    value: [u8; 4],
+}
+
+impl Owner for ShortDiscBytes {
+    fn owner(program_id: &Address) -> Address {
+        *program_id
+    }
+}
+
+impl Discriminator for ShortDiscBytes {
+    const DISCRIMINATOR: &'static [u8] = &[0x11, 0x22, 0x33, 0x44];
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct LongDiscCounter {
+    value: u64,
+}
+
+impl Owner for LongDiscCounter {
+    fn owner(program_id: &Address) -> Address {
+        *program_id
+    }
+}
+
+impl Discriminator for LongDiscCounter {
+    const DISCRIMINATOR: &'static [u8] = &[
+        0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
+        0x50,
+    ];
 }
 
 #[derive(Accounts)]
@@ -380,6 +416,67 @@ fn account_load_accepts_valid_owner_and_discriminator() {
     let view = unsafe { buf.view() };
     let acct = Account::<PodCounter>::load(view, &program_id()).unwrap();
     assert_eq!(acct.value, 17);
+}
+
+#[test]
+fn account_load_uses_short_discriminator_len_as_data_offset() {
+    assert_eq!(
+        <ShortDiscBytes as SlabSchema>::DATA_OFFSET,
+        ShortDiscBytes::DISCRIMINATOR.len()
+    );
+    assert_eq!(
+        <ShortDiscBytes as SlabSchema>::MIN_DATA_LEN,
+        ShortDiscBytes::DISCRIMINATOR.len() + core::mem::size_of::<ShortDiscBytes>()
+    );
+
+    let buf = AccountBuffer::<128>::new();
+    buf.init(
+        [0x46; 32],
+        PROGRAM_ID,
+        ShortDiscBytes::DISCRIMINATOR.len() + core::mem::size_of::<ShortDiscBytes>() + 4,
+        false,
+        false,
+        false,
+    );
+    let mut data = [0u8; 12];
+    data[..ShortDiscBytes::DISCRIMINATOR.len()].copy_from_slice(ShortDiscBytes::DISCRIMINATOR);
+    data[4..8].copy_from_slice(&[1, 2, 3, 4]);
+    data[8..12].copy_from_slice(&[9, 9, 9, 9]);
+    buf.write_data(&data);
+
+    let view = unsafe { buf.view() };
+    let acct = Account::<ShortDiscBytes>::load(view, &program_id()).unwrap();
+    assert_eq!(acct.value, [1, 2, 3, 4]);
+}
+
+#[test]
+fn account_load_uses_long_discriminator_len_as_data_offset() {
+    assert_eq!(
+        <LongDiscCounter as SlabSchema>::DATA_OFFSET,
+        LongDiscCounter::DISCRIMINATOR.len()
+    );
+    assert_eq!(
+        <LongDiscCounter as SlabSchema>::MIN_DATA_LEN,
+        LongDiscCounter::DISCRIMINATOR.len() + core::mem::size_of::<LongDiscCounter>()
+    );
+
+    let buf = AccountBuffer::<128>::new();
+    buf.init(
+        [0x47; 32],
+        PROGRAM_ID,
+        LongDiscCounter::DISCRIMINATOR.len() + core::mem::size_of::<LongDiscCounter>(),
+        false,
+        false,
+        false,
+    );
+    let mut data = [0u8; 24];
+    data[..LongDiscCounter::DISCRIMINATOR.len()].copy_from_slice(LongDiscCounter::DISCRIMINATOR);
+    data[16..24].copy_from_slice(&123u64.to_le_bytes());
+    buf.write_data(&data);
+
+    let view = unsafe { buf.view() };
+    let acct = Account::<LongDiscCounter>::load(view, &program_id()).unwrap();
+    assert_eq!(acct.value, 123);
 }
 
 #[cfg(feature = "guardrails")]

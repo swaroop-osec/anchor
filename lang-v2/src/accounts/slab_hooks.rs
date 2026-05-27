@@ -31,11 +31,8 @@ pub trait SlabSchema {
 }
 
 impl<T: Owner + Discriminator> SlabSchema for T {
-    const DATA_OFFSET: usize = 8;
-    const MIN_DATA_LEN: usize = match T::DISCRIMINATOR
-        .len()
-        .checked_add(core::mem::size_of::<T>())
-    {
+    const DATA_OFFSET: usize = T::DISCRIMINATOR.len();
+    const MIN_DATA_LEN: usize = match Self::DATA_OFFSET.checked_add(core::mem::size_of::<T>()) {
         Some(value) => value,
         None => panic!("slab schema minimum length overflow"),
     };
@@ -86,19 +83,17 @@ impl<T: Owner + Discriminator> SlabInit for T {
         _params: &(),
         signer_seeds: Option<&[&[u8]]>,
     ) -> Result<(), ProgramError> {
-        let disc: &[u8; 8] = T::DISCRIMINATOR
-            .try_into()
-            .map_err(|_| ProgramError::InvalidAccountData)?;
+        let disc = T::DISCRIMINATOR;
         match signer_seeds {
             Some(seeds) => crate::create_account_signed(payer, account, space, program_id, seeds)?,
             None => crate::create_account(payer, account, space, program_id)?,
         }
         let mut account_view = *account;
         let data = unsafe { account_view.borrow_unchecked_mut() };
-        match data.first_chunk_mut::<8>() {
-            Some(dst) => *dst = *disc,
-            None => return Err(ProgramError::AccountDataTooSmall),
+        if data.len() < disc.len() {
+            return Err(ProgramError::AccountDataTooSmall);
         }
+        data[..disc.len()].copy_from_slice(disc);
         Ok(())
     }
 }
