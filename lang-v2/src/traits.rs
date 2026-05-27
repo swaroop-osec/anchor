@@ -317,18 +317,6 @@ impl ToCpiHandle for CpiHandle<'_> {
     }
 }
 
-impl ToCpiHandleMut for CpiHandle<'_> {
-    #[inline(always)]
-    fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandleMut<'_>, ProgramError> {
-        if !self.account_view().is_writable() {
-            return Err(ProgramError::InvalidArgument);
-        }
-        Ok(CpiHandleMut {
-            view: self.account_view(),
-        })
-    }
-}
-
 impl ToCpiHandle for CpiHandleMut<'_> {
     #[inline(always)]
     fn to_cpi_handle(&self) -> CpiHandle<'_> {
