@@ -142,6 +142,7 @@ impl Ids for TokenInterface {
 
 impl SlabSchema for Interface<crate::TokenAccount> {
     const DATA_OFFSET: usize = 0;
+    const MIN_DATA_LEN: usize = core::mem::size_of::<Self>();
 
     #[inline(always)]
     fn validate(
@@ -164,6 +165,7 @@ impl SlabSchema for Interface<crate::TokenAccount> {
 
 impl SlabSchema for Interface<crate::Mint> {
     const DATA_OFFSET: usize = 0;
+    const MIN_DATA_LEN: usize = core::mem::size_of::<Self>();
 
     #[inline(always)]
     fn validate(

@@ -12,7 +12,11 @@
 //! Run: `cargo test -p anchor-lang-v2 --test slab_resize_reproducers`
 
 use {
-    anchor_lang_v2::{accounts::Slab, testing::AccountBuffer, AnchorAccount, Discriminator, Owner},
+    anchor_lang_v2::{
+        accounts::{Account, Slab},
+        testing::AccountBuffer,
+        AccountRealloc, AnchorAccount, Discriminator, Owner, Space,
+    },
     bytemuck::{Pod, Zeroable},
     pinocchio::address::Address,
     solana_program_error::ProgramError,
@@ -40,6 +44,7 @@ impl Discriminator for Counter {
 }
 
 type CounterLedger = Slab<Counter, [u8; 8]>;
+type CounterAccount = Account<Counter>;
 
 // Layout: disc(8) + Counter(16) + len(4) + items([u8;8] × N)
 //   HEADER_OFFSET = 8,  LEN_OFFSET = 24,  ITEMS_OFFSET = 28 (T align 1)
@@ -68,8 +73,80 @@ fn setup_ledger(capacity: usize, populated_len: u32) -> AccountBuffer<256> {
     buf
 }
 
+fn setup_counter_account() -> AccountBuffer<256> {
+    let buf = AccountBuffer::<256>::new();
+    let data_len = HEADER_OFFSET + core::mem::size_of::<Counter>();
+    buf.init(
+        [0xAB; 32], PROGRAM_ID, data_len, /*signer*/ false, /*writable*/ true,
+        /*executable*/ false,
+    );
+    let mut data = [0u8; 256];
+    data[..8].copy_from_slice(&disc_bytes());
+    buf.write_data(&data[..data_len]);
+    buf
+}
+
 fn expected_min_lamports(space: usize) -> Result<u64, ProgramError> {
     anchor_lang_v2::cpi::rent_exempt_lamports(space)
+}
+
+#[test]
+fn slab_min_data_len_tracks_schema_and_tail_layout() {
+    assert_eq!(
+        <CounterAccount as AnchorAccount>::MIN_DATA_LEN,
+        HEADER_OFFSET + core::mem::size_of::<Counter>()
+    );
+    assert_eq!(
+        <CounterAccount as Space>::INIT_SPACE,
+        <CounterAccount as AnchorAccount>::MIN_DATA_LEN
+    );
+
+    assert_eq!(<CounterLedger as AnchorAccount>::MIN_DATA_LEN, ITEMS_OFFSET);
+    assert_eq!(
+        <CounterLedger as Space>::INIT_SPACE,
+        <CounterLedger as AnchorAccount>::MIN_DATA_LEN
+    );
+}
+
+#[test]
+fn slab_realloc_rejects_shrink_below_typed_header_layout() {
+    let buf = setup_counter_account();
+    let payer = AccountBuffer::<128>::new();
+    payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    let view = unsafe { buf.view() };
+    let mut account = unsafe { CounterAccount::load_mut(view, &program_id) }.unwrap();
+    let payer_view = unsafe { payer.view() };
+
+    let err = account
+        .realloc_account(8, payer_view, false)
+        .expect_err("realloc must reject a buffer shorter than [disc][Counter]");
+
+    assert_eq!(err, ProgramError::AccountDataTooSmall);
+    assert_eq!(
+        account.current_space(),
+        HEADER_OFFSET + core::mem::size_of::<Counter>()
+    );
+}
+
+#[test]
+fn slab_realloc_clamps_tail_len_to_resized_capacity() {
+    let buf = setup_ledger(/*capacity*/ 4, /*len*/ 3);
+    let payer = AccountBuffer::<128>::new();
+    payer.init([0xCC; 32], PROGRAM_ID, 0, true, true, false);
+    let program_id = Address::new_from_array(PROGRAM_ID);
+
+    let view = unsafe { buf.view() };
+    let mut slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
+    let payer_view = unsafe { payer.view() };
+
+    slab.realloc_account(ITEMS_OFFSET + ITEM_SIZE, payer_view, false)
+        .unwrap();
+
+    assert_eq!(slab.capacity(), 1);
+    assert_eq!(slab.len(), 1);
+    assert_eq!(CounterLedger::load(view, &program_id).unwrap().len(), 1);
 }
 
 // -- `load_mut` rejects a buffer shrunk below ITEMS_OFFSET -----------

@@ -89,15 +89,17 @@ where
     const DISCRIMINATOR: &'static [u8] = H::DISCRIMINATOR;
 }
 
-// `INIT_SPACE = 8 + size_of::<H>()` — no `H: Space` bound needed since
-// `H: Pod` guarantees a fully-defined layout. Gives the full on-wire size
-// for header-only accounts; item-carrying Slabs should specify `space`
-// explicitly.
+// Header-only accounts use the schema's minimum size. Tail-carrying Slabs use
+// the zero-capacity tail layout (`[header][len]`) as their minimum.
 impl<H, T> crate::Space for Slab<H, T>
 where
     H: Pod + Zeroable + SlabSchema,
 {
-    const INIT_SPACE: usize = 8 + core::mem::size_of::<H>();
+    const INIT_SPACE: usize = if Self::HAS_TAIL {
+        Self::ITEMS_OFFSET
+    } else {
+        H::MIN_DATA_LEN
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +234,10 @@ where
             return Ok(());
         }
         let data_len = data.len();
-        let capacity = (data_len - Self::ITEMS_OFFSET) / core::mem::size_of::<T>();
+        let capacity = capacity_for(data_len, Self::ITEMS_OFFSET, core::mem::size_of::<T>());
+        if capacity > u32::MAX as usize {
+            return Err(ProgramError::InvalidAccountData);
+        }
         let mut len_bytes = [0u8; 4];
         len_bytes.copy_from_slice(&data[Self::LEN_OFFSET..Self::LEN_OFFSET + 4]);
         let len = u32::from_le_bytes(len_bytes) as usize;
@@ -422,8 +427,25 @@ where
     /// items. `const fn`, so callers can put it directly into
     /// `#[account(init, space = Slab::<Ledger, Entry>::space_for(64), ...)]`.
     #[inline(always)]
-    pub const fn space_for(capacity: usize) -> usize {
-        Self::ITEMS_OFFSET + capacity * core::mem::size_of::<T>()
+    pub const fn space_for(capacity: u32) -> usize {
+        match Self::try_space_for(capacity) {
+            Ok(value) => value,
+            Err(_) => panic!("slab account size overflow"),
+        }
+    }
+
+    /// Fallible runtime version of [`space_for`](Self::space_for). Use this for
+    /// user-supplied capacities so arithmetic failures become program errors.
+    #[inline(always)]
+    pub const fn try_space_for(capacity: u32) -> Result<usize, ProgramError> {
+        let item_bytes = match (capacity as usize).checked_mul(core::mem::size_of::<T>()) {
+            Some(value) => value,
+            None => return Err(ProgramError::ArithmeticOverflow),
+        };
+        match Self::ITEMS_OFFSET.checked_add(item_bytes) {
+            Some(value) => Ok(value),
+            None => Err(ProgramError::ArithmeticOverflow),
+        }
     }
 
     /// Current number of items in the tail region.
@@ -535,13 +557,17 @@ where
         if len >= self.capacity() {
             return Err(ProgramError::AccountDataTooSmall);
         }
+        let new_len = len
+            .checked_add(1)
+            .and_then(|value| u32::try_from(value).ok())
+            .ok_or(ProgramError::ArithmeticOverflow)?;
         let item_offset = Self::ITEMS_OFFSET + len * core::mem::size_of::<T>();
         {
             let bytes = self.guard_bytes_mut();
             let slot = &mut bytes[item_offset..item_offset + core::mem::size_of::<T>()];
             *bytemuck::from_bytes_mut::<T>(slot) = value;
         }
-        self.write_len((len + 1) as u32);
+        self.write_len(new_len);
         Ok(())
     }
 
@@ -610,10 +636,10 @@ where
     /// settle rent. Re-derives `header_ptr` after the resize; `guard_bytes*`
     /// pick up the new size from `view.data_len()` automatically.
     #[cfg(feature = "account-resize")]
-    pub fn resize_to_capacity(&mut self, new_capacity: usize) -> Result<(), ProgramError> {
+    pub fn resize_to_capacity(&mut self, new_capacity: u32) -> Result<(), ProgramError> {
         use pinocchio::Resize;
 
-        let new_space = Self::space_for(new_capacity);
+        let new_space = Self::try_space_for(new_capacity)?;
         let mut view_mut = self.view;
         // SAFETY: Slab owns exclusive access to the data (enforced by the
         // borrow flag set in build_mutable). Use resize_unchecked to bypass
@@ -623,9 +649,9 @@ where
         // relocated the buffer.
         self.header_ptr = unsafe { view_mut.data_mut_ptr().add(Self::HEADER_OFFSET) } as *mut H;
         // Clamp len down if we shrunk below the current item count.
-        let new_cap = self.capacity();
+        let new_cap = new_capacity as usize;
         if self.len() > new_cap {
-            self.write_len(new_cap as u32);
+            self.write_len(new_capacity);
         }
         Ok(())
     }
@@ -640,7 +666,11 @@ where
     H: Pod + Zeroable + SlabSchema,
 {
     type Data = H;
-    const MIN_DATA_LEN: usize = 8;
+    const MIN_DATA_LEN: usize = if Self::HAS_TAIL {
+        Self::ITEMS_OFFSET
+    } else {
+        H::MIN_DATA_LEN
+    };
 
     #[inline(always)]
     fn load(view: AccountView, program_id: &Address) -> Result<Self, ProgramError> {
@@ -749,7 +779,26 @@ where
     ) -> pinocchio::ProgramResult {
         let mut view = *self.account();
         if new_space != view.data_len() {
+            if new_space < Self::ITEMS_OFFSET {
+                return Err(ProgramError::AccountDataTooSmall);
+            }
             crate::realloc_account(&mut view, new_space, &payer, zero)?;
+            self.header_ptr = unsafe { view.data_mut_ptr().add(Self::HEADER_OFFSET) } as *mut H;
+            if Self::HAS_TAIL {
+                let new_cap =
+                    capacity_for(new_space, Self::ITEMS_OFFSET, core::mem::size_of::<T>());
+                if new_cap > u32::MAX as usize {
+                    return Err(ProgramError::InvalidArgument);
+                }
+                let data = unsafe { view.borrow_unchecked_mut() };
+                let mut len_bytes = [0u8; 4];
+                len_bytes.copy_from_slice(&data[Self::LEN_OFFSET..Self::LEN_OFFSET + 4]);
+                let len = u32::from_le_bytes(len_bytes) as usize;
+                if len > new_cap {
+                    data[Self::LEN_OFFSET..Self::LEN_OFFSET + 4]
+                        .copy_from_slice(&(new_cap as u32).to_le_bytes());
+                }
+            }
         }
         Ok(())
     }

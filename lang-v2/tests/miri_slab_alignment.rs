@@ -169,7 +169,7 @@ fn slab_space_for_grows_by_item_size() {
         let space = Slab::<HeaderAlign1, ItemAlign1>::space_for(cap);
         assert_eq!(
             space,
-            base + cap * core::mem::size_of::<ItemAlign1>(),
+            base + (cap as usize) * core::mem::size_of::<ItemAlign1>(),
             "space_for({}) doesn't match base + cap * item_size",
             cap
         );

@@ -115,6 +115,7 @@ impl anchor_lang_v2::Space for TokenAccount {
 impl SlabSchema for TokenAccount {
     // External types start at offset 0 — no Anchor discriminator.
     const DATA_OFFSET: usize = 0;
+    const MIN_DATA_LEN: usize = core::mem::size_of::<Self>();
 
     #[inline(always)]
     fn validate(

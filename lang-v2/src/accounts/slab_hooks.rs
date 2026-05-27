@@ -24,11 +24,21 @@ pub trait SlabSchema {
     /// - External types (SPL `Mint` / `TokenAccount`): 0
     const DATA_OFFSET: usize;
 
+    /// Minimum account data length that can contain `Self` at `DATA_OFFSET`.
+    const MIN_DATA_LEN: usize;
+
     fn validate(view: &AccountView, data: &[u8], program_id: &Address) -> Result<(), ProgramError>;
 }
 
 impl<T: Owner + Discriminator> SlabSchema for T {
     const DATA_OFFSET: usize = 8;
+    const MIN_DATA_LEN: usize = match T::DISCRIMINATOR
+        .len()
+        .checked_add(core::mem::size_of::<T>())
+    {
+        Some(value) => value,
+        None => panic!("slab schema minimum length overflow"),
+    };
 
     #[inline(always)]
     fn validate(view: &AccountView, data: &[u8], program_id: &Address) -> Result<(), ProgramError> {
@@ -36,8 +46,7 @@ impl<T: Owner + Discriminator> SlabSchema for T {
             return Err(super::slab::cold_owner_error(view));
         }
         let disc = T::DISCRIMINATOR;
-        let min_len = disc.len() + core::mem::size_of::<T>();
-        if data.len() < min_len {
+        if data.len() < Self::MIN_DATA_LEN {
             return Err(ProgramError::AccountDataTooSmall);
         }
         if &data[..disc.len()] != disc {
