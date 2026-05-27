@@ -1,105 +1,73 @@
 use std::{fs, path::PathBuf, process::Command};
 
-fn compile_fail_case(name: &str, source: &str, snippets: &[&str]) {
-    compile_fail_case_with_features(name, source, &[], snippets);
+#[derive(Clone, Copy)]
+enum CargoMode {
+    Check,
+    Build,
 }
 
-fn compile_fail_build_case(name: &str, source: &str, snippets: &[&str]) {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let crate_dir = manifest_dir.join("target/compile-fail").join(name);
-    let src_dir = crate_dir.join("src");
-    fs::create_dir_all(&src_dir).unwrap();
+struct CompileCase<'a> {
+    name: &'a str,
+    source: &'a str,
+    files: Vec<(&'a str, &'a str)>,
+    features: Vec<&'a str>,
+    mode: CargoMode,
+}
 
-    let anchor_lang_v2 = manifest_dir
-        .parent()
-        .expect("tests-v2 should live under the workspace root")
-        .join("lang-v2");
-
-    fs::write(
-        crate_dir.join("Cargo.toml"),
-        format!(
-            r#"[package]
-name = "{name}"
-version = "0.1.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-anchor-lang-v2 = {{ path = "{}" }}
-
-[workspace]
-"#,
-            anchor_lang_v2.display()
-        ),
-    )
-    .unwrap();
-    fs::write(src_dir.join("lib.rs"), source).unwrap();
-
-    let output = Command::new("cargo")
-        .args(["build", "--offline", "--manifest-path"])
-        .arg(crate_dir.join("Cargo.toml"))
-        .output()
-        .unwrap_or_else(|err| panic!("failed to run cargo build for {name}: {err}"));
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !output.status.success(),
-        "{name} unexpectedly compiled successfully"
-    );
-    for snippet in snippets {
-        assert!(
-            stderr.contains(snippet),
-            "{name} stderr did not contain {snippet:?}\n\nstderr:\n{stderr}"
-        );
+impl<'a> CompileCase<'a> {
+    fn new(name: &'a str, source: &'a str) -> Self {
+        Self {
+            name,
+            source,
+            files: Vec::new(),
+            features: Vec::new(),
+            mode: CargoMode::Check,
+        }
     }
-}
 
-fn compile_fail_case_with_features(name: &str, source: &str, features: &[&str], snippets: &[&str]) {
-    compile_case(name, source, features, &[], false, snippets);
-}
+    fn file(mut self, relative_path: &'a str, contents: &'a str) -> Self {
+        self.files.push((relative_path, contents));
+        self
+    }
 
-fn compile_fail_case_with_files(
-    name: &str,
-    source: &str,
-    features: &[&str],
-    files: &[(&str, &str)],
-    snippets: &[&str],
-) {
-    compile_case(name, source, features, files, false, snippets);
-}
+    fn features(mut self, features: &'a [&'a str]) -> Self {
+        self.features.extend_from_slice(features);
+        self
+    }
 
-fn compile_pass_case_with_files(
-    name: &str,
-    source: &str,
-    features: &[&str],
-    files: &[(&str, &str)],
-) {
-    compile_case(name, source, features, files, true, &[]);
-}
+    fn build(mut self) -> Self {
+        self.mode = CargoMode::Build;
+        self
+    }
 
-fn compile_case(
-    name: &str,
-    source: &str,
-    features: &[&str],
-    files: &[(&str, &str)],
-    should_pass: bool,
-    snippets: &[&str],
-) {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let crate_dir = manifest_dir.join("target/compile-fail").join(name);
-    let src_dir = crate_dir.join("src");
-    fs::create_dir_all(&src_dir).unwrap();
+    fn expect_pass(self) {
+        self.run(Expectation::Pass);
+    }
 
-    let anchor_lang_v2 = manifest_dir
-        .parent()
-        .expect("tests-v2 should live under the workspace root")
-        .join("lang-v2");
+    fn expect_fail(self, snippets: &'a [&'a str]) {
+        self.run(Expectation::Fail(snippets));
+    }
 
-    fs::write(
-        crate_dir.join("Cargo.toml"),
-        format!(
-            r#"[package]
-name = "{name}"
+    fn run(self, expectation: Expectation<'a>) {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let crate_dir = manifest_dir.join("target/compile-cases").join(self.name);
+        let src_dir = crate_dir.join("src");
+
+        if crate_dir.exists() {
+            fs::remove_dir_all(&crate_dir).unwrap();
+        }
+        fs::create_dir_all(&src_dir).unwrap();
+
+        let anchor_lang_v2 = manifest_dir
+            .parent()
+            .expect("tests-v2 should live under the workspace root")
+            .join("lang-v2");
+
+        fs::write(
+            crate_dir.join("Cargo.toml"),
+            format!(
+                r#"[package]
+name = "{}"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -113,121 +81,88 @@ cpi = []
 
 [workspace]
 "#,
-            anchor_lang_v2.display()
-        ),
-    )
-    .unwrap();
-    fs::write(src_dir.join("lib.rs"), source).unwrap();
-    for (relative_path, contents) in files {
-        let path = crate_dir.join(relative_path);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap();
+                self.name,
+                anchor_lang_v2.display()
+            ),
+        )
+        .unwrap();
+        fs::write(src_dir.join("lib.rs"), self.source).unwrap();
+        for (relative_path, contents) in self.files {
+            let path = crate_dir.join(relative_path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(path, contents).unwrap();
         }
-        fs::write(path, contents).unwrap();
-    }
 
-    let mut command = Command::new("cargo");
-    command.args(["check", "--offline", "--manifest-path"]);
-    command.arg(crate_dir.join("Cargo.toml"));
-    if !features.is_empty() {
-        command.arg("--features");
-        command.arg(features.join(","));
-    }
-    let output = command
-        .output()
-        .unwrap_or_else(|err| panic!("failed to run cargo check for {name}: {err}"));
+        let mut command = Command::new("cargo");
+        match self.mode {
+            CargoMode::Check => command.arg("check"),
+            CargoMode::Build => command.arg("build"),
+        };
+        command.args(["--offline", "--manifest-path"]);
+        command.arg(crate_dir.join("Cargo.toml"));
+        if !self.features.is_empty() {
+            command.arg("--features");
+            command.arg(self.features.join(","));
+        }
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if should_pass {
-        assert!(
-            output.status.success(),
-            "{name} did not compile successfully\n\nstderr:\n{stderr}"
-        );
-        return;
-    }
+        let output = command
+            .output()
+            .unwrap_or_else(|err| panic!("failed to run cargo for {}: {err}", self.name));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
 
-    assert!(
-        !output.status.success(),
-        "{name} unexpectedly compiled successfully"
-    );
-    for snippet in snippets {
-        assert!(
-            stderr.contains(snippet),
-            "{name} stderr did not contain {snippet:?}\n\nstderr:\n{stderr}"
-        );
+        match expectation {
+            Expectation::Pass => assert!(
+                output.status.success(),
+                "{} did not compile successfully\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}",
+                self.name
+            ),
+            Expectation::Fail(snippets) => {
+                assert!(
+                    !output.status.success(),
+                    "{} unexpectedly compiled successfully",
+                    self.name
+                );
+
+                let rendered = format!("{stdout}\n{stderr}");
+                for snippet in snippets {
+                    assert!(
+                        rendered.contains(snippet),
+                        "{} output did not contain {snippet:?}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}",
+                        self.name
+                    );
+                }
+            }
+        }
     }
 }
 
-fn declare_program_compile_fail_case(name: &str, idl: &str, snippets: &[&str]) {
-    compile_fail_case_with_files(
+enum Expectation<'a> {
+    Pass,
+    Fail(&'a [&'a str]),
+}
+
+fn declare_program_case<'a>(name: &'a str, idl: &'a str) -> CompileCase<'a> {
+    CompileCase::new(
         name,
         r#"
 use anchor_lang_v2::prelude::*;
 
 declare_program!(bad);
 "#,
-        &[],
-        &[("idls/bad.json", idl)],
-        snippets,
-    );
+    )
+    .file("idls/bad.json", idl)
 }
 
-fn compile_pass_case(name: &str, source: &str, features: &[&str]) {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let crate_dir = manifest_dir.join("target/compile-pass").join(name);
-    let src_dir = crate_dir.join("src");
-    fs::create_dir_all(&src_dir).unwrap();
-
-    let anchor_lang_v2 = manifest_dir
-        .parent()
-        .expect("tests-v2 should live under the workspace root")
-        .join("lang-v2");
-
-    fs::write(
-        crate_dir.join("Cargo.toml"),
-        format!(
-            r#"[package]
-name = "{name}"
-version = "0.1.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-anchor-lang-v2 = {{ path = "{}" }}
-wincode = {{ version = "0.5", features = ["derive"] }}
-
-[features]
-cpi = []
-
-[workspace]
-"#,
-            anchor_lang_v2.display()
-        ),
-    )
-    .unwrap();
-    fs::write(src_dir.join("lib.rs"), source).unwrap();
-
-    let mut command = Command::new("cargo");
-    command.args(["check", "--offline", "--manifest-path"]);
-    command.arg(crate_dir.join("Cargo.toml"));
-    if !features.is_empty() {
-        command.arg("--features");
-        command.arg(features.join(","));
-    }
-    let output = command
-        .output()
-        .unwrap_or_else(|err| panic!("failed to run cargo check for {name}: {err}"));
-
-    assert!(
-        output.status.success(),
-        "{name} did not compile successfully\n\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+fn declare_program_compile_fail_case(name: &str, idl: &str, snippets: &[&str]) {
+    declare_program_case(name, idl).expect_fail(snippets);
 }
 
 #[test]
 fn program_interface_mode_compiles_client_and_cpi_surface() {
-    compile_pass_case(
+    CompileCase::new(
         "program_interface_mode",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -275,13 +210,14 @@ pub fn build_cpi<'a>(
     declared::cpi::invoke(ctx, 5);
 }
 "#,
-        &["cpi"],
-    );
+    )
+    .features(&["cpi"])
+    .expect_pass();
 }
 
 #[test]
 fn program_interface_cpi_optional_accounts_compile() {
-    compile_pass_case(
+    CompileCase::new(
         "program_interface_optional_cpi",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -307,13 +243,14 @@ pub mod program_interface_optional_cpi {
     }
 }
 "#,
-        &["cpi"],
-    );
+    )
+    .features(&["cpi"])
+    .expect_pass();
 }
 
 #[test]
 fn program_interface_rejects_empty_discriminator() {
-    compile_fail_case(
+    CompileCase::new(
         "program_interface_empty_discriminator",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -336,13 +273,13 @@ pub mod program_interface_empty_discriminator {
     }
 }
 "#,
-        &["must contain at least one byte"],
-    );
+    )
+    .expect_fail(&["must contain at least one byte"]);
 }
 
 #[test]
 fn program_interface_rejects_duplicate_discriminators() {
-    compile_fail_case(
+    CompileCase::new(
         "program_interface_duplicate_discriminator",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -371,13 +308,13 @@ pub mod program_interface_duplicate_discriminator {
     }
 }
 "#,
-        &["duplicate `#[discrim = ...]`"],
-    );
+    )
+    .expect_fail(&["duplicate `#[discrim = ...]`"]);
 }
 
 #[test]
 fn associated_token_rejects_unknown_constraint_key() {
-    compile_fail_case(
+    CompileCase::new(
         "associated_token_unknown_constraint_key",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -403,21 +340,21 @@ pub struct BadAta {
     pub system_program: UncheckedAccount,
 }
 "#,
-        &["unknown `associated_token` constraint `program`"],
-    );
+    )
+    .expect_fail(&["unknown `associated_token` constraint `program`"]);
 }
 
 #[test]
 fn declare_program_missing_idls_directory_fails_clearly() {
-    compile_fail_case(
+    CompileCase::new(
         "declare_program_missing_idls_directory",
         r#"
 use anchor_lang_v2::prelude::*;
 
 declare_program!(bad);
 "#,
-        &["`idls` directory not found"],
-    );
+    )
+    .expect_fail(&["`idls` directory not found"]);
 }
 
 #[test]
@@ -431,7 +368,7 @@ fn declare_program_invalid_json_fails_clearly() {
 
 #[test]
 fn declare_program_legacy_idl_conversion_compiles() {
-    compile_pass_case_with_files(
+    CompileCase::new(
         "declare_program_legacy_idl_conversion",
         r#"
 use anchor_lang_v2::{prelude::*, Event as _};
@@ -446,9 +383,9 @@ pub fn build_ix(authority: Address, data: Address, owner: Address) -> anchor_lan
         .to_instruction(legacy::accounts::DoIt { authority, data })
 }
 "#,
-        &[],
-        &[(
-            "idls/legacy.json",
+    )
+    .file(
+        "idls/legacy.json",
             r#"{
   "version": "0.1.0",
   "name": "legacy",
@@ -483,8 +420,8 @@ pub fn build_ix(authority: Address, data: Address, owner: Address) -> anchor_lan
     { "name": "LEGACY_BYTES", "type": "bytes", "value": "[1, 2]" }
   ]
 }"#,
-        )],
-    );
+    )
+    .expect_pass();
 }
 
 #[test]
@@ -723,7 +660,7 @@ fn declare_program_rejects_bytemuck_enum_type() {
 
 #[test]
 fn declare_program_return_wrapper_compiles_for_returning_cpi() {
-    compile_pass_case_with_files(
+    CompileCase::new(
         "declare_program_return_wrapper",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -736,10 +673,11 @@ pub fn use_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
     let _ = bad::cpi::ix(ctx).unwrap().get();
 }
 "#,
-        &["cpi"],
-        &[(
-            "idls/bad.json",
-            r#"{
+    )
+    .features(&["cpi"])
+    .file(
+        "idls/bad.json",
+        r#"{
   "address": "11111111111111111111111111111111",
   "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [
@@ -754,13 +692,13 @@ pub fn use_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
     }
   ]
 }"#,
-        )],
-    );
+    )
+    .expect_pass();
 }
 
 #[test]
 fn declare_program_non_returning_cpi_has_no_return_wrapper() {
-    compile_fail_case_with_files(
+    CompileCase::new(
         "declare_program_non_return_wrapper",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -773,10 +711,11 @@ pub fn misuse_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
     let _ = bad::cpi::ix(ctx).get();
 }
 "#,
-        &["cpi"],
-        &[(
-            "idls/bad.json",
-            r#"{
+    )
+    .features(&["cpi"])
+    .file(
+        "idls/bad.json",
+        r#"{
   "address": "11111111111111111111111111111111",
   "metadata": { "name": "bad", "version": "0.1.0", "spec": "0.1.0" },
   "instructions": [
@@ -790,14 +729,13 @@ pub fn misuse_return<'a>(program: &'a Address, data: CpiHandle<'a>) {
     }
   ]
 }"#,
-        )],
-        &["no method named `get`"],
-    );
+    )
+    .expect_fail(&["no method named `get`"]);
 }
 
 #[test]
 fn executable_program_rejects_arbitrary_discriminator_bytes() {
-    compile_fail_case(
+    CompileCase::new(
         "executable_program_arbitrary_discriminator",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -818,13 +756,13 @@ pub mod executable_program_arbitrary_discriminator {
     }
 }
 "#,
-        &["custom discriminators must be one byte"],
-    );
+    )
+    .expect_fail(&["custom discriminators must be one byte"]);
 }
 
 #[test]
 fn executable_program_rejects_program_id_override() {
-    compile_fail_case(
+    CompileCase::new(
         "executable_program_id_override",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -846,13 +784,13 @@ pub mod executable_program_id_override {
     }
 }
 "#,
-        &["`program_id` is only supported"],
-    );
+    )
+    .expect_fail(&["`program_id` is only supported"]);
 }
 
 #[test]
 fn instruction_args_without_handler_args_do_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "instruction_args_without_handler_args",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -876,13 +814,13 @@ pub struct Bad {
     pub data: UncheckedAccount,
 }
 "#,
-        &["expected `()`, found `(u64,)`"],
-    );
+    )
+    .expect_fail(&["expected `()`, found `(u64,)`"]);
 }
 
 #[test]
 fn extra_instruction_args_do_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "extra_instruction_args",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -906,13 +844,13 @@ pub struct Bad {
     pub data: UncheckedAccount,
 }
 "#,
-        &["the trait bound", "__AnchorIxArgCoerce"],
-    );
+    )
+    .expect_fail(&["the trait bound", "__AnchorIxArgCoerce"]);
 }
 
 #[test]
 fn missing_instruction_args_do_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "missing_instruction_args",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -936,13 +874,13 @@ pub struct Bad {
     pub data: UncheckedAccount,
 }
 "#,
-        &["the trait bound", "__AnchorIxArgCoerce"],
-    );
+    )
+    .expect_fail(&["the trait bound", "__AnchorIxArgCoerce"]);
 }
 
 #[test]
 fn wrong_instruction_arg_type_does_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "wrong_instruction_arg_type",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -966,13 +904,13 @@ pub struct Bad {
     pub data: UncheckedAccount,
 }
 "#,
-        &["the trait bound", "__AnchorIxArgCoerce"],
-    );
+    )
+    .expect_fail(&["the trait bound", "__AnchorIxArgCoerce"]);
 }
 
 #[test]
 fn swapped_instruction_arg_types_do_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "swapped_instruction_arg_types",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -996,13 +934,13 @@ pub struct Bad {
     pub data: UncheckedAccount,
 }
 "#,
-        &["the trait bound", "__AnchorIxArgCoerce"],
-    );
+    )
+    .expect_fail(&["the trait bound", "__AnchorIxArgCoerce"]);
 }
 
 #[test]
 fn close_on_unchecked_account_compiles() {
-    compile_pass_case(
+    CompileCase::new(
         "close_on_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1028,13 +966,13 @@ pub struct Close {
     pub receiver: UncheckedAccount,
 }
 "#,
-        &[],
-    );
+    )
+    .expect_pass();
 }
 
 #[test]
 fn close_on_boxed_unchecked_account_compiles() {
-    compile_pass_case(
+    CompileCase::new(
         "close_on_boxed_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1060,13 +998,13 @@ pub struct Close {
     pub receiver: UncheckedAccount,
 }
 "#,
-        &[],
-    );
+    )
+    .expect_pass();
 }
 
 #[test]
 fn close_on_optional_unchecked_account_compiles() {
-    compile_pass_case(
+    CompileCase::new(
         "close_on_optional_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1092,13 +1030,13 @@ pub struct Close {
     pub receiver: UncheckedAccount,
 }
 "#,
-        &[],
-    );
+    )
+    .expect_pass();
 }
 
 #[test]
 fn close_requires_mut_on_source_account() {
-    compile_fail_case(
+    CompileCase::new(
         "close_requires_mut_on_source_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1124,13 +1062,13 @@ pub struct Close {
     pub receiver: UncheckedAccount,
 }
 "#,
-        &["mut must be provided when using close"],
-    );
+    )
+    .expect_fail(&["mut must be provided when using close"]);
 }
 
 #[test]
 fn account_attrs_on_nested_field_do_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "account_attrs_on_nested_field",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1159,13 +1097,13 @@ pub struct Outer {
     pub inner: Nested<Inner>,
 }
 "#,
-        &["`#[account(...)]` attributes are not supported on `Nested<T>` fields"],
-    );
+    )
+    .expect_fail(&["`#[account(...)]` attributes are not supported on `Nested<T>` fields"]);
 }
 
 #[test]
 fn slab_overaligned_header_does_not_compile() {
-    compile_fail_build_case(
+    CompileCase::new(
         "slab_overaligned_header",
         r#"
 use anchor_lang_v2::{
@@ -1200,13 +1138,14 @@ pub unsafe fn load_bad(view: AccountView, program_id: &Address) {
     let _ = <Slab<BadHeader> as AnchorAccount>::load_mut(view, program_id);
 }
 "#,
-        &["Slab header alignment exceeds Solana's 8-byte account data alignment"],
-    );
+    )
+    .build()
+    .expect_fail(&["Slab header alignment exceeds Solana's 8-byte account data alignment"]);
 }
 
 #[test]
 fn slab_misaligned_header_offset_does_not_compile() {
-    compile_fail_build_case(
+    CompileCase::new(
         "slab_misaligned_header_offset",
         r#"
 use anchor_lang_v2::{
@@ -1241,13 +1180,14 @@ pub unsafe fn load_bad(view: AccountView, program_id: &Address) {
     let _ = <Slab<BadHeader> as AnchorAccount>::load_mut(view, program_id);
 }
 "#,
-        &["Slab header DATA_OFFSET is not aligned for the header type"],
-    );
+    )
+    .build()
+    .expect_fail(&["Slab header DATA_OFFSET is not aligned for the header type"]);
 }
 
 #[test]
 fn realloc_on_unchecked_account_does_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "realloc_on_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1273,13 +1213,13 @@ pub struct Resize {
     pub payer: Signer,
 }
 "#,
-        &["AccountRealloc", "UncheckedAccount"],
-    );
+    )
+    .expect_fail(&["AccountRealloc", "UncheckedAccount"]);
 }
 
 #[test]
 fn realloc_on_boxed_unchecked_account_does_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "realloc_on_boxed_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1305,13 +1245,13 @@ pub struct Resize {
     pub payer: Signer,
 }
 "#,
-        &["AccountRealloc", "UncheckedAccount"],
-    );
+    )
+    .expect_fail(&["AccountRealloc", "UncheckedAccount"]);
 }
 
 #[test]
 fn realloc_on_optional_unchecked_account_does_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "realloc_on_optional_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1337,13 +1277,13 @@ pub struct Resize {
     pub payer: Signer,
 }
 "#,
-        &["AccountRealloc", "UncheckedAccount"],
-    );
+    )
+    .expect_fail(&["AccountRealloc", "UncheckedAccount"]);
 }
 
 #[test]
 fn realloc_on_unchecked_account_alias_does_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "realloc_on_unchecked_account_alias",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1358,13 +1298,13 @@ pub struct Resize {
     pub payer: Signer,
 }
 "#,
-        &["AccountRealloc", "UncheckedAccount"],
-    );
+    )
+    .expect_fail(&["AccountRealloc", "UncheckedAccount"]);
 }
 
 #[test]
 fn realloc_on_renamed_unchecked_account_does_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "realloc_on_renamed_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1378,13 +1318,13 @@ pub struct Resize {
     pub payer: Signer,
 }
 "#,
-        &["AccountRealloc", "UncheckedAccount"],
-    );
+    )
+    .expect_fail(&["AccountRealloc", "UncheckedAccount"]);
 }
 
 #[test]
 fn realloc_on_box_alias_unchecked_account_does_not_compile() {
-    compile_fail_case(
+    CompileCase::new(
         "realloc_on_box_alias_unchecked_account",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1399,13 +1339,13 @@ pub struct Resize {
     pub payer: Signer,
 }
 "#,
-        &["AccountRealloc", "UncheckedAccount"],
-    );
+    )
+    .expect_fail(&["AccountRealloc", "UncheckedAccount"]);
 }
 
 #[test]
 fn realloc_on_borsh_account_alias_compiles() {
-    compile_pass_case(
+    CompileCase::new(
         "realloc_on_borsh_account_alias",
         r#"
 use anchor_lang_v2::prelude::*;
@@ -1435,6 +1375,6 @@ pub struct Resize {
     pub payer: Signer,
 }
 "#,
-        &[],
-    );
+    )
+    .expect_pass();
 }
