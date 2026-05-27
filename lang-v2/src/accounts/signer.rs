@@ -1,5 +1,5 @@
 use {
-    crate::{accounts::view_wrapper_traits, AnchorAccount},
+    crate::{accounts::view_wrapper_traits, require, require_eq, AnchorAccount},
     pinocchio::{account::AccountView, address::Address},
     solana_program_error::ProgramError,
 };
@@ -22,9 +22,7 @@ impl AnchorAccount for Signer {
 
     #[inline(always)]
     fn load(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {
-        if !view.is_signer() {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
+        require!(view.is_signer(), ProgramError::MissingRequiredSignature);
         Ok(Self { view })
     }
 
@@ -50,9 +48,7 @@ impl AnchorAccount for Signer {
         let flags = unsafe { core::ptr::read_unaligned(flags_ptr) };
         // Little-endian: low byte = is_signer, high byte = is_writable.
         // Both must be 1 → u16 value 0x0101.
-        if flags != 0x0101 {
-            return Err(crate::ErrorCode::ConstraintSigner.into());
-        }
+        require_eq!(flags, 0x0101, crate::ErrorCode::ConstraintSigner);
         Ok(Self { view })
     }
 

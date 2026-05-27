@@ -1,5 +1,5 @@
 use {
-    crate::AnchorAccount,
+    crate::{require, AnchorAccount},
     core::{marker::PhantomData, ops::Deref},
     pinocchio::{account::AccountView, address::Address, sysvars::Sysvar as PinocchioSysvar},
     solana_program_error::ProgramError,
@@ -61,9 +61,10 @@ impl<T: PinocchioSysvar + SysvarId + Copy> AnchorAccount for Sysvar<T> {
     fn load(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {
         // Same chunked-compare rationale as `Program<T>::load`. See lib.rs.
         let id = T::SYSVAR_ID;
-        if !crate::address_eq(view.address(), &id) {
-            return Err(ProgramError::InvalidArgument);
-        }
+        require!(
+            crate::address_eq(view.address(), &id),
+            ProgramError::InvalidArgument
+        );
         // Use pinocchio's Sysvar::get() which reads directly from the runtime
         // via syscall, avoiding the need to deserialize from account data.
         let data = T::get().map_err(|_| ProgramError::UnsupportedSysvar)?;

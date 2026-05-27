@@ -1,7 +1,7 @@
 extern crate alloc;
 
 use {
-    crate::{address_eq, CpiHandle, ToCpiAccounts},
+    crate::{address_eq, require, CpiHandle, ToCpiAccounts},
     alloc::vec::Vec,
     core::mem::MaybeUninit,
     pinocchio::{
@@ -146,9 +146,10 @@ impl<'a, T: ToCpiAccounts<'a>> CpiContext<'a, T> {
     /// metas are taken from the instruction, while account handles are collected
     /// from [`ToCpiAccounts`] and `remaining_accounts`.
     pub fn invoke_ix(&self, ix: Instruction) -> ProgramResult {
-        if !address_eq(self.program, &ix.program_id) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        require!(
+            address_eq(self.program, &ix.program_id),
+            ProgramError::IncorrectProgramId
+        );
 
         let mut handles = self.accounts.to_cpi_handles();
         handles.extend(self.remaining_accounts.iter().copied());
@@ -179,7 +180,7 @@ fn signer_from_seeds<'a>(seeds: &'a [&'a [u8]]) -> pinocchio::cpi::Signer<'a, 'a
 /// but avoids heap-allocating account metadata and `CpiAccount` buffers for
 /// common SPL instructions with a static account list.
 #[inline(always)]
-pub fn invoke_signed_fixed<'a, const N: usize>(
+pub fn unchecked_invoke_signed_fixed<'a, const N: usize>(
     program: &'a Address,
     data: &[u8],
     instruction_accounts: &[InstructionAccount<'a>; N],

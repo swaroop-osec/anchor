@@ -6,7 +6,7 @@
 use {
     anchor_lang_v2::{
         accounts::{Account, SlabInit, SlabSchema},
-        AccountConstraint, CpiContext, Id,
+        require, require_eq, AccountConstraint, CpiContext, Id,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::account::AccountView,
@@ -123,13 +123,13 @@ impl SlabSchema for TokenAccount {
         data: &[u8],
         _program_id: &Address,
     ) -> Result<(), ProgramError> {
-        if !view.owned_by(&Token::id()) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        require!(view.owned_by(&Token::id()), ProgramError::IllegalOwner);
         // Exact size distinguishes TokenAccount (165) from Mint (82).
-        if data.len() != core::mem::size_of::<Self>() {
-            return Err(ProgramError::InvalidAccountData);
-        }
+        require_eq!(
+            data.len(),
+            core::mem::size_of::<Self>(),
+            ProgramError::InvalidAccountData
+        );
         validate_token_account_initialized(data)?;
         Ok(())
     }
@@ -262,11 +262,11 @@ impl AccountConstraint<Account<TokenAccount>> for MintConstraint {
     type Value = Address;
     #[inline(always)]
     fn check(account: &Account<TokenAccount>, expected: &Address) -> Result<(), ProgramError> {
-        if !anchor_lang_v2::address_eq(account.mint(), expected) {
-            Err(ProgramError::InvalidAccountData)
-        } else {
-            Ok(())
-        }
+        require!(
+            anchor_lang_v2::address_eq(account.mint(), expected),
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
     }
 }
 
@@ -274,11 +274,11 @@ impl AccountConstraint<Account<TokenAccount>> for AuthorityConstraint {
     type Value = Address;
     #[inline(always)]
     fn check(account: &Account<TokenAccount>, expected: &Address) -> Result<(), ProgramError> {
-        if !anchor_lang_v2::address_eq(account.owner(), expected) {
-            Err(ProgramError::InvalidAccountData)
-        } else {
-            Ok(())
-        }
+        require!(
+            anchor_lang_v2::address_eq(account.owner(), expected),
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
     }
 }
 
@@ -287,11 +287,11 @@ impl AccountConstraint<Account<TokenAccount>> for TokenProgramConstraint {
     type Value = Address;
     #[inline(always)]
     fn check(account: &Account<TokenAccount>, expected: &Address) -> Result<(), ProgramError> {
-        if !AsRef::<AccountView>::as_ref(account).owned_by(expected) {
-            Err(ProgramError::IllegalOwner)
-        } else {
-            Ok(())
-        }
+        require!(
+            AsRef::<AccountView>::as_ref(account).owned_by(expected),
+            ProgramError::IllegalOwner
+        );
+        Ok(())
     }
 }
 

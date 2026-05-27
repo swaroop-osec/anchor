@@ -171,7 +171,7 @@ pub use {
     },
     bytemuck,
     context::{Bumps, Context, MutMask},
-    context_cpi::{invoke_signed_fixed, CpiContext},
+    context_cpi::{unchecked_invoke_signed_fixed, CpiContext},
     cpi::{
         create_account, create_account_signed, create_program_address,
         find_and_verify_program_address, find_and_verify_program_address_skip_curve,
@@ -457,21 +457,13 @@ macro_rules! require_eq {
         #[allow(unused_imports)]
         use $crate::ErrorCode::*;
         if $value1 != $value2 {
-            $crate::msg!(
-                "require_eq violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+            $crate::msg!("require_eq violation");
             return Err(core::convert::Into::into($error_code));
         }
     };
     ($value1:expr, $value2:expr $(,)?) => {
         if $value1 != $value2 {
-            $crate::msg!(
-                "require_eq violation: left = {}, right = {}",
-                $value1,
-                $value2
-            );
+            $crate::msg!("require_eq violation");
             return Err($crate::ErrorCode::RequireEqViolated.into());
         }
     };

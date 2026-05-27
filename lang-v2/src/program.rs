@@ -1,7 +1,7 @@
 extern crate alloc;
 
 use {
-    crate::{address_eq, CpiHandle},
+    crate::{address_eq, require, CpiHandle},
     alloc::vec::Vec,
     core::{mem::MaybeUninit, slice::from_raw_parts},
     pinocchio::{
@@ -75,9 +75,10 @@ pub unsafe fn invoke_signed_unchecked<'a, 'seeds>(
     account_handles: &[CpiHandle<'a>],
     signer_seeds: &'seeds [&'seeds [&'seeds [u8]]],
 ) -> ProgramResult {
-    if account_handles.len() < instruction.accounts.len() {
-        return Err(ProgramError::NotEnoughAccountKeys);
-    }
+    require!(
+        account_handles.len() >= instruction.accounts.len(),
+        ProgramError::NotEnoughAccountKeys
+    );
 
     let instruction_accounts = instruction_accounts(instruction);
     let instruction_view = InstructionView {
@@ -109,19 +110,19 @@ pub(crate) fn validate_handles(
     instruction: &Instruction,
     account_handles: &[CpiHandle<'_>],
 ) -> ProgramResult {
-    if account_handles.len() < instruction.accounts.len() {
-        return Err(ProgramError::NotEnoughAccountKeys);
-    }
+    require!(
+        account_handles.len() >= instruction.accounts.len(),
+        ProgramError::NotEnoughAccountKeys
+    );
 
     for (meta, handle) in instruction.accounts.iter().zip(account_handles) {
-        if !address_eq(&meta.pubkey, handle.address()) {
-            return Err(ProgramError::InvalidArgument);
-        }
+        require!(
+            address_eq(&meta.pubkey, handle.address()),
+            ProgramError::InvalidArgument
+        );
 
         if meta.is_writable {
-            if !handle.is_writable() {
-                return Err(ProgramError::InvalidArgument);
-            }
+            require!(handle.is_writable(), ProgramError::InvalidArgument);
         }
     }
 

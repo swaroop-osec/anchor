@@ -22,7 +22,7 @@ use {
     anchor_lang_v2::{
         accounts::{InterfaceAccount, SlabInit, SlabSchema},
         programs::{Token, Token2022 as Token2022Program},
-        AccountConstraint, AnchorAccount, Id, Ids,
+        require, require_eq, AccountConstraint, AnchorAccount, Id, Ids,
     },
     bytemuck::{Pod, Zeroable},
     core::ops::Deref,
@@ -84,9 +84,10 @@ impl TokenInterfaceAccountExtensions for InterfaceAccount<Mint> {
     #[inline(always)]
     fn get_extension<T: crate::extensions::ExtensionType>(&self) -> Result<&T, ProgramError> {
         let account = self.account();
-        if !account.owned_by(&Token2022Program::id()) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        require!(
+            account.owned_by(&Token2022Program::id()),
+            ProgramError::IllegalOwner
+        );
 
         let data = unsafe { account.borrow_unchecked() };
         let state = PodStateWithExtensions::<PodMint>::unpack(data)?;
@@ -105,9 +106,10 @@ impl TokenInterfaceAccountExtensions for InterfaceAccount<TokenAccount> {
     #[inline(always)]
     fn get_extension<T: crate::extensions::ExtensionType>(&self) -> Result<&T, ProgramError> {
         let account = self.account();
-        if !account.owned_by(&Token2022Program::id()) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        require!(
+            account.owned_by(&Token2022Program::id()),
+            ProgramError::IllegalOwner
+        );
 
         let data = unsafe { account.borrow_unchecked() };
         let state = PodStateWithExtensions::<PodAccount>::unpack(data)?;
@@ -150,9 +152,10 @@ impl SlabSchema for Interface<crate::TokenAccount> {
         data: &[u8],
         _program_id: &Address,
     ) -> Result<(), ProgramError> {
-        if !view.owned_by(&Token::id()) && !view.owned_by(&Token2022Program::id()) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        require!(
+            view.owned_by(&Token::id()) || view.owned_by(&Token2022Program::id()),
+            ProgramError::IllegalOwner
+        );
         PodStateWithExtensions::<PodAccount>::unpack(data)?;
         crate::token::validate_token_account_initialized(data)?;
         Ok(())
@@ -173,9 +176,10 @@ impl SlabSchema for Interface<crate::Mint> {
         data: &[u8],
         _program_id: &Address,
     ) -> Result<(), ProgramError> {
-        if !view.owned_by(&Token::id()) && !view.owned_by(&Token2022Program::id()) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        require!(
+            view.owned_by(&Token::id()) || view.owned_by(&Token2022Program::id()),
+            ProgramError::IllegalOwner
+        );
         PodStateWithExtensions::<PodMint>::unpack(data)?;
         crate::mint::validate_mint_initialized(data)?;
         Ok(())
@@ -314,11 +318,11 @@ impl AccountConstraint<InterfaceAccount<TokenAccount>> for crate::token::MintCon
         account: &InterfaceAccount<TokenAccount>,
         expected: &Address,
     ) -> Result<(), ProgramError> {
-        if !anchor_lang_v2::address_eq(account.mint(), expected) {
-            Err(ProgramError::InvalidAccountData)
-        } else {
-            Ok(())
-        }
+        require!(
+            anchor_lang_v2::address_eq(account.mint(), expected),
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
     }
 }
 
@@ -329,11 +333,11 @@ impl AccountConstraint<InterfaceAccount<TokenAccount>> for crate::token::Authori
         account: &InterfaceAccount<TokenAccount>,
         expected: &Address,
     ) -> Result<(), ProgramError> {
-        if !anchor_lang_v2::address_eq(account.owner(), expected) {
-            Err(ProgramError::InvalidAccountData)
-        } else {
-            Ok(())
-        }
+        require!(
+            anchor_lang_v2::address_eq(account.owner(), expected),
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
     }
 }
 
@@ -344,11 +348,11 @@ impl AccountConstraint<InterfaceAccount<TokenAccount>> for crate::token::TokenPr
         account: &InterfaceAccount<TokenAccount>,
         expected: &Address,
     ) -> Result<(), ProgramError> {
-        if !AsRef::<AccountView>::as_ref(account).owned_by(expected) {
-            Err(ProgramError::IllegalOwner)
-        } else {
-            Ok(())
-        }
+        require!(
+            AsRef::<AccountView>::as_ref(account).owned_by(expected),
+            ProgramError::IllegalOwner
+        );
+        Ok(())
     }
 }
 
@@ -360,10 +364,12 @@ impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::AuthorityConstra
     type Value = Address;
     #[inline(always)]
     fn check(account: &InterfaceAccount<Mint>, expected: &Address) -> Result<(), ProgramError> {
-        match account.mint_authority() {
-            Some(addr) if addr == expected => Ok(()),
-            _ => Err(ProgramError::InvalidAccountData),
-        }
+        require_eq!(
+            account.mint_authority(),
+            Some(expected),
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
     }
 }
 
@@ -371,10 +377,12 @@ impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::FreezeAuthorityC
     type Value = Address;
     #[inline(always)]
     fn check(account: &InterfaceAccount<Mint>, expected: &Address) -> Result<(), ProgramError> {
-        match account.freeze_authority() {
-            Some(addr) if addr == expected => Ok(()),
-            _ => Err(ProgramError::InvalidAccountData),
-        }
+        require_eq!(
+            account.freeze_authority(),
+            Some(expected),
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
     }
 }
 
@@ -382,11 +390,12 @@ impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::DecimalsConstrai
     type Value = u8;
     #[inline(always)]
     fn check(account: &InterfaceAccount<Mint>, expected: &u8) -> Result<(), ProgramError> {
-        if account.decimals() != *expected {
-            Err(ProgramError::InvalidAccountData)
-        } else {
-            Ok(())
-        }
+        require_eq!(
+            account.decimals(),
+            *expected,
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
     }
 }
 
@@ -394,10 +403,10 @@ impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::TokenProgramCons
     type Value = Address;
     #[inline(always)]
     fn check(account: &InterfaceAccount<Mint>, expected: &Address) -> Result<(), ProgramError> {
-        if !AsRef::<AccountView>::as_ref(account).owned_by(expected) {
-            Err(ProgramError::IllegalOwner)
-        } else {
-            Ok(())
-        }
+        require!(
+            AsRef::<AccountView>::as_ref(account).owned_by(expected),
+            ProgramError::IllegalOwner
+        );
+        Ok(())
     }
 }

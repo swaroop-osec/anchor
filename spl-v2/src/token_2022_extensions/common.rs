@@ -4,14 +4,12 @@ use {
 };
 
 #[cfg(any(feature = "guardrails", test))]
-use anchor_lang_v2::{programs::Token2022, Id};
+use anchor_lang_v2::{programs::Token2022, require_eq, Id};
 
 #[cfg(feature = "guardrails")]
 #[inline]
 pub(crate) fn validate_token_2022_program(program: &Address) -> Result<(), ProgramError> {
-    if *program != Token2022::id() {
-        return Err(ProgramError::IncorrectProgramId);
-    }
+    require_eq!(*program, Token2022::id(), ProgramError::IncorrectProgramId);
     Ok(())
 }
 

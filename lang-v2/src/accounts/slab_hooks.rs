@@ -6,7 +6,7 @@
 //!   for `Owner + Discriminator`; SPL types override with CPI.
 
 use {
-    crate::{Discriminator, Owner},
+    crate::{require, require_eq, Discriminator, Owner},
     pinocchio::{account::AccountView, address::Address},
     solana_program_error::ProgramError,
 };
@@ -42,16 +42,15 @@ impl<T: Owner + Discriminator> SlabSchema for T {
 
     #[inline(always)]
     fn validate(view: &AccountView, data: &[u8], program_id: &Address) -> Result<(), ProgramError> {
-        if !view.owned_by(&T::owner(program_id)) {
-            return Err(super::slab::cold_owner_error(view));
-        }
+        require!(
+            view.owned_by(&T::owner(program_id)),
+            super::slab::cold_owner_error(view)
+        );
         let disc = T::DISCRIMINATOR;
         if data.len() < Self::MIN_DATA_LEN {
             return Err(ProgramError::AccountDataTooSmall);
         }
-        if &data[..disc.len()] != disc {
-            return Err(ProgramError::InvalidAccountData);
-        }
+        require_eq!(&data[..disc.len()], disc, ProgramError::InvalidAccountData);
         Ok(())
     }
 }

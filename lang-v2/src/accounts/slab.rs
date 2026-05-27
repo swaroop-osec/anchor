@@ -1,6 +1,6 @@
 use {
     super::slab_hooks::{SlabInit, SlabSchema},
-    crate::{AccountInitialize, AnchorAccount, Discriminator, Id},
+    crate::{require, AccountInitialize, AnchorAccount, Discriminator, Id},
     bytemuck::{Pod, Zeroable},
     core::{
         marker::PhantomData,
@@ -235,15 +235,14 @@ where
         }
         let data_len = data.len();
         let capacity = capacity_for(data_len, Self::ITEMS_OFFSET, core::mem::size_of::<T>());
-        if capacity > u32::MAX as usize {
-            return Err(ProgramError::InvalidAccountData);
-        }
+        require!(
+            capacity <= u32::MAX as usize,
+            ProgramError::InvalidAccountData
+        );
         let mut len_bytes = [0u8; 4];
         len_bytes.copy_from_slice(&data[Self::LEN_OFFSET..Self::LEN_OFFSET + 4]);
         let len = u32::from_le_bytes(len_bytes) as usize;
-        if len > capacity {
-            return Err(ProgramError::InvalidAccountData);
-        }
+        require!(len <= capacity, ProgramError::InvalidAccountData);
         Ok(())
     }
 

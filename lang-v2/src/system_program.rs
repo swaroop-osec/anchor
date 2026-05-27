@@ -6,7 +6,7 @@
 extern crate alloc;
 
 use {
-    crate::{CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
+    crate::{require, CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
     alloc::{string::String, vec::Vec},
     pinocchio::address::MAX_SEED_LEN,
     solana_address::Address,
@@ -21,11 +21,11 @@ const NONCE_ACCOUNT_LENGTH: u64 = 80;
 
 #[inline]
 fn check_system_program(program: &Address) -> ProgramResult {
-    if crate::address_eq(program, &System::id()) {
-        Ok(())
-    } else {
-        Err(ProgramError::IncorrectProgramId)
-    }
+    require!(
+        crate::address_eq(program, &System::id()),
+        ProgramError::IncorrectProgramId
+    );
+    Ok(())
 }
 
 #[inline]

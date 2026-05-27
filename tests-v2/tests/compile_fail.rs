@@ -1120,6 +1120,41 @@ pub struct Close {
 }
 
 #[test]
+fn account_attrs_on_nested_field_do_not_compile() {
+    compile_fail_case(
+        "account_attrs_on_nested_field",
+        r#"
+use anchor_lang_v2::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod account_attrs_on_nested_field {
+    use super::*;
+
+    #[discrim = 0]
+    pub fn run(ctx: &mut Context<Outer>) -> Result<()> {
+        let _ = ctx;
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Inner {
+    pub data: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct Outer {
+    #[account(constraint = missing_symbol_that_should_not_compile())]
+    pub inner: Nested<Inner>,
+}
+"#,
+        &["`#[account(...)]` attributes are not supported on `Nested<T>` fields"],
+    );
+}
+
+#[test]
 fn slab_overaligned_header_does_not_compile() {
     compile_fail_build_case(
         "slab_overaligned_header",
@@ -1141,6 +1176,7 @@ unsafe impl anchor_lang_v2::bytemuck::Pod for BadHeader {}
 
 impl SlabSchema for BadHeader {
     const DATA_OFFSET: usize = 0;
+    const MIN_DATA_LEN: usize = 16;
 
     fn validate(
         _view: &AccountView,
@@ -1181,6 +1217,7 @@ unsafe impl anchor_lang_v2::bytemuck::Pod for BadHeader {}
 
 impl SlabSchema for BadHeader {
     const DATA_OFFSET: usize = 1;
+    const MIN_DATA_LEN: usize = 9;
 
     fn validate(
         _view: &AccountView,

@@ -1,5 +1,5 @@
 use {
-    crate::{AnchorAccount, Id},
+    crate::{require, AnchorAccount, Id},
     core::{marker::PhantomData, ops::Deref},
     pinocchio::{account::AccountView, address::Address},
     solana_program_error::ProgramError,
@@ -33,13 +33,12 @@ impl<T: Id> AnchorAccount for Program<T> {
     #[inline(always)]
     fn load(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {
         #[cfg(feature = "guardrails")]
-        if !view.executable() {
-            return Err(ProgramError::InvalidAccountData);
-        }
+        require!(view.executable(), ProgramError::InvalidAccountData);
         let id = T::id();
-        if !crate::address_eq(view.address(), &id) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        require!(
+            crate::address_eq(view.address(), &id),
+            ProgramError::IncorrectProgramId
+        );
         Ok(Self {
             view,
             _phantom: PhantomData,

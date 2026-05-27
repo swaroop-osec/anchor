@@ -1231,6 +1231,14 @@ pub fn parse_field(
 
     // --- Load ---
     if is_nested_type(field_ty) {
+        if field.attrs.iter().any(|attr| attr.path().is_ident("account")) {
+            return Err(syn::Error::new(
+                field_name.span(),
+                "`#[account(...)]` attributes are not supported on `Nested<T>` fields; \
+                 put constraints on the fields inside the nested `Accounts` struct",
+            ));
+        }
+
         let inner_ty = extract_nested_inner_type(field_ty)
             .expect("is_nested_type was true but extract_nested_inner_type returned None");
         // Nested<Inner> — delegate to Inner::try_accounts, which advances the
@@ -2108,6 +2116,27 @@ mod tests {
         let parsed_attrs = parse_account_attrs(&attrs).unwrap();
         assert!(!parsed_attrs.is_mut);
         assert_eq!(parsed_attrs.close.unwrap().to_string(), "receiver");
+    }
+
+    #[test]
+    fn account_attrs_on_nested_field_are_rejected() {
+        use syn::parse::Parser;
+
+        let field: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(constraint = missing_symbol_that_should_not_compile())]
+                pub inner: Nested<Inner>
+            })
+            .unwrap();
+        let err = match parse_field(&field, &[], &[], quote::quote!(0usize), &[]) {
+            Ok(_) => panic!("account attrs on Nested<T> must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("`#[account(...)]` attributes are not supported on `Nested<T>` fields"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

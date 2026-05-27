@@ -1,4 +1,5 @@
 use {
+    crate::require,
     core::ops::Deref,
     pinocchio::{account::AccountView, address::Address, instruction::InstructionAccount},
     solana_program_error::{ProgramError, ProgramResult},
@@ -246,9 +247,7 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// is not marked writable in the transaction.
     #[inline(always)]
     fn try_cpi_handle_mut(&mut self) -> Result<CpiHandleMut<'_>, ProgramError> {
-        if !self.account().is_writable() {
-            return Err(ProgramError::InvalidArgument);
-        }
+        require!(self.account().is_writable(), ProgramError::InvalidArgument);
         Ok(CpiHandleMut {
             view: self.account(),
         })
@@ -341,9 +340,7 @@ impl ToCpiHandle for AccountView {
 impl ToCpiHandleMut for AccountView {
     #[inline(always)]
     fn try_to_cpi_handle_mut(&mut self) -> Result<CpiHandleMut<'_>, ProgramError> {
-        if !self.is_writable() {
-            return Err(ProgramError::InvalidArgument);
-        }
+        require!(self.is_writable(), ProgramError::InvalidArgument);
         Ok(CpiHandleMut::writable(self))
     }
 }

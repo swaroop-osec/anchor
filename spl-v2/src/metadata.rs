@@ -11,8 +11,8 @@ pub use mpl_token_metadata;
 
 use {
     anchor_lang_v2::{
-        AccountDeserialize, AnchorAccount, CpiContext, CpiHandle, CpiHandleMut, Id, IdlAccountType,
-        Result, ToCpiAccounts,
+        require, AccountDeserialize, AnchorAccount, CpiContext, CpiHandle, CpiHandleMut, Id,
+        IdlAccountType, Result, ToCpiAccounts,
     },
     core::ops::Deref,
     pinocchio::account::AccountView,
@@ -736,9 +736,7 @@ impl AnchorAccount for MetadataAccount {
     type Data = mpl_token_metadata::accounts::Metadata;
 
     fn load(view: AccountView, _program_id: &Address) -> Result<Self> {
-        if !view.owned_by(&ID) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        require!(view.owned_by(&ID), ProgramError::IllegalOwner);
         let data_ref = view.try_borrow()?;
         let data = Self::parse(&data_ref)?;
         drop(data_ref);
@@ -794,9 +792,7 @@ impl AnchorAccount for MasterEditionAccount {
     type Data = mpl_token_metadata::accounts::MasterEdition;
 
     fn load(view: AccountView, _program_id: &Address) -> Result<Self> {
-        if !view.owned_by(&ID) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        require!(view.owned_by(&ID), ProgramError::IllegalOwner);
         let data_ref = view.try_borrow()?;
         let data = Self::parse(&data_ref)?;
         drop(data_ref);
@@ -854,9 +850,7 @@ impl AnchorAccount for TokenRecordAccount {
     type Data = mpl_token_metadata::accounts::TokenRecord;
 
     fn load(view: AccountView, _program_id: &Address) -> Result<Self> {
-        if !view.owned_by(&ID) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        require!(view.owned_by(&ID), ProgramError::IllegalOwner);
         let data_ref = view.try_borrow()?;
         let data = Self::parse(&data_ref)?;
         drop(data_ref);

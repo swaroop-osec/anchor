@@ -1,5 +1,5 @@
 use {
-    crate::{accounts::view_wrapper_traits, programs::System, AnchorAccount, Id},
+    crate::{accounts::view_wrapper_traits, programs::System, require, AnchorAccount, Id},
     pinocchio::{account::AccountView, address::Address},
     solana_program_error::ProgramError,
 };
@@ -20,9 +20,7 @@ impl AnchorAccount for SystemAccount {
     type Data = AccountView;
     #[inline(always)]
     fn load(view: AccountView, _program_id: &Address) -> Result<Self, ProgramError> {
-        if !view.owned_by(&System::id()) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        require!(view.owned_by(&System::id()), ProgramError::IllegalOwner);
         Ok(Self { view })
     }
     #[inline(always)]

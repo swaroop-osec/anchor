@@ -4,6 +4,7 @@ pub use pinocchio::instruction::{InstructionAccount, InstructionView};
 #[cfg(feature = "const-rent")]
 use pinocchio::sysvars::rent::{ACCOUNT_STORAGE_OVERHEAD, DEFAULT_LAMPORTS_PER_BYTE};
 use {
+    crate::require,
     pinocchio::{account::AccountView, address::Address},
     solana_program_error::ProgramError,
 };
@@ -55,9 +56,10 @@ pub fn rent_exempt_lamports(space: usize) -> Result<u64, ProgramError> {
 #[cfg(feature = "const-rent")]
 #[inline(always)]
 pub fn rent_exempt_lamports(space: usize) -> Result<u64, ProgramError> {
-    if space as u64 > MAX_SAFE_SPACE {
-        return Err(ProgramError::InvalidArgument);
-    }
+    require!(
+        space as u64 <= MAX_SAFE_SPACE,
+        ProgramError::InvalidArgument
+    );
     // Bounded by MAX_SAFE_SPACE → no overflow.
     Ok((ACCOUNT_STORAGE_OVERHEAD + space as u64).wrapping_mul(DEFAULT_LAMPORTS_PER_BYTE))
 }
@@ -385,9 +387,10 @@ pub fn create_account(
     space: usize,
     owner: &Address,
 ) -> Result<(), ProgramError> {
-    if pinocchio::address::address_eq(payer.address(), target.address()) {
-        return Err(ProgramError::InvalidArgument);
-    }
+    require!(
+        !pinocchio::address::address_eq(payer.address(), target.address()),
+        ProgramError::InvalidArgument
+    );
 
     let required = rent_exempt_lamports(space)?;
     let current = target.lamports();
@@ -418,9 +421,10 @@ pub fn create_account_signed(
     owner: &Address,
     seeds: &[&[u8]],
 ) -> Result<(), ProgramError> {
-    if pinocchio::address::address_eq(payer.address(), target.address()) {
-        return Err(ProgramError::InvalidArgument);
-    }
+    require!(
+        !pinocchio::address::address_eq(payer.address(), target.address()),
+        ProgramError::InvalidArgument
+    );
 
     let required = rent_exempt_lamports(space)?;
     let current = target.lamports();

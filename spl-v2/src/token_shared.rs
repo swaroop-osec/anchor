@@ -3,7 +3,7 @@
 extern crate alloc;
 
 #[cfg(feature = "guardrails")]
-use anchor_lang_v2::Id;
+use anchor_lang_v2::{require, Id};
 use {
     anchor_lang_v2::{CpiContext, CpiHandle, CpiHandleMut, ToCpiAccounts},
     pinocchio::address::Address,
@@ -14,13 +14,12 @@ use {
 #[cfg(feature = "guardrails")]
 #[inline]
 pub(crate) fn validate_token_interface_program(program_id: &Address) -> Result<(), ProgramError> {
-    if anchor_lang_v2::address_eq(program_id, &anchor_lang_v2::programs::Token::id())
-        || anchor_lang_v2::address_eq(program_id, &anchor_lang_v2::programs::Token2022::id())
-    {
-        Ok(())
-    } else {
-        Err(ProgramError::IncorrectProgramId)
-    }
+    require!(
+        anchor_lang_v2::address_eq(program_id, &anchor_lang_v2::programs::Token::id())
+            || anchor_lang_v2::address_eq(program_id, &anchor_lang_v2::programs::Token2022::id()),
+        ProgramError::IncorrectProgramId
+    );
+    Ok(())
 }
 
 #[cfg(not(feature = "guardrails"))]

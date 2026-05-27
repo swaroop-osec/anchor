@@ -1,5 +1,5 @@
 use {
-    crate::{AccountInitialize, AnchorAccount, Discriminator, Owner},
+    crate::{require, require_eq, AccountInitialize, AnchorAccount, Discriminator, Owner},
     core::{
         marker::PhantomData,
         ops::{Deref, DerefMut},
@@ -138,17 +138,20 @@ where
         // could have mutated owner, discriminator, or payload in any
         // combination — without re-checking, we'd accept an account that
         // no longer validates as `T`.
-        if !self.view.owned_by(&T::owner(program_id)) {
-            return Err(ProgramError::IllegalOwner);
-        }
+        require!(
+            self.view.owned_by(&T::owner(program_id)),
+            ProgramError::IllegalOwner
+        );
         let mut view_mut = self.view;
         let data_ref = view_mut.try_borrow_mut()?;
         if data_ref.len() < DISC_LEN {
             return Err(ProgramError::AccountDataTooSmall);
         }
-        if &data_ref[..DISC_LEN] != T::DISCRIMINATOR {
-            return Err(ProgramError::InvalidAccountData);
-        }
+        require_eq!(
+            &data_ref[..DISC_LEN],
+            T::DISCRIMINATOR,
+            ProgramError::InvalidAccountData
+        );
         self.data = S::deserialize(&mut &data_ref[DISC_LEN..])?;
         self.serialize_on_exit = Self::should_serialize_for_program(&self.view, program_id);
         let guard: RefMut<'static, [u8]> = unsafe { core::mem::transmute(data_ref) };
@@ -191,15 +194,18 @@ where
         // Hot path: a single owner check. The "uninitialized placeholder"
         // disambiguation lives in `cold_owner_error` (slab.rs) — see
         // the comment there for why this is safe.
-        if !view.owned_by(&T::owner(program_id)) {
-            return Err(super::slab::cold_owner_error(&view));
-        }
+        require!(
+            view.owned_by(&T::owner(program_id)),
+            super::slab::cold_owner_error(&view)
+        );
         if data.len() < DISC_LEN {
             return Err(ProgramError::AccountDataTooSmall);
         }
-        if &data[..DISC_LEN] != T::DISCRIMINATOR {
-            return Err(ProgramError::InvalidAccountData);
-        }
+        require_eq!(
+            &data[..DISC_LEN],
+            T::DISCRIMINATOR,
+            ProgramError::InvalidAccountData
+        );
         S::deserialize(&mut &data[DISC_LEN..])
     }
 }

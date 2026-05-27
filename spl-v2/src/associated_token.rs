@@ -16,6 +16,8 @@
 
 extern crate alloc;
 
+#[cfg(feature = "guardrails")]
+use anchor_lang_v2::require;
 use {
     anchor_lang_v2::{programs::Token, CpiContext, CpiHandle, CpiHandleMut, Id, ToCpiAccounts},
     solana_address::Address,
@@ -58,15 +60,17 @@ pub type CreateIdempotent<'a> = Create<'a>;
 pub fn create<'a>(ctx: CpiContext<'a, Create<'a>>) -> Result<(), ProgramError> {
     #[cfg(feature = "guardrails")]
     {
-        if !anchor_lang_v2::address_eq(ctx.program, &AssociatedToken::id()) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
-        if !anchor_lang_v2::address_eq(
-            ctx.accounts.system_program.address(),
-            &anchor_lang_v2::programs::System::id(),
-        ) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        require!(
+            anchor_lang_v2::address_eq(ctx.program, &AssociatedToken::id()),
+            ProgramError::IncorrectProgramId
+        );
+        require!(
+            anchor_lang_v2::address_eq(
+                ctx.accounts.system_program.address(),
+                &anchor_lang_v2::programs::System::id(),
+            ),
+            ProgramError::IncorrectProgramId
+        );
     }
     crate::token_shared::validate_token_interface_program(ctx.accounts.token_program.address())?;
     ctx.invoke(&[0]);
@@ -78,15 +82,17 @@ pub fn create_idempotent<'a>(
 ) -> Result<(), ProgramError> {
     #[cfg(feature = "guardrails")]
     {
-        if !anchor_lang_v2::address_eq(ctx.program, &AssociatedToken::id()) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
-        if !anchor_lang_v2::address_eq(
-            ctx.accounts.system_program.address(),
-            &anchor_lang_v2::programs::System::id(),
-        ) {
-            return Err(ProgramError::IncorrectProgramId);
-        }
+        require!(
+            anchor_lang_v2::address_eq(ctx.program, &AssociatedToken::id()),
+            ProgramError::IncorrectProgramId
+        );
+        require!(
+            anchor_lang_v2::address_eq(
+                ctx.accounts.system_program.address(),
+                &anchor_lang_v2::programs::System::id(),
+            ),
+            ProgramError::IncorrectProgramId
+        );
     }
     crate::token_shared::validate_token_interface_program(ctx.accounts.token_program.address())?;
     ctx.invoke(&[1]);

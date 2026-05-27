@@ -8,7 +8,7 @@ use {
     anchor_lang_v2::{
         accounts::{Account, SlabInit, SlabSchema},
         programs::Token,
-        AccountConstraint, Id,
+        require, require_eq, AccountConstraint, Id,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::account::AccountView,
@@ -78,12 +78,12 @@ impl SlabSchema for Mint {
         data: &[u8],
         _program_id: &Address,
     ) -> Result<(), ProgramError> {
-        if !view.owned_by(&Token::id()) {
-            return Err(ProgramError::IllegalOwner);
-        }
-        if data.len() != core::mem::size_of::<Self>() {
-            return Err(ProgramError::InvalidAccountData);
-        }
+        require!(view.owned_by(&Token::id()), ProgramError::IllegalOwner);
+        require_eq!(
+            data.len(),
+            core::mem::size_of::<Self>(),
+            ProgramError::InvalidAccountData
+        );
         validate_mint_initialized(data)?;
         Ok(())
     }
@@ -184,10 +184,12 @@ impl AccountConstraint<Account<Mint>> for AuthorityConstraint {
     type Value = Address;
     #[inline(always)]
     fn check(account: &Account<Mint>, expected: &Address) -> Result<(), ProgramError> {
-        match account.mint_authority() {
-            Some(addr) if addr == expected => Ok(()),
-            _ => Err(ProgramError::InvalidAccountData),
-        }
+        require_eq!(
+            account.mint_authority(),
+            Some(expected),
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
     }
 }
 
@@ -195,10 +197,12 @@ impl AccountConstraint<Account<Mint>> for FreezeAuthorityConstraint {
     type Value = Address;
     #[inline(always)]
     fn check(account: &Account<Mint>, expected: &Address) -> Result<(), ProgramError> {
-        match account.freeze_authority() {
-            Some(addr) if addr == expected => Ok(()),
-            _ => Err(ProgramError::InvalidAccountData),
-        }
+        require_eq!(
+            account.freeze_authority(),
+            Some(expected),
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
     }
 }
 
@@ -207,11 +211,12 @@ impl AccountConstraint<Account<Mint>> for DecimalsConstraint {
     type Value = u8;
     #[inline(always)]
     fn check(account: &Account<Mint>, expected: &u8) -> Result<(), ProgramError> {
-        if account.decimals() != *expected {
-            Err(ProgramError::InvalidAccountData)
-        } else {
-            Ok(())
-        }
+        require_eq!(
+            account.decimals(),
+            *expected,
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
     }
 }
 
@@ -220,11 +225,11 @@ impl AccountConstraint<Account<Mint>> for TokenProgramConstraint {
     type Value = Address;
     #[inline(always)]
     fn check(account: &Account<Mint>, expected: &Address) -> Result<(), ProgramError> {
-        if !AsRef::<AccountView>::as_ref(account).owned_by(expected) {
-            Err(ProgramError::IllegalOwner)
-        } else {
-            Ok(())
-        }
+        require!(
+            AsRef::<AccountView>::as_ref(account).owned_by(expected),
+            ProgramError::IllegalOwner
+        );
+        Ok(())
     }
 }
 
