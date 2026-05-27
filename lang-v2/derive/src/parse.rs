@@ -1231,7 +1231,11 @@ pub fn parse_field(
 
     // --- Load ---
     if is_nested_type(field_ty) {
-        if field.attrs.iter().any(|attr| attr.path().is_ident("account")) {
+        if field
+            .attrs
+            .iter()
+            .any(|attr| attr.path().is_ident("account"))
+        {
             return Err(syn::Error::new(
                 field_name.span(),
                 "`#[account(...)]` attributes are not supported on `Nested<T>` fields; \

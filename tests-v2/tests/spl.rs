@@ -55,6 +55,10 @@ fn native_mint_id() -> Pubkey {
         .unwrap()
 }
 
+fn token_2022_native_mint_id() -> Pubkey {
+    anchor_spl_v2::token_2022::native_mint::id()
+}
+
 fn ata_program_id() -> Pubkey {
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         .parse()
@@ -702,6 +706,42 @@ fn read_mint_rejects_uninitialized_token_owned_mint() {
 }
 
 #[test]
+fn read_mint_rejects_invalid_coption_tag() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("mint-invalid-coption-auth");
+    let mint = Pubkey::new_unique();
+    let mut data = pack_base_mint(&authority.pubkey(), 6, 0).to_vec();
+
+    // Mint authority COption tag must be exactly [0,0,0,0] or [1,0,0,0].
+    data[1] = 2;
+    seed_token_owned_account(&mut svm, mint, token_program_id(), data);
+
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), vec![9], metas, &payer, &[]),
+        "mint with malformed COption tag should not load as Account<Mint>",
+    );
+}
+
+#[test]
+fn read_mint_rejects_invalid_initialized_state() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("mint-invalid-state-auth");
+    let mint = Pubkey::new_unique();
+    let mut data = pack_base_mint(&authority.pubkey(), 6, 0).to_vec();
+
+    const MINT_INITIALIZED_OFFSET: usize = 36 + 8 + 1;
+    data[MINT_INITIALIZED_OFFSET] = 2;
+    seed_token_owned_account(&mut svm, mint, token_program_id(), data);
+
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), vec![9], metas, &payer, &[]),
+        "mint with invalid initialized byte should not load as Account<Mint>",
+    );
+}
+
+#[test]
 fn read_token_account_touches_all_accessors() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("mint-auth");
@@ -730,6 +770,44 @@ fn read_token_account_rejects_uninitialized_token_owned_account() {
     assert_uninitialized_account_error(
         send_instruction(&mut svm, program_id(), vec![10], metas, &payer, &[]),
         "uninitialized Token-owned token account should not load as Account<TokenAccount>",
+    );
+}
+
+#[test]
+fn read_token_account_rejects_invalid_coption_tag() {
+    let (mut svm, payer) = setup();
+    let mint = Pubkey::new_unique();
+    let owner = keypair_for("token-invalid-coption-owner");
+    let token = Pubkey::new_unique();
+    let mut data = pack_base_token_account(&mint, &owner.pubkey(), 0).to_vec();
+
+    const TOKEN_ACCOUNT_DELEGATE_TAG_OFFSET: usize = 32 + 32 + 8;
+    data[TOKEN_ACCOUNT_DELEGATE_TAG_OFFSET + 1] = 2;
+    seed_token_owned_account(&mut svm, token, token_program_id(), data);
+
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), vec![10], metas, &payer, &[]),
+        "token account with malformed COption tag should not load as Account<TokenAccount>",
+    );
+}
+
+#[test]
+fn read_token_account_rejects_invalid_state() {
+    let (mut svm, payer) = setup();
+    let mint = Pubkey::new_unique();
+    let owner = keypair_for("token-invalid-state-owner");
+    let token = Pubkey::new_unique();
+    let mut data = pack_base_token_account(&mint, &owner.pubkey(), 0).to_vec();
+
+    const TOKEN_ACCOUNT_STATE_OFFSET: usize = 32 + 32 + 8 + 4 + 32;
+    data[TOKEN_ACCOUNT_STATE_OFFSET] = 3;
+    seed_token_owned_account(&mut svm, token, token_program_id(), data);
+
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    assert_invalid_account_data_error(
+        send_instruction(&mut svm, program_id(), vec![10], metas, &payer, &[]),
+        "token account with invalid state byte should not load as Account<TokenAccount>",
     );
 }
 
@@ -1454,6 +1532,17 @@ fn assert_incorrect_token_2022_program_error<T, E: std::fmt::Display>(
     assert!(
         error.contains("IncorrectProgramId") || error.contains("incorrect program id"),
         "{context}: expected IncorrectProgramId, got:\n{error}"
+    );
+}
+
+fn assert_illegal_owner_error<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) {
+    let Err(error) = result else {
+        panic!("{context}");
+    };
+    let error = error.to_string();
+    assert!(
+        error.contains("IllegalOwner") || error.contains("illegal owner"),
+        "{context}: expected IllegalOwner, got:\n{error}"
     );
 }
 
@@ -2217,21 +2306,52 @@ fn tlv_transfer_fee_config(
     newer_epoch: u64,
     newer_max: u64,
 ) -> Vec<u8> {
+    tlv_transfer_fee_config_full(
+        authority,
+        withdraw_authority,
+        0,
+        (0, 0, 0),
+        (newer_epoch, newer_max, newer_bps),
+    )
+}
+
+fn tlv_transfer_fee_config_full(
+    authority: &Pubkey,
+    withdraw_authority: &Pubkey,
+    withheld_amount: u64,
+    older: (u64, u64, u16),
+    newer: (u64, u64, u16),
+) -> Vec<u8> {
     let mut value = Vec::with_capacity(108);
     value.extend_from_slice(authority.as_ref());
     value.extend_from_slice(withdraw_authority.as_ref());
-    value.extend_from_slice(&0u64.to_le_bytes()); // withheld_amount
-                                                  // older_transfer_fee: zeroed
-    value.extend_from_slice(&[0u8; 8]); // epoch
-    value.extend_from_slice(&[0u8; 8]); // max_fee
-    value.extend_from_slice(&[0u8; 2]); // basis points
-                                        // newer_transfer_fee
-    value.extend_from_slice(&newer_epoch.to_le_bytes());
-    value.extend_from_slice(&newer_max.to_le_bytes());
-    value.extend_from_slice(&newer_bps.to_le_bytes());
+    value.extend_from_slice(&withheld_amount.to_le_bytes());
+    // older_transfer_fee
+    value.extend_from_slice(&older.0.to_le_bytes());
+    value.extend_from_slice(&older.1.to_le_bytes());
+    value.extend_from_slice(&older.2.to_le_bytes());
+    // newer_transfer_fee
+    value.extend_from_slice(&newer.0.to_le_bytes());
+    value.extend_from_slice(&newer.1.to_le_bytes());
+    value.extend_from_slice(&newer.2.to_le_bytes());
     let mut out = Vec::new();
     push_tlv(&mut out, 1, &value); // TransferFeeConfig
     out
+}
+
+fn append_transfer_fee_config_expectations(
+    data: &mut Vec<u8>,
+    withheld_amount: u64,
+    older: (u64, u64, u16),
+    newer: (u64, u64, u16),
+) {
+    data.extend_from_slice(&withheld_amount.to_le_bytes());
+    data.extend_from_slice(&older.0.to_le_bytes());
+    data.extend_from_slice(&older.1.to_le_bytes());
+    data.extend_from_slice(&older.2.to_le_bytes());
+    data.extend_from_slice(&newer.0.to_le_bytes());
+    data.extend_from_slice(&newer.1.to_le_bytes());
+    data.extend_from_slice(&newer.2.to_le_bytes());
 }
 
 fn tlv_metadata_pointer(authority: &Pubkey, metadata: &Pubkey) -> Vec<u8> {
@@ -2258,9 +2378,21 @@ fn tlv_mint_close_authority(authority: &Pubkey) -> Vec<u8> {
     out
 }
 
+fn tlv_mint_close_authority_none() -> Vec<u8> {
+    let mut out = Vec::new();
+    push_tlv(&mut out, 3, &[0u8; 32]); // MintCloseAuthority with no authority
+    out
+}
+
 fn tlv_permanent_delegate(delegate: &Pubkey) -> Vec<u8> {
     let mut out = Vec::new();
     push_tlv(&mut out, 12, delegate.as_ref()); // PermanentDelegate
+    out
+}
+
+fn tlv_permanent_delegate_none() -> Vec<u8> {
+    let mut out = Vec::new();
+    push_tlv(&mut out, 12, &[0u8; 32]); // PermanentDelegate with no delegate
     out
 }
 
@@ -2361,17 +2493,45 @@ fn transfer_fee_config_extension_round_trips() {
 
     // read_transfer_fee_config (discrim = 27), expected bps = 250 → pass.
     let mut data = vec![27];
-    data.extend_from_slice(&250u16.to_le_bytes());
+    append_transfer_fee_config_expectations(&mut data, 0, (0, 0, 0), (4, 1_000_000, 250));
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("TransferFeeConfig bps should match");
 
     // Wrong bps → reject.
     let mut data = vec![27];
-    data.extend_from_slice(&999u16.to_le_bytes());
+    append_transfer_fee_config_expectations(&mut data, 0, (0, 0, 0), (4, 1_000_000, 999));
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
     assert!(result.is_err(), "wrong bps should reject");
+}
+
+#[test]
+fn transfer_fee_config_extension_decodes_all_fee_fields() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("tfc-full-mint-auth");
+    let fee_authority = keypair_for("tfc-full-fee-auth");
+    let withdraw_authority = keypair_for("tfc-full-withdraw-auth");
+    let mint = Pubkey::new_unique();
+
+    let tlv = tlv_transfer_fee_config_full(
+        &fee_authority.pubkey(),
+        &withdraw_authority.pubkey(),
+        321,
+        (7, 9_999, 125),
+        (11, 88_888, 250),
+    );
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv),
+    );
+
+    let mut data = vec![27];
+    append_transfer_fee_config_expectations(&mut data, 321, (7, 9_999, 125), (11, 88_888, 250));
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("TransferFeeConfig accessors should decode withheld, older fee, and newer fee");
 }
 
 #[test]
@@ -2598,6 +2758,7 @@ fn mint_close_authority_extension_round_trips() {
     // read_mint_close_authority (discrim = 30) — exercises optional_address.
     let mut data = vec![30];
     data.extend_from_slice(&close_authority.pubkey().to_bytes());
+    data.push(0);
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("MintCloseAuthority close authority should match");
@@ -2620,6 +2781,7 @@ fn mint_close_authority_extension_rejects_wrong_authority() {
 
     let mut data = vec![30];
     data.extend_from_slice(&wrong_authority.pubkey().to_bytes());
+    data.push(0);
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
     assert!(result.is_err(), "wrong close authority should reject");
@@ -2640,12 +2802,38 @@ fn mint_close_authority_extension_rejects_when_missing() {
 
     let mut data = vec![30];
     data.extend_from_slice(&expected.pubkey().to_bytes());
+    data.push(0);
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
     assert!(
         result.is_err(),
         "missing close authority extension should reject"
     );
+}
+
+#[test]
+fn mint_close_authority_extension_accepts_unset_authority() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("mca-none-mint-auth");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_mint_close_authority_none(),
+        ),
+    );
+
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let mut data = vec![30];
+    data.extend_from_slice(&[0u8; 32]);
+    data.push(1);
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("MintCloseAuthority with an all-zero authority should decode as None");
 }
 
 #[test]
@@ -2665,6 +2853,7 @@ fn permanent_delegate_extension_round_trips() {
     // read_permanent_delegate (discrim = 31)
     let mut data = vec![31];
     data.extend_from_slice(&delegate.pubkey().to_bytes());
+    data.push(0);
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("PermanentDelegate delegate should match");
@@ -2687,6 +2876,7 @@ fn permanent_delegate_extension_rejects_wrong_delegate() {
 
     let mut data = vec![31];
     data.extend_from_slice(&wrong_delegate.pubkey().to_bytes());
+    data.push(0);
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
     assert!(result.is_err(), "wrong permanent delegate should reject");
@@ -2707,12 +2897,38 @@ fn permanent_delegate_extension_rejects_when_missing() {
 
     let mut data = vec![31];
     data.extend_from_slice(&expected.pubkey().to_bytes());
+    data.push(0);
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
     assert!(
         result.is_err(),
         "missing permanent delegate extension should reject"
     );
+}
+
+#[test]
+fn permanent_delegate_extension_accepts_unset_delegate() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("pd-none-mint-auth");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_permanent_delegate_none(),
+        ),
+    );
+
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    let mut data = vec![31];
+    data.extend_from_slice(&[0u8; 32]);
+    data.push(1);
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("PermanentDelegate with an all-zero delegate should decode as None");
 }
 
 #[test]
@@ -2784,6 +3000,69 @@ fn token_interface_extension_trait_reads_mint_and_token_account_extensions() {
     let metas = vec![AccountMeta::new_readonly(token, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("InterfaceAccount<TokenAccount>::get_extension should read TransferFeeAmount");
+}
+
+#[test]
+fn token_interface_mint_extension_trait_rejects_legacy_token_owner() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("trait-ext-legacy-mint-auth");
+    let fee_authority = keypair_for("trait-ext-legacy-fee-auth");
+    let withdraw_authority = keypair_for("trait-ext-legacy-withdraw-auth");
+    let mint = Pubkey::new_unique();
+
+    let tlv = tlv_transfer_fee_config(
+        &fee_authority.pubkey(),
+        &withdraw_authority.pubkey(),
+        250,
+        4,
+        1_000_000,
+    );
+    seed_token_owned_account(
+        &mut svm,
+        mint,
+        token_program_id(),
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &tlv),
+    );
+
+    let mut data = vec![55]; // read_transfer_fee_config_via_trait
+    data.extend_from_slice(&250u16.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    assert_illegal_owner_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "InterfaceAccount<Mint>::get_extension should reject legacy Token owners",
+    );
+}
+
+#[test]
+fn token_interface_token_extension_trait_rejects_legacy_token_owner() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("trait-ext-legacy-token-mint-auth");
+    let owner = keypair_for("trait-ext-legacy-token-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_owned_account(
+        &mut svm,
+        mint,
+        token_program_id(),
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+
+    let tlv = tlv_transfer_fee_amount(777);
+    seed_token_owned_account(
+        &mut svm,
+        token,
+        token_program_id(),
+        build_token_account_data(&mint, &owner.pubkey(), 0, &tlv),
+    );
+
+    let mut data = vec![56]; // read_transfer_fee_amount_via_trait
+    data.extend_from_slice(&777u64.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    assert_illegal_owner_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "InterfaceAccount<TokenAccount>::get_extension should reject legacy Token owners",
+    );
 }
 
 #[test]
@@ -2994,7 +3273,7 @@ fn missing_extension_returns_invalid_account_data() {
     );
 
     let mut data = vec![27]; // read_transfer_fee_config
-    data.extend_from_slice(&250u16.to_le_bytes());
+    append_transfer_fee_config_expectations(&mut data, 0, (0, 0, 0), (4, 1_000_000, 250));
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     let result = send_instruction(&mut svm, program_id(), data, metas, &payer, &[]);
     assert!(
@@ -3237,6 +3516,31 @@ fn cpi_guard_extension_round_trips() {
 }
 
 #[test]
+fn cpi_guard_extension_accepts_disabled_state() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("cg-disabled-mint-auth");
+    let owner = keypair_for("cg-disabled-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &tlv_cpi_guard(0)),
+    );
+
+    let data = vec![37, 0];
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("CpiGuard with a zero lock byte should decode as disabled");
+}
+
+#[test]
 fn pausable_config_extension_round_trips() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("pause-mint-auth");
@@ -3260,6 +3564,32 @@ fn pausable_config_extension_round_trips() {
     let metas = vec![AccountMeta::new_readonly(mint, false)];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("PausableConfig should parse and match");
+}
+
+#[test]
+fn pausable_config_extension_accepts_unpaused_state() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("pause-unpaused-mint-auth");
+    let pause_authority = keypair_for("pause-unpaused-authority");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_pausable_config(&pause_authority.pubkey(), 0),
+        ),
+    );
+
+    let mut data = vec![38];
+    data.extend_from_slice(&pause_authority.pubkey().to_bytes());
+    data.push(0);
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("PausableConfig with a zero paused byte should decode as unpaused");
 }
 
 #[test]
@@ -4155,6 +4485,114 @@ fn transfer_fee_initialize_helper_invokes_token_2022_program() {
     ];
     send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
         .expect("transfer fee initialize helper should invoke the canonical Token-2022 program");
+}
+
+#[test]
+fn create_native_mint_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    seed_token_owned_account(
+        &mut svm,
+        token_2022_native_mint_id(),
+        solana_sdk_ids::system_program::ID,
+        vec![],
+    );
+
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(token_2022_native_mint_id(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), vec![100], metas, &payer, &[]),
+        "create_native_mint helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn create_native_mint_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    seed_token_owned_account(
+        &mut svm,
+        token_2022_native_mint_id(),
+        solana_sdk_ids::system_program::ID,
+        vec![],
+    );
+
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(token_2022_native_mint_id(), false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![100], metas, &payer, &[])
+        .expect("create_native_mint helper should invoke the canonical Token-2022 program");
+}
+
+#[test]
+fn withdraw_excess_lamports_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let source = Pubkey::new_unique();
+    let destination = Pubkey::new_unique();
+    let authority = keypair_for("spy-withdraw-excess-reject-authority");
+
+    seed_token_owned_account(&mut svm, source, token_2022_program_id(), vec![]);
+    seed_token_owned_account(
+        &mut svm,
+        destination,
+        solana_sdk_ids::system_program::ID,
+        vec![],
+    );
+
+    let metas = vec![
+        AccountMeta::new(source, false),
+        AccountMeta::new(destination, false),
+        AccountMeta::new_readonly(authority.pubkey(), true),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(
+            &mut svm,
+            program_id(),
+            vec![101],
+            metas,
+            &payer,
+            &[&authority],
+        ),
+        "withdraw_excess_lamports helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn withdraw_excess_lamports_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let source = Pubkey::new_unique();
+    let destination = Pubkey::new_unique();
+    let authority = keypair_for("spy-withdraw-excess-ok-authority");
+
+    seed_token_owned_account(&mut svm, source, token_2022_program_id(), vec![]);
+    seed_token_owned_account(
+        &mut svm,
+        destination,
+        solana_sdk_ids::system_program::ID,
+        vec![],
+    );
+
+    let metas = vec![
+        AccountMeta::new(source, false),
+        AccountMeta::new(destination, false),
+        AccountMeta::new_readonly(authority.pubkey(), true),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![101],
+        metas,
+        &payer,
+        &[&authority],
+    )
+    .expect("withdraw_excess_lamports helper should invoke the canonical Token-2022 program");
 }
 
 #[test]

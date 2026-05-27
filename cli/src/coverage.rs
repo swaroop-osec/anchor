@@ -302,7 +302,9 @@ fn parse_function_starts(record: &LcovRecord) -> Result<BTreeMap<String, u32>> {
 
 #[derive(Debug, Clone)]
 struct FunctionRange {
+    signature_lines: BTreeSet<u32>,
     executable_body_lines: BTreeSet<u32>,
+    terminal_ok_lines: BTreeSet<u32>,
 }
 
 fn parse_function_ranges(
@@ -361,9 +363,13 @@ fn parse_function_range(
     let Some(body) = find_rust_function_body(source_path, source_lines, start)? else {
         return Ok(None);
     };
+    let signature_lines = signature_lines_for_body(source_path, source_lines, start, body)?;
     let executable_body_lines = executable_body_lines(source_lines, body)?;
+    let terminal_ok_lines = terminal_ok_lines(source_lines, body);
     Ok(Some(FunctionRange {
+        signature_lines,
         executable_body_lines,
+        terminal_ok_lines,
     }))
 }
 
@@ -492,6 +498,68 @@ fn executable_body_lines(source_lines: &[&str], body: FunctionBody) -> Result<BT
     }
 
     Ok(lines)
+}
+
+fn signature_lines_for_body(
+    source_path: &Path,
+    source_lines: &[&str],
+    start: u32,
+    body: FunctionBody,
+) -> Result<BTreeSet<u32>> {
+    let mut lines = BTreeSet::new();
+
+    for line_no in start..=body.start_line {
+        let line = source_lines[(line_no - 1) as usize];
+        if line_no == body.start_line {
+            let suffix = strip_line_comment(&line[body.start_col + 1..]).trim();
+            if !suffix.is_empty() {
+                continue;
+            }
+        }
+
+        let stripped = strip_line_comment(line).trim();
+        if stripped.is_empty() {
+            continue;
+        }
+        if line_no != start && looks_executable(stripped) {
+            bail!(
+                "{}:{line_no}: refusing to suppress executable-looking line in covered \
+                 function signature: {line:?}",
+                source_path.display()
+            );
+        }
+        lines.insert(line_no);
+    }
+
+    Ok(lines)
+}
+
+fn terminal_ok_lines(source_lines: &[&str], body: FunctionBody) -> BTreeSet<u32> {
+    let mut lines = BTreeSet::new();
+
+    for line_no in (body.start_line..=body.end_line).rev() {
+        let line = source_lines[(line_no - 1) as usize];
+        let start_idx = if line_no == body.start_line {
+            body.start_col + 1
+        } else {
+            0
+        };
+        let end_idx = if line_no == body.end_line {
+            body.end_col
+        } else {
+            line.len()
+        };
+        let stripped = strip_line_comment(&line[start_idx..end_idx]).trim();
+        if stripped.is_empty() || is_rust_delimiter_only(stripped) {
+            continue;
+        }
+        if matches!(stripped, "Ok(())" | "Ok(());") {
+            lines.insert(line_no);
+        }
+        break;
+    }
+
+    lines
 }
 
 fn infer_sbf_function_hits(
@@ -806,21 +874,29 @@ fn build_source_suppression(records: &[LcovRecord]) -> Result<BTreeMap<PathBuf, 
         if record.path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
             continue;
         }
+        if !should_parse_rust_source_artifacts(&record.path) {
+            continue;
+        }
 
-        let mut lines = delimiter_only_lines(&record.path)?;
         let hit_lines = record
             .da_counts
             .iter()
             .filter_map(|(line, count)| (*count > 0).then_some(*line))
             .collect::<BTreeSet<_>>();
+        let mut lines = delimiter_only_lines(&record.path)?;
         if !hit_lines.is_empty() {
-            lines.extend(signature_continuation_lines(&record.path, &hit_lines)?);
+            lines.extend(source_artifact_lines(&record.path, &hit_lines)?);
         }
         if !lines.is_empty() {
             suppress.insert(record.path.clone(), lines);
         }
     }
     Ok(suppress)
+}
+
+fn should_parse_rust_source_artifacts(path: &Path) -> bool {
+    let path = path.to_string_lossy();
+    !path.contains("/.cargo/") && !path.contains("/target/") && !path.contains("/rustc/")
 }
 
 fn delimiter_only_lines(source_path: &Path) -> Result<BTreeSet<u32>> {
@@ -838,10 +914,7 @@ fn delimiter_only_lines(source_path: &Path) -> Result<BTreeSet<u32>> {
         .collect())
 }
 
-fn signature_continuation_lines(
-    source_path: &Path,
-    hit_lines: &BTreeSet<u32>,
-) -> Result<BTreeSet<u32>> {
+fn source_artifact_lines(source_path: &Path, hit_lines: &BTreeSet<u32>) -> Result<BTreeSet<u32>> {
     let source = match fs::read_to_string(source_path) {
         Ok(source) => source,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
@@ -850,80 +923,80 @@ fn signature_continuation_lines(
     let source_lines = source.lines().collect::<Vec<_>>();
     let mut suppress = BTreeSet::new();
 
-    for &start in hit_lines {
-        let Some(start_text) = start
-            .checked_sub(1)
-            .and_then(|idx| source_lines.get(idx as usize))
-            .map(|line| line.trim())
-        else {
-            continue;
-        };
+    for (line_idx, line) in source_lines.iter().enumerate() {
+        let line_no = line_idx as u32 + 1;
+        let start_text = line.trim();
         if start_text.starts_with("//") || !looks_like_rust_fn_line(start_text) {
             continue;
         }
 
-        let mut paren_depth = 0i32;
-        let mut end = None;
-        let mut body_col = None;
-        let last = u32::min(source_lines.len() as u32, start + 40);
-        for line_no in start..=last {
-            let line = source_lines[(line_no - 1) as usize];
-            match scan_signature_line(line, paren_depth).with_context(|| {
-                format!(
-                    "{}:{line_no}: invalid Rust function signature",
-                    source_path.display()
-                )
-            })? {
-                SignatureScan::Continue(depth) => paren_depth = depth,
-                SignatureScan::Body { col, depth } => {
-                    end = Some(line_no);
-                    body_col = Some(col);
-                    paren_depth = depth;
-                    break;
-                }
-                SignatureScan::DeclarationEnd => {
-                    bail!(
-                        "{}:{start}: covered Rust fn line ended with `;` before a body",
-                        source_path.display()
-                    );
-                }
-            }
-        }
-
-        let Some(end) = end else {
-            bail!(
-                "{}:{start}: covered Rust fn line has no body brace within 40 lines",
-                source_path.display()
-            );
+        let Some(range) = parse_function_range(source_path, &source_lines, line_no)? else {
+            continue;
         };
-        if paren_depth != 0 {
-            bail!(
-                "{}:{end}: Rust function signature ended with nonzero paren depth {paren_depth}",
-                source_path.display()
-            );
+        if function_range_was_hit_by_sbf(&range, line_no, hit_lines) {
+            suppress.extend(range.signature_lines);
+            suppress.extend(range.terminal_ok_lines);
         }
-        if end == start {
+    }
+
+    suppress.extend(macro_continuation_lines(
+        source_path,
+        &source_lines,
+        hit_lines,
+    )?);
+
+    Ok(suppress)
+}
+
+fn function_range_was_hit_by_sbf(
+    range: &FunctionRange,
+    start_line: u32,
+    hit_lines: &BTreeSet<u32>,
+) -> bool {
+    hit_lines.contains(&start_line)
+        || range
+            .executable_body_lines
+            .iter()
+            .any(|line| hit_lines.contains(line))
+}
+
+fn macro_continuation_lines(
+    source_path: &Path,
+    source_lines: &[&str],
+    hit_lines: &BTreeSet<u32>,
+) -> Result<BTreeSet<u32>> {
+    let mut suppress = BTreeSet::new();
+
+    for &start in hit_lines {
+        let Some(line) = start
+            .checked_sub(1)
+            .and_then(|idx| source_lines.get(idx as usize))
+        else {
+            continue;
+        };
+        let Some((open_col, open, close)) = macro_open_delimiter(line) else {
+            continue;
+        };
+
+        let Some(end) =
+            find_matching_delimiter(source_path, source_lines, start, open_col, open, close)?
+        else {
+            continue;
+        };
+        if end <= start {
             continue;
         }
 
         for line_no in (start + 1)..=end {
             let line = source_lines[(line_no - 1) as usize];
-            if line_no == end {
-                let col = body_col.context("body line missing brace column")?;
-                let suffix = strip_line_comment(&line[col + 1..]).trim();
-                if !suffix.is_empty() {
-                    continue;
-                }
-            }
-
             let stripped = strip_line_comment(line).trim();
-            if stripped.is_empty() {
+            if stripped.is_empty() || is_rust_delimiter_only(stripped) {
                 continue;
             }
             if looks_executable(stripped) {
                 bail!(
                     "{}:{line_no}: refusing to suppress executable-looking line in covered \
-                     function signature: {line:?}",
+                     macro continuation: {line:?}",
                     source_path.display()
                 );
             }
@@ -932,6 +1005,64 @@ fn signature_continuation_lines(
     }
 
     Ok(suppress)
+}
+
+fn macro_open_delimiter(line: &str) -> Option<(usize, char, char)> {
+    let bang = line.find('!')?;
+    let before = line[..bang].chars().next_back()?;
+    if !(before.is_ascii_alphanumeric() || before == '_') {
+        return None;
+    }
+    let after_bang = &line[bang + 1..];
+    let mut chars = after_bang
+        .char_indices()
+        .skip_while(|(_, ch)| ch.is_whitespace());
+    let (offset, open) = chars.next()?;
+    if !matches!(open, '(' | '[' | '{') {
+        return None;
+    }
+    let close = match open {
+        '(' => ')',
+        '[' => ']',
+        '{' => '}',
+        _ => unreachable!(),
+    };
+    Some((bang + 1 + offset, open, close))
+}
+
+fn find_matching_delimiter(
+    source_path: &Path,
+    source_lines: &[&str],
+    start_line: u32,
+    start_col: usize,
+    open: char,
+    close: char,
+) -> Result<Option<u32>> {
+    let mut state = RustLexState::default();
+    let mut depth = 0i32;
+
+    for line_no in start_line..=(source_lines.len() as u32) {
+        let line = source_lines[(line_no - 1) as usize];
+        let start_idx = if line_no == start_line { start_col } else { 0 };
+        for (_, ch) in code_char_indices_after(line, start_idx, &mut state) {
+            if ch == open {
+                depth += 1;
+            } else if ch == close {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(Some(line_no));
+                }
+                if depth < 0 {
+                    bail!(
+                        "{}:{line_no}: macro delimiter depth went negative",
+                        source_path.display()
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 enum SignatureScan {
@@ -1055,8 +1186,8 @@ mod tests {
             "delimiter-only line is non-executable"
         );
         assert!(
-            filtered.contains("DA:7,0\n"),
-            "tail expression must not be guessed covered"
+            !filtered.contains("DA:7,0\n"),
+            "trivial terminal Ok tail is a source attribution artifact"
         );
         assert!(
             !filtered.contains("DA:8,0\n"),
@@ -1085,6 +1216,102 @@ mod tests {
         fs::write(
             &host,
             format!("SF:{}\nDA:2,0\nend_of_record\n", source.display()),
+        )
+        .unwrap();
+
+        let output = tmp.path().join("filtered.lcov");
+        let err = filter_host_lcov(&sbf, &host, &output).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("refusing to suppress executable-looking line"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn filter_host_lcov_suppresses_macro_continuation_lines_for_hit_macro() {
+        let tmp = tempdir().unwrap();
+        let source = tmp.path().join("lib.rs");
+        fs::write(
+            &source,
+            [
+                "pub fn check(data: &[u8]) -> Result<(), ProgramError> {",
+                "    require_eq!(",
+                "        data.len(),",
+                "        core::mem::size_of::<Self>(),",
+                "        ProgramError::InvalidAccountData",
+                "    );",
+                "    Ok(())",
+                "}",
+                "",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let sbf = tmp.path().join("sbf.lcov");
+        fs::write(
+            &sbf,
+            format!("SF:{}\nDA:2,5\nend_of_record\n", source.display()),
+        )
+        .unwrap();
+
+        let host = tmp.path().join("host.lcov");
+        fs::write(
+            &host,
+            format!(
+                "SF:{}\nDA:1,0\nDA:2,0\nDA:3,0\nDA:4,0\nDA:5,0\nDA:6,0\nDA:7,0\nDA:8,0\nend_of_record\n",
+                source.display()
+            ),
+        )
+        .unwrap();
+
+        let output = tmp.path().join("filtered.lcov");
+        filter_host_lcov(&sbf, &host, &output).unwrap();
+        let filtered = fs::read_to_string(output).unwrap();
+
+        assert!(
+            !filtered.contains("DA:3,0\n"),
+            "macro argument line is not an independent uncovered line"
+        );
+        assert!(
+            !filtered.contains("DA:4,0\n"),
+            "macro argument line is not an independent uncovered line"
+        );
+        assert!(
+            !filtered.contains("DA:5,0\n"),
+            "macro error argument line is not branch coverage"
+        );
+    }
+
+    #[test]
+    fn filter_host_lcov_fails_closed_on_executable_macro_continuation() {
+        let tmp = tempdir().unwrap();
+        let source = tmp.path().join("lib.rs");
+        fs::write(
+            &source,
+            [
+                "pub fn check() {",
+                "    some_macro!(",
+                "        if condition { value } else { other },",
+                "    );",
+                "}",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let sbf = tmp.path().join("sbf.lcov");
+        fs::write(
+            &sbf,
+            format!("SF:{}\nDA:2,1\nend_of_record\n", source.display()),
+        )
+        .unwrap();
+
+        let host = tmp.path().join("host.lcov");
+        fs::write(
+            &host,
+            format!("SF:{}\nDA:3,0\nend_of_record\n", source.display()),
         )
         .unwrap();
 
@@ -1159,6 +1386,10 @@ mod tests {
         assert!(
             filtered.contains("FNDA:1,_body_only\n"),
             "function should be marked hit when SBF hits the body but not the fn line"
+        );
+        assert!(
+            !filtered.contains("DA:9,0\n"),
+            "function declaration line should be removed when SBF hits the body"
         );
         assert!(
             filtered.contains("FNDA:0,_delimiter_only\n"),

@@ -667,7 +667,10 @@ pub mod accounts_test {
         for entry in ledger.iter_mut() {
             entry.amount += 1;
         }
-        ledger.get_mut(1).ok_or(ProgramError::InvalidAccountData)?.amount = 99;
+        ledger
+            .get_mut(1)
+            .ok_or(ProgramError::InvalidAccountData)?
+            .amount = 99;
         ledger[0].amount += 100;
         ledger[2].amount += 1_000;
         require_eq!(
@@ -711,7 +714,11 @@ pub mod accounts_test {
         ledger.resize_to_capacity(8)?;
         ledger.top_up(ctx.accounts.payer.as_ref())?;
         require_eq!(ledger.capacity(), 8, ProgramError::InvalidAccountData);
-        require_eq!(ledger.current_space(), LedgerAccount::space_for(8), ProgramError::InvalidAccountData);
+        require_eq!(
+            ledger.current_space(),
+            LedgerAccount::space_for(8),
+            ProgramError::InvalidAccountData
+        );
         require_eq!(ledger.len(), 4, ProgramError::InvalidAccountData);
 
         ledger.resize_to_capacity(2)?;

@@ -77,6 +77,9 @@ pub fn build_program(manifest_dir: &str, sbf_out_dir: &str) {
 
     once.call_once(|| {
         let mut cmd = std::process::Command::new("cargo");
+        if std::env::var_os("SBF_TRACE_DIR").is_some() {
+            cmd.env("CARGO_PROFILE_RELEASE_OPT_LEVEL", "1");
+        }
         cmd.args([
             "build-sbf",
             "--tools-version",

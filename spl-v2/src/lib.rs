@@ -28,7 +28,8 @@ mod token_shared;
 
 pub mod prelude {
     pub use crate::{
-        associated_token, mint, token, token_2022, token_2022_extensions, token_interface,
+        associated_token, mint, token, token::TokenCpiExt, token_2022, token_2022_extensions,
+        token_interface,
     };
 }
 

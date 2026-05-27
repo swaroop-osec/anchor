@@ -221,6 +221,44 @@ pub mod token_2022_spy {
         Ok(())
     }
 
+    #[discrim = 31]
+    pub fn create_native_mint(ctx: &mut Context<CreateNativeMint>) -> Result<()> {
+        require!(
+            ctx.accounts.payer.account().is_writable(),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            ctx.accounts.payer.account().is_signer(),
+            ProgramError::MissingRequiredSignature
+        );
+        require!(
+            ctx.accounts.native_mint.account().is_writable(),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            !ctx.accounts.system_program.account().is_writable(),
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
+    }
+
+    #[discrim = 38]
+    pub fn withdraw_excess_lamports(ctx: &mut Context<WithdrawExcessLamports>) -> Result<()> {
+        require!(
+            ctx.accounts.source.account().is_writable(),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            ctx.accounts.destination.account().is_writable(),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            ctx.accounts.authority.account().is_signer(),
+            ProgramError::MissingRequiredSignature
+        );
+        Ok(())
+    }
+
     #[discrim = 39]
     pub fn metadata_pointer_initialize(
         ctx: &mut Context<InitializeExtensionMint>,
@@ -415,4 +453,22 @@ pub struct MemoTransfer {
     #[account(mut)]
     pub account: UncheckedAccount,
     pub owner: Signer,
+}
+
+#[derive(Accounts)]
+pub struct CreateNativeMint {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(mut)]
+    pub native_mint: UncheckedAccount,
+    pub system_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawExcessLamports {
+    #[account(mut)]
+    pub source: UncheckedAccount,
+    #[account(mut)]
+    pub destination: UncheckedAccount,
+    pub authority: Signer,
 }

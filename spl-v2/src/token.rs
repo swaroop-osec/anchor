@@ -5,8 +5,8 @@
 
 use {
     anchor_lang_v2::{
-        accounts::{Account, SlabInit, SlabSchema},
-        require, require_eq, AccountConstraint, CpiContext, Id,
+        accounts::{Account, Program, SlabInit, SlabSchema},
+        require, require_eq, AccountConstraint, CpiContext, Id, ToCpiHandle, ToCpiHandleMut,
     },
     bytemuck::{Pod, Zeroable},
     pinocchio::account::AccountView,
@@ -346,6 +346,639 @@ pub fn set_authority<'a>(
         token_2022_authority_type(authority_type),
         new_authority.as_ref(),
     )
+}
+
+/// Ergonomic CPI helpers for the legacy Token program.
+///
+/// These methods are a thin layer over the existing account structs and free
+/// functions. They keep the same account ordering and validation path while
+/// letting callers avoid manually building `CpiContext` for simple Token CPIs.
+pub trait TokenCpiExt {
+    fn mint_to<'a, M, T, A>(
+        &'a self,
+        mint: &'a mut M,
+        to: &'a mut T,
+        authority: &'a A,
+        amount: u64,
+    ) -> Result<(), ProgramError>
+    where
+        M: ToCpiHandleMut + ?Sized,
+        T: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn transfer<'a, F, T, A>(
+        &'a self,
+        from: &'a mut F,
+        to: &'a mut T,
+        authority: &'a A,
+        amount: u64,
+    ) -> Result<(), ProgramError>
+    where
+        F: ToCpiHandleMut + ?Sized,
+        T: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn transfer_checked<'a, F, M, T, A>(
+        &'a self,
+        from: &'a mut F,
+        mint: &'a M,
+        to: &'a mut T,
+        authority: &'a A,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<(), ProgramError>
+    where
+        F: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        T: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn burn<'a, F, M, A>(
+        &'a self,
+        from: &'a mut F,
+        mint: &'a mut M,
+        authority: &'a A,
+        amount: u64,
+    ) -> Result<(), ProgramError>
+    where
+        F: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn approve<'a, S, D, A>(
+        &'a self,
+        source: &'a mut S,
+        delegate: &'a D,
+        authority: &'a A,
+        amount: u64,
+    ) -> Result<(), ProgramError>
+    where
+        S: ToCpiHandleMut + ?Sized,
+        D: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn revoke<'a, S, A>(&'a self, source: &'a mut S, authority: &'a A) -> Result<(), ProgramError>
+    where
+        S: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn close_account<'a, Acc, Dest, A>(
+        &'a self,
+        account: &'a mut Acc,
+        destination: &'a mut Dest,
+        authority: &'a A,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        Dest: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn mint_to_checked<'a, M, T, A>(
+        &'a self,
+        mint: &'a mut M,
+        to: &'a mut T,
+        authority: &'a A,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<(), ProgramError>
+    where
+        M: ToCpiHandleMut + ?Sized,
+        T: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn burn_checked<'a, F, M, A>(
+        &'a self,
+        from: &'a mut F,
+        mint: &'a mut M,
+        authority: &'a A,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<(), ProgramError>
+    where
+        F: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn approve_checked<'a, S, M, D, A>(
+        &'a self,
+        source: &'a mut S,
+        mint: &'a M,
+        delegate: &'a D,
+        authority: &'a A,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<(), ProgramError>
+    where
+        S: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        D: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn freeze_account<'a, Acc, M, A>(
+        &'a self,
+        account: &'a mut Acc,
+        mint: &'a M,
+        authority: &'a A,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn thaw_account<'a, Acc, M, A>(
+        &'a self,
+        account: &'a mut Acc,
+        mint: &'a M,
+        authority: &'a A,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn sync_native<'a, Acc>(&'a self, account: &'a mut Acc) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized;
+
+    fn initialize_mint<'a, M, R>(
+        &'a self,
+        mint: &'a mut M,
+        rent: &'a R,
+        decimals: u8,
+        authority: &Address,
+        freeze_authority: Option<&Address>,
+    ) -> Result<(), ProgramError>
+    where
+        M: ToCpiHandleMut + ?Sized,
+        R: ToCpiHandle + ?Sized;
+
+    fn initialize_mint2<'a, M>(
+        &'a self,
+        mint: &'a mut M,
+        decimals: u8,
+        authority: &Address,
+        freeze_authority: Option<&Address>,
+    ) -> Result<(), ProgramError>
+    where
+        M: ToCpiHandleMut + ?Sized;
+
+    fn initialize_account<'a, Acc, M, A, R>(
+        &'a self,
+        account: &'a mut Acc,
+        mint: &'a M,
+        authority: &'a A,
+        rent: &'a R,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized,
+        R: ToCpiHandle + ?Sized;
+
+    fn initialize_account3<'a, Acc, M, A>(
+        &'a self,
+        account: &'a mut Acc,
+        mint: &'a M,
+        authority: &'a A,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized;
+
+    fn set_authority<'a, Acc, A>(
+        &'a self,
+        account_or_mint: &'a mut Acc,
+        current_authority: &'a A,
+        authority_type: spl_token::instruction::AuthorityType,
+        new_authority: Option<Address>,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized;
+}
+
+impl TokenCpiExt for Program<Token> {
+    fn mint_to<'a, M, T, A>(
+        &'a self,
+        mint: &'a mut M,
+        to: &'a mut T,
+        authority: &'a A,
+        amount: u64,
+    ) -> Result<(), ProgramError>
+    where
+        M: ToCpiHandleMut + ?Sized,
+        T: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        mint_to(
+            CpiContext::new(
+                self.address(),
+                accounts::MintTo {
+                    mint: mint.try_to_cpi_handle_mut()?,
+                    to: to.try_to_cpi_handle_mut()?,
+                    authority: authority.to_cpi_handle(),
+                },
+            ),
+            amount,
+        )
+    }
+
+    fn transfer<'a, F, T, A>(
+        &'a self,
+        from: &'a mut F,
+        to: &'a mut T,
+        authority: &'a A,
+        amount: u64,
+    ) -> Result<(), ProgramError>
+    where
+        F: ToCpiHandleMut + ?Sized,
+        T: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        transfer(
+            CpiContext::new(
+                self.address(),
+                accounts::Transfer {
+                    from: from.try_to_cpi_handle_mut()?,
+                    to: to.try_to_cpi_handle_mut()?,
+                    authority: authority.to_cpi_handle(),
+                },
+            ),
+            amount,
+        )
+    }
+
+    fn transfer_checked<'a, F, M, T, A>(
+        &'a self,
+        from: &'a mut F,
+        mint: &'a M,
+        to: &'a mut T,
+        authority: &'a A,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<(), ProgramError>
+    where
+        F: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        T: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        transfer_checked(
+            CpiContext::new(
+                self.address(),
+                accounts::TransferChecked {
+                    from: from.try_to_cpi_handle_mut()?,
+                    mint: mint.to_cpi_handle(),
+                    to: to.try_to_cpi_handle_mut()?,
+                    authority: authority.to_cpi_handle(),
+                },
+            ),
+            amount,
+            decimals,
+        )
+    }
+
+    fn burn<'a, F, M, A>(
+        &'a self,
+        from: &'a mut F,
+        mint: &'a mut M,
+        authority: &'a A,
+        amount: u64,
+    ) -> Result<(), ProgramError>
+    where
+        F: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        burn(
+            CpiContext::new(
+                self.address(),
+                accounts::Burn {
+                    from: from.try_to_cpi_handle_mut()?,
+                    mint: mint.try_to_cpi_handle_mut()?,
+                    authority: authority.to_cpi_handle(),
+                },
+            ),
+            amount,
+        )
+    }
+
+    fn approve<'a, S, D, A>(
+        &'a self,
+        source: &'a mut S,
+        delegate: &'a D,
+        authority: &'a A,
+        amount: u64,
+    ) -> Result<(), ProgramError>
+    where
+        S: ToCpiHandleMut + ?Sized,
+        D: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        approve(
+            CpiContext::new(
+                self.address(),
+                accounts::Approve {
+                    to: source.try_to_cpi_handle_mut()?,
+                    delegate: delegate.to_cpi_handle(),
+                    authority: authority.to_cpi_handle(),
+                },
+            ),
+            amount,
+        )
+    }
+
+    fn revoke<'a, S, A>(&'a self, source: &'a mut S, authority: &'a A) -> Result<(), ProgramError>
+    where
+        S: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        revoke(CpiContext::new(
+            self.address(),
+            accounts::Revoke {
+                source: source.try_to_cpi_handle_mut()?,
+                authority: authority.to_cpi_handle(),
+            },
+        ))
+    }
+
+    fn close_account<'a, Acc, Dest, A>(
+        &'a self,
+        account: &'a mut Acc,
+        destination: &'a mut Dest,
+        authority: &'a A,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        Dest: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        close_account(CpiContext::new(
+            self.address(),
+            accounts::CloseAccount {
+                account: account.try_to_cpi_handle_mut()?,
+                destination: destination.try_to_cpi_handle_mut()?,
+                authority: authority.to_cpi_handle(),
+            },
+        ))
+    }
+
+    fn mint_to_checked<'a, M, T, A>(
+        &'a self,
+        mint: &'a mut M,
+        to: &'a mut T,
+        authority: &'a A,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<(), ProgramError>
+    where
+        M: ToCpiHandleMut + ?Sized,
+        T: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        mint_to_checked(
+            CpiContext::new(
+                self.address(),
+                accounts::MintToChecked {
+                    mint: mint.try_to_cpi_handle_mut()?,
+                    to: to.try_to_cpi_handle_mut()?,
+                    authority: authority.to_cpi_handle(),
+                },
+            ),
+            amount,
+            decimals,
+        )
+    }
+
+    fn burn_checked<'a, F, M, A>(
+        &'a self,
+        from: &'a mut F,
+        mint: &'a mut M,
+        authority: &'a A,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<(), ProgramError>
+    where
+        F: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        burn_checked(
+            CpiContext::new(
+                self.address(),
+                accounts::BurnChecked {
+                    from: from.try_to_cpi_handle_mut()?,
+                    mint: mint.try_to_cpi_handle_mut()?,
+                    authority: authority.to_cpi_handle(),
+                },
+            ),
+            amount,
+            decimals,
+        )
+    }
+
+    fn approve_checked<'a, S, M, D, A>(
+        &'a self,
+        source: &'a mut S,
+        mint: &'a M,
+        delegate: &'a D,
+        authority: &'a A,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<(), ProgramError>
+    where
+        S: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        D: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        approve_checked(
+            CpiContext::new(
+                self.address(),
+                accounts::ApproveChecked {
+                    to: source.try_to_cpi_handle_mut()?,
+                    mint: mint.to_cpi_handle(),
+                    delegate: delegate.to_cpi_handle(),
+                    authority: authority.to_cpi_handle(),
+                },
+            ),
+            amount,
+            decimals,
+        )
+    }
+
+    fn freeze_account<'a, Acc, M, A>(
+        &'a self,
+        account: &'a mut Acc,
+        mint: &'a M,
+        authority: &'a A,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        freeze_account(CpiContext::new(
+            self.address(),
+            accounts::FreezeAccount {
+                account: account.try_to_cpi_handle_mut()?,
+                mint: mint.to_cpi_handle(),
+                authority: authority.to_cpi_handle(),
+            },
+        ))
+    }
+
+    fn thaw_account<'a, Acc, M, A>(
+        &'a self,
+        account: &'a mut Acc,
+        mint: &'a M,
+        authority: &'a A,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        thaw_account(CpiContext::new(
+            self.address(),
+            accounts::ThawAccount {
+                account: account.try_to_cpi_handle_mut()?,
+                mint: mint.to_cpi_handle(),
+                authority: authority.to_cpi_handle(),
+            },
+        ))
+    }
+
+    fn sync_native<'a, Acc>(&'a self, account: &'a mut Acc) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+    {
+        sync_native(CpiContext::new(
+            self.address(),
+            accounts::SyncNative {
+                account: account.try_to_cpi_handle_mut()?,
+            },
+        ))
+    }
+
+    fn initialize_mint<'a, M, R>(
+        &'a self,
+        mint: &'a mut M,
+        rent: &'a R,
+        decimals: u8,
+        authority: &Address,
+        freeze_authority: Option<&Address>,
+    ) -> Result<(), ProgramError>
+    where
+        M: ToCpiHandleMut + ?Sized,
+        R: ToCpiHandle + ?Sized,
+    {
+        initialize_mint(
+            CpiContext::new(
+                self.address(),
+                accounts::InitializeMint {
+                    mint: mint.try_to_cpi_handle_mut()?,
+                    rent: rent.to_cpi_handle(),
+                },
+            ),
+            decimals,
+            authority,
+            freeze_authority,
+        )
+    }
+
+    fn initialize_mint2<'a, M>(
+        &'a self,
+        mint: &'a mut M,
+        decimals: u8,
+        authority: &Address,
+        freeze_authority: Option<&Address>,
+    ) -> Result<(), ProgramError>
+    where
+        M: ToCpiHandleMut + ?Sized,
+    {
+        initialize_mint2(
+            CpiContext::new(
+                self.address(),
+                accounts::InitializeMint2 {
+                    mint: mint.try_to_cpi_handle_mut()?,
+                },
+            ),
+            decimals,
+            authority,
+            freeze_authority,
+        )
+    }
+
+    fn initialize_account<'a, Acc, M, A, R>(
+        &'a self,
+        account: &'a mut Acc,
+        mint: &'a M,
+        authority: &'a A,
+        rent: &'a R,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized,
+        R: ToCpiHandle + ?Sized,
+    {
+        initialize_account(CpiContext::new(
+            self.address(),
+            accounts::InitializeAccount {
+                account: account.try_to_cpi_handle_mut()?,
+                mint: mint.to_cpi_handle(),
+                authority: authority.to_cpi_handle(),
+                rent: rent.to_cpi_handle(),
+            },
+        ))
+    }
+
+    fn initialize_account3<'a, Acc, M, A>(
+        &'a self,
+        account: &'a mut Acc,
+        mint: &'a M,
+        authority: &'a A,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        M: ToCpiHandle + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        initialize_account3(CpiContext::new(
+            self.address(),
+            accounts::InitializeAccount3 {
+                account: account.try_to_cpi_handle_mut()?,
+                mint: mint.to_cpi_handle(),
+                authority: authority.to_cpi_handle(),
+            },
+        ))
+    }
+
+    fn set_authority<'a, Acc, A>(
+        &'a self,
+        account_or_mint: &'a mut Acc,
+        current_authority: &'a A,
+        authority_type: spl_token::instruction::AuthorityType,
+        new_authority: Option<Address>,
+    ) -> Result<(), ProgramError>
+    where
+        Acc: ToCpiHandleMut + ?Sized,
+        A: ToCpiHandle + ?Sized,
+    {
+        set_authority(
+            CpiContext::new(
+                self.address(),
+                accounts::SetAuthority {
+                    account_or_mint: account_or_mint.try_to_cpi_handle_mut()?,
+                    current_authority: current_authority.to_cpi_handle(),
+                },
+            ),
+            authority_type,
+            new_authority,
+        )
+    }
 }
 
 #[cfg(test)]

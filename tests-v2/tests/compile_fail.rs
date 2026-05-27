@@ -564,7 +564,10 @@ fn declare_program_rejects_instruction_discriminator_prefix_overlap() {
     }
   ]
 }"#,
-        &["Ambiguous discriminators for instructions `long` and `short`"],
+        &[
+            "Ambiguous discriminators for instructions",
+            "`short` discriminator [1, 2] is a prefix of `long` discriminator [1, 2, 3]",
+        ],
     );
 }
 
@@ -587,7 +590,10 @@ fn declare_program_rejects_account_discriminator_prefix_overlap() {
     }
   ]
 }"#,
-        &["Ambiguous discriminators for accounts `LongAccount` and `ShortAccount`"],
+        &[
+            "Ambiguous discriminators for accounts",
+            "`ShortAccount` discriminator [7] is a prefix of `LongAccount` discriminator [7, 8]",
+        ],
     );
 }
 
@@ -610,7 +616,10 @@ fn declare_program_rejects_event_discriminator_prefix_overlap() {
     }
   ]
 }"#,
-        &["Ambiguous discriminators for events `LongEvent` and `ShortEvent`"],
+        &[
+            "Ambiguous discriminators for events",
+            "`ShortEvent` discriminator [9, 9] is a prefix of `LongEvent` discriminator [9, 9, 9]",
+        ],
     );
 }
 

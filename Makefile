@@ -27,6 +27,10 @@ coverage-v2: coverage-v2-sbf coverage-v2-host coverage-v2-merge coverage-v2-html
 # DWARF build env (RUSTC_WRAPPER + CARGO_PROFILE_RELEASE_DEBUG=2 — same as
 # `anchor debugger`), runs `cargo test` with register-tracing via
 # SBF_TRACE_DIR, then maps PCs to source via addr2line and emits LCOV.
+# tests-v2 sees SBF_TRACE_DIR and lowers fixture program optimization to
+# release opt-level=1. Full debug/no-opt SBF builds overflow VM stack limits for
+# larger fixtures; opt-level=1 keeps valid SBF objects while reducing optimizer
+# pressure for coverage/debug attribution.
 #
 # `--skip-build` because tests-v2 isn't a cdylib itself — the test harness
 # builds its programs per-manifest via `build_program()`, inheriting the

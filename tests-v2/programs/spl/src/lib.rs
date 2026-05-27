@@ -16,7 +16,7 @@ use {
             TransferHookAccount,
         },
         mint::{self, Mint},
-        token::{self, TokenAccount},
+        token::{self, TokenAccount, TokenCpiExt},
         token_2022 as token_2022_cpi, token_2022_extensions as token_2022_ext_cpi,
         token_interface::{self, TokenInterfaceAccountExtensions},
     },
@@ -45,26 +45,24 @@ pub mod spl_test {
     /// Mint `amount` tokens into `to`. Hits `token::mint_to`.
     #[discrim = 2]
     pub fn do_mint_to(ctx: &mut Context<DoMintTo>, amount: u64) -> Result<()> {
-        let accs = token::MintTo {
-            mint: ctx.accounts.mint.cpi_handle_mut(),
-            to: ctx.accounts.to.cpi_handle_mut(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::mint_to(cpi_ctx, amount)?;
+        ctx.accounts.token_program.mint_to(
+            &mut ctx.accounts.mint,
+            &mut ctx.accounts.to,
+            &ctx.accounts.authority,
+            amount,
+        )?;
         Ok(())
     }
 
     /// Transfer `amount` tokens from `from` to `to`. Hits `token::transfer`.
     #[discrim = 3]
     pub fn do_transfer(ctx: &mut Context<DoTransfer>, amount: u64) -> Result<()> {
-        let accs = token::Transfer {
-            from: ctx.accounts.from.cpi_handle_mut(),
-            to: ctx.accounts.to.cpi_handle_mut(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::transfer(cpi_ctx, amount)?;
+        ctx.accounts.token_program.transfer(
+            &mut ctx.accounts.from,
+            &mut ctx.accounts.to,
+            &ctx.accounts.authority,
+            amount,
+        )?;
         Ok(())
     }
 
@@ -76,27 +74,26 @@ pub mod spl_test {
         amount: u64,
         decimals: u8,
     ) -> Result<()> {
-        let accs = token::TransferChecked {
-            from: ctx.accounts.from.cpi_handle_mut(),
-            mint: ctx.accounts.mint.cpi_handle(),
-            to: ctx.accounts.to.cpi_handle_mut(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::transfer_checked(cpi_ctx, amount, decimals)?;
+        ctx.accounts.token_program.transfer_checked(
+            &mut ctx.accounts.from,
+            &ctx.accounts.mint,
+            &mut ctx.accounts.to,
+            &ctx.accounts.authority,
+            amount,
+            decimals,
+        )?;
         Ok(())
     }
 
     /// Burn `amount` tokens from `account`. Hits `token::burn`.
     #[discrim = 5]
     pub fn do_burn(ctx: &mut Context<DoBurn>, amount: u64) -> Result<()> {
-        let accs = token::Burn {
-            mint: ctx.accounts.mint.cpi_handle_mut(),
-            from: ctx.accounts.account.cpi_handle_mut(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::burn(cpi_ctx, amount)?;
+        ctx.accounts.token_program.burn(
+            &mut ctx.accounts.account,
+            &mut ctx.accounts.mint,
+            &ctx.accounts.authority,
+            amount,
+        )?;
         Ok(())
     }
 
@@ -104,25 +101,21 @@ pub mod spl_test {
     /// `token::approve`.
     #[discrim = 6]
     pub fn do_approve(ctx: &mut Context<DoApprove>, amount: u64) -> Result<()> {
-        let accs = token::Approve {
-            to: ctx.accounts.source.cpi_handle_mut(),
-            delegate: ctx.accounts.delegate.cpi_handle(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::approve(cpi_ctx, amount)?;
+        ctx.accounts.token_program.approve(
+            &mut ctx.accounts.source,
+            &ctx.accounts.delegate,
+            &ctx.accounts.authority,
+            amount,
+        )?;
         Ok(())
     }
 
     /// Revoke delegation. Hits `token::revoke`.
     #[discrim = 7]
     pub fn do_revoke(ctx: &mut Context<DoRevoke>) -> Result<()> {
-        let accs = token::Revoke {
-            source: ctx.accounts.source.cpi_handle_mut(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::revoke(cpi_ctx)?;
+        ctx.accounts
+            .token_program
+            .revoke(&mut ctx.accounts.source, &ctx.accounts.authority)?;
         Ok(())
     }
 
@@ -130,13 +123,11 @@ pub mod spl_test {
     /// `token::close_account`.
     #[discrim = 8]
     pub fn do_close_account(ctx: &mut Context<DoCloseAccount>) -> Result<()> {
-        let accs = token::CloseAccount {
-            account: ctx.accounts.account.cpi_handle_mut(),
-            destination: ctx.accounts.destination.cpi_handle_mut(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::close_account(cpi_ctx)?;
+        ctx.accounts.token_program.close_account(
+            &mut ctx.accounts.account,
+            &mut ctx.accounts.destination,
+            &ctx.accounts.authority,
+        )?;
 
         Ok(())
     }
@@ -148,13 +139,13 @@ pub mod spl_test {
         amount: u64,
         decimals: u8,
     ) -> Result<()> {
-        let accs = token::MintToChecked {
-            mint: ctx.accounts.mint.cpi_handle_mut(),
-            to: ctx.accounts.to.cpi_handle_mut(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::mint_to_checked(cpi_ctx, amount, decimals)?;
+        ctx.accounts.token_program.mint_to_checked(
+            &mut ctx.accounts.mint,
+            &mut ctx.accounts.to,
+            &ctx.accounts.authority,
+            amount,
+            decimals,
+        )?;
         Ok(())
     }
 
@@ -165,13 +156,13 @@ pub mod spl_test {
         amount: u64,
         decimals: u8,
     ) -> Result<()> {
-        let accs = token::BurnChecked {
-            from: ctx.accounts.account.cpi_handle_mut(),
-            mint: ctx.accounts.mint.cpi_handle_mut(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::burn_checked(cpi_ctx, amount, decimals)?;
+        ctx.accounts.token_program.burn_checked(
+            &mut ctx.accounts.account,
+            &mut ctx.accounts.mint,
+            &ctx.accounts.authority,
+            amount,
+            decimals,
+        )?;
         Ok(())
     }
 
@@ -182,14 +173,14 @@ pub mod spl_test {
         amount: u64,
         decimals: u8,
     ) -> Result<()> {
-        let accs = token::ApproveChecked {
-            to: ctx.accounts.source.cpi_handle_mut(),
-            mint: ctx.accounts.mint.cpi_handle(),
-            delegate: ctx.accounts.delegate.cpi_handle(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::approve_checked(cpi_ctx, amount, decimals)?;
+        ctx.accounts.token_program.approve_checked(
+            &mut ctx.accounts.source,
+            &ctx.accounts.mint,
+            &ctx.accounts.delegate,
+            &ctx.accounts.authority,
+            amount,
+            decimals,
+        )?;
         Ok(())
     }
 
@@ -197,36 +188,30 @@ pub mod spl_test {
     /// mint's freeze authority.
     #[discrim = 80]
     pub fn do_freeze_account(ctx: &mut Context<DoFreezeAccount>) -> Result<()> {
-        let accs = token::FreezeAccount {
-            account: ctx.accounts.account.cpi_handle_mut(),
-            mint: ctx.accounts.mint.cpi_handle(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::freeze_account(cpi_ctx)?;
+        ctx.accounts.token_program.freeze_account(
+            &mut ctx.accounts.account,
+            &ctx.accounts.mint,
+            &ctx.accounts.authority,
+        )?;
         Ok(())
     }
 
     #[discrim = 81]
     pub fn do_thaw_account(ctx: &mut Context<DoThawAccount>) -> Result<()> {
-        let accs = token::ThawAccount {
-            account: ctx.accounts.account.cpi_handle_mut(),
-            mint: ctx.accounts.mint.cpi_handle(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::thaw_account(cpi_ctx)?;
+        ctx.accounts.token_program.thaw_account(
+            &mut ctx.accounts.account,
+            &ctx.accounts.mint,
+            &ctx.accounts.authority,
+        )?;
         Ok(())
     }
 
     /// SyncNative updates a wrapped SOL account's token amount from lamports.
     #[discrim = 82]
     pub fn do_sync_native(ctx: &mut Context<DoSyncNative>) -> Result<()> {
-        let accs = token::SyncNative {
-            account: ctx.accounts.account.cpi_handle_mut(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::sync_native(cpi_ctx)?;
+        ctx.accounts
+            .token_program
+            .sync_native(&mut ctx.accounts.account)?;
         Ok(())
     }
 
@@ -239,12 +224,13 @@ pub mod spl_test {
         decimals: u8,
         authority: Address,
     ) -> Result<()> {
-        let accs = token::InitializeMint {
-            mint: ctx.accounts.mint.cpi_handle_mut(),
-            rent: ctx.accounts.rent.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::initialize_mint(cpi_ctx, decimals, &authority, None)?;
+        ctx.accounts.token_program.initialize_mint(
+            &mut ctx.accounts.mint,
+            &ctx.accounts.rent,
+            decimals,
+            &authority,
+            None,
+        )?;
         Ok(())
     }
 
@@ -254,36 +240,33 @@ pub mod spl_test {
         decimals: u8,
         authority: Address,
     ) -> Result<()> {
-        let accs = token::InitializeMint2 {
-            mint: ctx.accounts.mint.cpi_handle_mut(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::initialize_mint2(cpi_ctx, decimals, &authority, None)?;
+        ctx.accounts.token_program.initialize_mint2(
+            &mut ctx.accounts.mint,
+            decimals,
+            &authority,
+            None,
+        )?;
         Ok(())
     }
 
     #[discrim = 85]
     pub fn do_initialize_account(ctx: &mut Context<DoInitializeAccount>) -> Result<()> {
-        let accs = token::InitializeAccount {
-            account: ctx.accounts.account.cpi_handle_mut(),
-            mint: ctx.accounts.mint.cpi_handle(),
-            authority: ctx.accounts.authority.cpi_handle(),
-            rent: ctx.accounts.rent.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::initialize_account(cpi_ctx)?;
+        ctx.accounts.token_program.initialize_account(
+            &mut ctx.accounts.account,
+            &ctx.accounts.mint,
+            &ctx.accounts.authority,
+            &ctx.accounts.rent,
+        )?;
         Ok(())
     }
 
     #[discrim = 86]
     pub fn do_initialize_account3(ctx: &mut Context<DoInitializeAccount3>) -> Result<()> {
-        let accs = token::InitializeAccount3 {
-            account: ctx.accounts.account.cpi_handle_mut(),
-            mint: ctx.accounts.mint.cpi_handle(),
-            authority: ctx.accounts.authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::initialize_account3(cpi_ctx)?;
+        ctx.accounts.token_program.initialize_account3(
+            &mut ctx.accounts.account,
+            &ctx.accounts.mint,
+            &ctx.accounts.authority,
+        )?;
         Ok(())
     }
 
@@ -293,13 +276,9 @@ pub mod spl_test {
         ctx: &mut Context<DoSetAuthority>,
         new_authority: Address,
     ) -> Result<()> {
-        let accs = token::SetAuthority {
-            account_or_mint: ctx.accounts.account_or_mint.cpi_handle_mut(),
-            current_authority: ctx.accounts.current_authority.cpi_handle(),
-        };
-        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
-        token::set_authority(
-            cpi_ctx,
+        ctx.accounts.token_program.set_authority(
+            &mut ctx.accounts.account_or_mint,
+            &ctx.accounts.current_authority,
             token::spl_token::instruction::AuthorityType::CloseAccount,
             Some(new_authority),
         )?;
@@ -582,10 +561,23 @@ pub mod spl_test {
     #[discrim = 27]
     pub fn read_transfer_fee_config(
         ctx: &mut Context<ReadTransferFeeConfig>,
-        expected_bps: u16,
+        expected_withheld: u64,
+        expected_older_epoch: u64,
+        expected_older_max_fee: u64,
+        expected_older_bps: u16,
+        expected_newer_epoch: u64,
+        expected_newer_max_fee: u64,
+        expected_newer_bps: u16,
     ) -> Result<()> {
         let ext: &TransferFeeConfig = ctx.accounts.mint.get_extension()?;
-        if ext.newer_transfer_fee.basis_points() != expected_bps {
+        if ext.withheld_amount() != expected_withheld
+            || ext.older_transfer_fee.epoch() != expected_older_epoch
+            || ext.older_transfer_fee.maximum_fee() != expected_older_max_fee
+            || ext.older_transfer_fee.basis_points() != expected_older_bps
+            || ext.newer_transfer_fee.epoch() != expected_newer_epoch
+            || ext.newer_transfer_fee.maximum_fee() != expected_newer_max_fee
+            || ext.newer_transfer_fee.basis_points() != expected_newer_bps
+        {
             return Err(ProgramError::InvalidAccountData.into());
         }
         Ok(())
@@ -639,10 +631,13 @@ pub mod spl_test {
     pub fn read_mint_close_authority(
         ctx: &mut Context<ReadMintCloseAuthority>,
         expected_authority: Address,
+        expect_none: u8,
     ) -> Result<()> {
         let ext: &MintCloseAuthority = ctx.accounts.mint.get_extension()?;
-        match extensions::optional_address(&ext.close_authority) {
-            Some(addr) if *addr == expected_authority => Ok(()),
+        let authority = extensions::optional_address(&ext.close_authority);
+        match (expect_none != 0, authority) {
+            (true, None) => Ok(()),
+            (false, Some(addr)) if *addr == expected_authority => Ok(()),
             _ => Err(ProgramError::InvalidAccountData.into()),
         }
     }
@@ -652,10 +647,13 @@ pub mod spl_test {
     pub fn read_permanent_delegate(
         ctx: &mut Context<ReadPermanentDelegate>,
         expected_delegate: Address,
+        expect_none: u8,
     ) -> Result<()> {
         let ext: &PermanentDelegate = ctx.accounts.mint.get_extension()?;
-        match extensions::optional_address(&ext.delegate) {
-            Some(addr) if *addr == expected_delegate => Ok(()),
+        let delegate = extensions::optional_address(&ext.delegate);
+        match (expect_none != 0, delegate) {
+            (true, None) => Ok(()),
+            (false, Some(addr)) if *addr == expected_delegate => Ok(()),
             _ => Err(ProgramError::InvalidAccountData.into()),
         }
     }
@@ -1167,6 +1165,34 @@ pub mod spl_test {
         Ok(())
     }
 
+    /// Invoke Token-2022 native mint creation against the spy program.
+    #[discrim = 100]
+    pub fn spy_create_native_mint(ctx: &mut Context<SpyCreateNativeMint>) -> Result<()> {
+        let accs = token_2022_cpi::CreateNativeMint {
+            payer: ctx.accounts.payer.cpi_handle_mut(),
+            native_mint: ctx.accounts.native_mint.cpi_handle_mut(),
+            system_program: ctx.accounts.system_program.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_cpi::create_native_mint(cpi_ctx)?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 excess lamport withdrawal against the spy program.
+    #[discrim = 101]
+    pub fn spy_withdraw_excess_lamports(
+        ctx: &mut Context<SpyWithdrawExcessLamports>,
+    ) -> Result<()> {
+        let accs = token_2022_cpi::WithdrawExcessLamports {
+            source: ctx.accounts.source.cpi_handle_mut(),
+            destination: ctx.accounts.destination.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_cpi::withdraw_excess_lamports(cpi_ctx)?;
+        Ok(())
+    }
+
     /// Invoke Token Metadata remove_key against the spy program.
     #[discrim = 47]
     pub fn spy_token_metadata_remove_key(
@@ -1653,7 +1679,15 @@ pub struct CheckInterfaceMintTokenProgram {
 // `ReadTokenAccountExtension` with divergent args get their own struct.
 
 #[derive(Accounts)]
-#[instruction(expected_bps: u16)]
+#[instruction(
+    expected_withheld: u64,
+    expected_older_epoch: u64,
+    expected_older_max_fee: u64,
+    expected_older_bps: u16,
+    expected_newer_epoch: u64,
+    expected_newer_max_fee: u64,
+    expected_newer_bps: u16
+)]
 pub struct ReadTransferFeeConfig {
     pub mint: InterfaceAccount<token_interface::Mint>,
 }
@@ -1677,13 +1711,13 @@ pub struct ReadTransferHook {
 }
 
 #[derive(Accounts)]
-#[instruction(expected_authority: Address)]
+#[instruction(expected_authority: Address, expect_none: u8)]
 pub struct ReadMintCloseAuthority {
     pub mint: InterfaceAccount<token_interface::Mint>,
 }
 
 #[derive(Accounts)]
-#[instruction(expected_delegate: Address)]
+#[instruction(expected_delegate: Address, expect_none: u8)]
 pub struct ReadPermanentDelegate {
     pub mint: InterfaceAccount<token_interface::Mint>,
 }
@@ -1872,6 +1906,26 @@ pub struct SpyPausableInitialize {
 pub struct SpyTransferFeeInitialize {
     #[account(mut)]
     pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyCreateNativeMint {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(mut)]
+    pub native_mint: UncheckedAccount,
+    pub system_program: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyWithdrawExcessLamports {
+    #[account(mut)]
+    pub source: UncheckedAccount,
+    #[account(mut)]
+    pub destination: UncheckedAccount,
+    pub authority: Signer,
     pub token_program: UncheckedAccount,
 }
 

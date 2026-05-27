@@ -2563,13 +2563,25 @@ fn validate_discriminator_prefixes(
                 return Err(syn::Error::new(
                     span,
                     format!(
-                        "Ambiguous discriminators for {section} `{outer_name}` and `{inner_name}`"
+                        "Ambiguous discriminators for {section}: `{inner_name}` discriminator {} \
+                         is a prefix of `{outer_name}` discriminator {}",
+                        format_discriminator_bytes(inner_disc),
+                        format_discriminator_bytes(outer_disc),
                     ),
                 ));
             }
         }
     }
     Ok(())
+}
+
+fn format_discriminator_bytes(discriminator: &[u8]) -> String {
+    let bytes = discriminator
+        .iter()
+        .map(u8::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{bytes}]")
 }
 
 struct DeclareAccountField {
