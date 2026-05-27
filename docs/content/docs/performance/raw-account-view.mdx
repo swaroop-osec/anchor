@@ -103,7 +103,7 @@ pub fn process_instruction(
     // code must verify the count before any unchecked indexing or it
     // hits UB on a malformed account list.
     if accounts.len() < 2 {
-        return Err(pinocchio::program_error::ProgramError::NotEnoughAccountKeys);
+        return Err(anchor_lang_v2::Error::NotEnoughAccountKeys);
     }
     let payer = unsafe { accounts.get_unchecked(0) };
     let counter = unsafe { accounts.get_unchecked(1) };
@@ -196,8 +196,8 @@ This keeps Anchor's entry-time validation (still enforced by
 `#[derive(Accounts)]`) and gives up only the typed-write cost: the
 inner `borrow_unchecked_mut` + `copy_from_slice` is raw byte work,
 not `AccountView`'s typed accessors. You owe field-offset accuracy
-and aliasing discipline in exchange for skipping `Slab`'s Deref path
-and exit-time write-back.
+and aliasing discipline in exchange for skipping `Slab`'s `Deref` /
+`DerefMut` path.
 
 ## See also
 
