@@ -360,22 +360,15 @@ fn slab_resize_to_capacity_clamps_len() {
     let slab = unsafe { CounterLedger::load_mut(view, &program_id) }.unwrap();
     assert_eq!(slab.len(), 3);
 
-    // Note: resize_to_capacity requires the `account-resize` feature.
-    // Without it, the function is not compiled. If the feature is on,
-    // shrink to capacity 1 — len should clamp to 1.
-    //
     // This is a smoke test for the defensive pattern. It also documents
     // that `resize_to_capacity` is the *safe* alternative to bare
     // `realloc_account` when a Slab is in scope.
     //
     // (Test body intentionally minimal — the positive path is
     // well-exercised by integration tests elsewhere.)
-    #[cfg(feature = "account-resize")]
-    {
-        // Would need AccountView::resize_unchecked backing in the mock.
-        // Full witness deferred — the negative paths above are the
-        // demonstrated-bug contribution.
-    }
+    // Would need AccountView::resize_unchecked backing in the mock.
+    // Full witness deferred — the negative paths above are the
+    // demonstrated-bug contribution.
     drop(slab);
 }
 

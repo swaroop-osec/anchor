@@ -259,7 +259,6 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
 /// The derive emits a call to this trait instead of deciding realloc safety
 /// from syntactic type names. That lets rustc resolve aliases and wrapper
 /// forwards normally: unsupported wrappers simply do not implement the trait.
-#[cfg(feature = "account-resize")]
 pub trait AccountRealloc: AnchorAccount {
     fn realloc_account(
         &mut self,

@@ -519,10 +519,8 @@ fn create_prefunded(
 
 /// Realloc an account to a new size, adjusting rent as needed.
 ///
-/// Requires `account-resize` feature (default-on). Without it the
-/// `original_data_len` tracking in `RuntimeAccount.padding` is absent,
-/// so `AccountView::resize()` would corrupt data — hence the compile gate.
-#[cfg(feature = "account-resize")]
+/// Requires Pinocchio's account-resize entrypoint hook so
+/// `original_data_len` tracking is available in `RuntimeAccount.padding`.
 pub fn realloc_account(
     account: &mut AccountView,
     new_space: usize,
@@ -680,7 +678,7 @@ mod kani_proofs_pda {
 // so their encoding lives outside anchor-v2 and isn't verified here.
 // ---------------------------------------------------------------------------
 
-#[cfg(all(kani, feature = "account-resize"))]
+#[cfg(kani)]
 mod kani_proofs_cpi_wire {
     use super::{encode_system_transfer, SYSTEM_TRANSFER_VARIANT};
 

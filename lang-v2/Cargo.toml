@@ -6,7 +6,7 @@ description = "Anchor v2: trait-based account system for Solana (no_std)"
 license = "Apache-2.0"
 
 [features]
-default = ["alloc", "guardrails", "account-resize"]
+default = ["alloc", "guardrails"]
 alloc = ["pinocchio/alloc"]
 # Opt-in v1-compat shims for users porting anchor-lang code. Currently
 # exposes v1-style shims such as `debug!`, `error!`, `err!`, and `pubkey!`.
@@ -18,16 +18,6 @@ compat = ["dep:solana-program-log", "solana-address/decode"]
 # diagnostic panics for misuse — see lib.rs / Account<T> docs.
 # Disable via `default-features = false` plus re-adding the features you want.
 guardrails = []
-# Enables `realloc_account` + the pinocchio `account-resize` entrypoint hook
-# that writes `data_len` into `RuntimeAccount.padding` on every non-duplicate
-# account so `AccountView::resize()` can enforce `MAX_PERMITTED_DATA_INCREASE`.
-# Default-on so existing programs don't silently lose realloc support, but
-# programs that never call `realloc_account` can drop it via
-# `default-features = false` for ~300 bytes and ~2 CU per account saved.
-# Compile-time gated (rather than a runtime error) because disabling the
-# pinocchio hook without also removing `realloc_account` would silently
-# corrupt the stored `original_data_len`.
-account-resize = ["pinocchio/account-resize"]
 # Fold `rent_exempt_lamports` to a compile-time constant using pinocchio's
 # baked-in `DEFAULT_LAMPORTS_PER_BYTE` + `ACCOUNT_STORAGE_OVERHEAD`. Default-off
 # because it burns the rent formula into the binary — if the runtime formula
@@ -49,7 +39,8 @@ testing = ["const-rent", "compat"]
 [dependencies]
 anchor-derive-accounts-v2 = { path = "./derive", version = "2.0.0" }
 # "copy" makes AccountView Copy — saves 2 CU per account (avoids memcpy on access).
-pinocchio = { workspace = true, features = ["copy"] }
+# "account-resize" lets AccountView::resize enforce MAX_PERMITTED_DATA_INCREASE.
+pinocchio = { workspace = true, features = ["copy", "account-resize"] }
 pinocchio-system = "0.6"
 solana-address = { version = "2.0", features = ["bytemuck", "syscalls", "curve25519", "wincode"] }
 solana-instruction = { version = "3", default-features = false }

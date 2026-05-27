@@ -64,7 +64,6 @@ impl<T: crate::ToCpiHandleMut + ?Sized> crate::ToCpiHandleMut for Box<T> {
     }
 }
 
-#[cfg(feature = "account-resize")]
 impl<T: crate::AccountRealloc> crate::AccountRealloc for Box<T> {
     #[inline(always)]
     fn realloc_account(

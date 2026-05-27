@@ -149,13 +149,8 @@ impl AccountCursor {
         let view = if self.consumed == 0 || borrow_state == NON_DUP_MARKER {
             // Non-dup: write data_len into the padding slot so
             // `AccountView::resize()` can enforce
-            // MAX_PERMITTED_DATA_INCREASE later without another
-            // syscall. Gated behind `account-resize` to keep the
-            // feature-free build identical to pinocchio's.
-            #[cfg(feature = "account-resize")]
-            {
-                (*account).padding = u32::to_le_bytes((*account).data_len as u32);
-            }
+            // MAX_PERMITTED_DATA_INCREASE later without another syscall.
+            (*account).padding = u32::to_le_bytes((*account).data_len as u32);
             let data_len = (*account).data_len as usize;
             self.ptr = self.ptr.add(STATIC_ACCOUNT_DATA);
             self.ptr = self.ptr.add(data_len);

@@ -27,7 +27,6 @@ pub mod testing;
 mod traits;
 
 // Re-export derive macros and bytemuck for generated code
-#[cfg(feature = "account-resize")]
 pub use cpi::realloc_account;
 /// Chunked 4×u64 equality compare for `Address`. Preferred over `==`
 /// on `&Address`. See <https://github.com/anza-xyz/solana-sdk/issues/345>.

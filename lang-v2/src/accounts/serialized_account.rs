@@ -328,7 +328,6 @@ where
     }
 }
 
-#[cfg(feature = "account-resize")]
 impl<T, S> crate::AccountRealloc for SerializedAccount<T, S>
 where
     T: Owner + Discriminator,

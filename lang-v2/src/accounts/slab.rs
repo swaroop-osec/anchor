@@ -629,7 +629,6 @@ where
     /// touching lamports. Compose with `top_up` / `refund` afterward to
     /// settle rent. Re-derives `header_ptr` after the resize; `guard_bytes*`
     /// pick up the new size from `view.data_len()` automatically.
-    #[cfg(feature = "account-resize")]
     pub fn resize_to_capacity(&mut self, new_capacity: u32) -> Result<(), ProgramError> {
         use pinocchio::Resize;
 
@@ -759,7 +758,6 @@ where
     }
 }
 
-#[cfg(feature = "account-resize")]
 impl<H, T> crate::AccountRealloc for Slab<H, T>
 where
     H: Pod + Zeroable + SlabSchema,
