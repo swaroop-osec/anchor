@@ -16,14 +16,12 @@ const MAX_SAFE_SPACE: u64 = (u64::MAX / DEFAULT_LAMPORTS_PER_BYTE) - ACCOUNT_STO
 
 /// System program `Transfer` instruction discriminant (variant index).
 /// Encoded as `u32 LE` in the first 4 bytes of the instruction data.
-#[cfg(feature = "account-resize")]
 const SYSTEM_TRANSFER_VARIANT: u8 = 2;
 
 // Pin the protocol-mandated discriminant at compile time. Without this,
 // the wire-format Kani harness below would still pass if someone edited
 // `SYSTEM_TRANSFER_VARIANT` (both sides of its byte-equality reference
 // the same constant).
-#[cfg(feature = "account-resize")]
 const _: () = assert!(SYSTEM_TRANSFER_VARIANT == 2);
 
 /// Encode a System program `Transfer` instruction body.
@@ -32,13 +30,42 @@ const _: () = assert!(SYSTEM_TRANSFER_VARIANT == 2);
 /// the real encoder byte-for-byte against the documented wire format. The
 /// encoding is otherwise only reachable through `realloc_account`'s unsafe
 /// CPI path, which Kani cannot model (the CPI syscall is opaque to CBMC).
-#[cfg(feature = "account-resize")]
 #[inline]
 fn encode_system_transfer(lamports: u64) -> [u8; 12] {
     let mut data = [0u8; 12];
     data[0] = SYSTEM_TRANSFER_VARIANT;
     data[4..12].copy_from_slice(&lamports.to_le_bytes());
     data
+}
+
+/// Transfer lamports via the System program without consulting Pinocchio's
+/// account borrow flags.
+///
+/// Safe for rent top-ups where only lamports change: the CPI writes fixed
+/// account header fields, not the borrowed account data region.
+#[inline]
+pub(crate) fn transfer_lamports_unchecked(
+    from: &AccountView,
+    to: &AccountView,
+    lamports: u64,
+) -> Result<(), ProgramError> {
+    let ix_data = encode_system_transfer(lamports);
+    unsafe {
+        let cpi_accounts: [pinocchio::cpi::CpiAccount; 2] = [
+            pinocchio::cpi::CpiAccount::from(from),
+            pinocchio::cpi::CpiAccount::from(to),
+        ];
+        let instruction = pinocchio::instruction::InstructionView {
+            program_id: &pinocchio_system::ID,
+            accounts: &[
+                pinocchio::instruction::InstructionAccount::writable_signer(from.address()),
+                pinocchio::instruction::InstructionAccount::writable(to.address()),
+            ],
+            data: &ix_data,
+        };
+        pinocchio::cpi::invoke_unchecked(&instruction, &cpi_accounts);
+    }
+    Ok(())
 }
 
 /// Compute the rent-exempt minimum balance for an account of `space` bytes.
@@ -511,29 +538,7 @@ pub fn realloc_account(
     if new_space > old_space {
         let deficit = required.saturating_sub(current_lamports);
         if deficit > 0 {
-            // SAFETY: Transfer writes lamports only (via raw pointer, not
-            // through the borrow system). BorshAccount's RefMut guards data
-            // bytes — disjoint region, no aliasing. The unchecked path
-            // bypasses pinocchio's borrow-flag check which would otherwise
-            // reject the CPI while the RefMut is held.
-            let ix_data = encode_system_transfer(deficit);
-            unsafe {
-                let cpi_accounts: [pinocchio::cpi::CpiAccount; 2] = [
-                    pinocchio::cpi::CpiAccount::from(payer),
-                    pinocchio::cpi::CpiAccount::from(&*account as &AccountView),
-                ];
-                let instruction = pinocchio::instruction::InstructionView {
-                    program_id: &pinocchio_system::ID,
-                    accounts: &[
-                        pinocchio::instruction::InstructionAccount::writable_signer(
-                            payer.address(),
-                        ),
-                        pinocchio::instruction::InstructionAccount::writable(account.address()),
-                    ],
-                    data: &ix_data,
-                };
-                pinocchio::cpi::invoke_unchecked(&instruction, &cpi_accounts);
-            }
+            transfer_lamports_unchecked(payer, &*account as &AccountView, deficit)?;
         }
     } else if new_space < old_space {
         let excess = current_lamports.saturating_sub(required);

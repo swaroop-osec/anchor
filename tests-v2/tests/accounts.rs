@@ -56,6 +56,10 @@ fn borsh_counter_pda() -> Pubkey {
     Pubkey::find_program_address(&[b"borsh-counter"], &program_id()).0
 }
 
+fn ledger_pda() -> Pubkey {
+    Pubkey::find_program_address(&[b"ledger"], &program_id()).0
+}
+
 fn foreign_borsh_owner() -> Pubkey {
     "Gue5TpR6sstSyGhSvmVeH2TeKqBYYqmXpRCacB9jAk8u"
         .parse()
@@ -69,6 +73,13 @@ fn foreign_borsh_counter_disc() -> [u8; 8] {
 const SYSTEM_SEED: &str = "anchor-v2-seed";
 const SYSTEM_TRANSFER_SEED: &str = "anchor-v2-transfer";
 const NONCE_ACCOUNT_LENGTH: usize = 80;
+const LEDGER_LEN_OFFSET: usize = 24;
+const LEDGER_ITEMS_OFFSET: usize = 32;
+const LEDGER_ENTRY_SIZE: usize = 8;
+
+fn ledger_space(capacity: usize) -> usize {
+    LEDGER_ITEMS_OFFSET + capacity * LEDGER_ENTRY_SIZE
+}
 
 fn setup() -> (LiteSVM, Keypair) {
     let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -244,6 +255,85 @@ fn initialize_later_seed_rejects_wrong_pda() {
         result.is_err(),
         "init should reject PDA derived from the wrong seeds"
     );
+}
+
+#[test]
+fn top_up_counter_works_while_slab_borrow_is_held() {
+    let (mut svm, payer) = setup();
+    let counter = do_initialize(&mut svm, &payer);
+
+    let mut account = svm.get_account(&counter).expect("counter exists");
+    let rent_floor = svm.minimum_balance_for_rent_exemption(account.data.len());
+    assert!(
+        rent_floor > 0,
+        "counter account should have a non-zero rent floor"
+    );
+    account.lamports = rent_floor - 1;
+    svm.set_account(counter, account).unwrap();
+
+    let metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(counter, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    call_raw(&mut svm, &payer, 34, metas).expect("top_up should cover the rent shortfall");
+
+    let account = svm.get_account(&counter).expect("counter still exists");
+    assert_eq!(account.lamports, rent_floor);
+}
+
+#[test]
+fn dynamic_slab_methods_work_in_program_execution() {
+    let (mut svm, payer) = setup();
+    let ledger = ledger_pda();
+    let init_metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(ledger, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+
+    call_raw(&mut svm, &payer, 35, init_metas).expect("initialize_ledger should succeed");
+
+    let initialized = svm.get_account(&ledger).expect("ledger exists after init");
+    assert_eq!(initialized.data.len(), ledger_space(4));
+
+    let exercise_metas = vec![
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new(ledger, false),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+    ];
+    call_raw(&mut svm, &payer, 36, exercise_metas).expect("slab methods should work in-program");
+
+    let account = svm.get_account(&ledger).expect("ledger still exists");
+    assert_eq!(account.data.len(), ledger_space(2));
+    assert_eq!(
+        account.lamports,
+        svm.minimum_balance_for_rent_exemption(ledger_space(2)),
+        "refund should return the shrunken slab to the rent floor"
+    );
+
+    let checksum = u64::from_le_bytes(account.data[8..16].try_into().unwrap());
+    let last_space = u64::from_le_bytes(account.data[16..24].try_into().unwrap());
+    let len = u32::from_le_bytes(
+        account.data[LEDGER_LEN_OFFSET..LEDGER_LEN_OFFSET + 4]
+            .try_into()
+            .unwrap(),
+    );
+    let first = u64::from_le_bytes(
+        account.data[LEDGER_ITEMS_OFFSET..LEDGER_ITEMS_OFFSET + 8]
+            .try_into()
+            .unwrap(),
+    );
+    let second = u64::from_le_bytes(
+        account.data[LEDGER_ITEMS_OFFSET + 8..LEDGER_ITEMS_OFFSET + 16]
+            .try_into()
+            .unwrap(),
+    );
+
+    assert_eq!(checksum, 8);
+    assert_eq!(last_space, ledger_space(2) as u64);
+    assert_eq!(len, 2);
+    assert_eq!((first, second), (0, 8));
 }
 
 #[test]

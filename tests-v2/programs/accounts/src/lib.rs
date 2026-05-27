@@ -7,6 +7,7 @@ extern crate alloc;
 use {
     alloc::string::String,
     anchor_lang_v2::{
+        accounts::Slab,
         prelude::*,
         programs::{AssociatedToken, Memo},
     },
@@ -32,6 +33,20 @@ pub struct Counter {
 pub struct BorshCounter {
     pub value: u64,
 }
+
+#[account]
+pub struct Ledger {
+    pub checksum: u64,
+    pub last_space: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LedgerEntry {
+    pub amount: u64,
+}
+
+type LedgerAccount = Slab<Ledger, LedgerEntry>;
 
 #[derive(Clone, Default, SchemaRead, SchemaWrite)]
 pub struct ForeignBorshCounter {
@@ -579,6 +594,138 @@ pub mod accounts_test {
         ctx.accounts.counter.value = 11;
         Ok(())
     }
+
+    /// Tops up a loaded `Account<T>` to its rent-exempt floor. This exercises
+    /// `Slab::top_up` while the slab-backed account's borrow flag is held.
+    #[discrim = 34]
+    pub fn top_up_counter(ctx: &mut Context<TopUpCounter>) -> Result<()> {
+        ctx.accounts.counter.top_up(ctx.accounts.payer.as_ref())?;
+        Ok(())
+    }
+
+    #[discrim = 35]
+    pub fn initialize_ledger(ctx: &mut Context<InitializeLedger>) -> Result<()> {
+        require_eq!(
+            ctx.accounts.ledger.current_space(),
+            LedgerAccount::space_for(4),
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            LedgerAccount::try_space_for(4)?,
+            ctx.accounts.ledger.current_space(),
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ctx.accounts.ledger.capacity(),
+            4,
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            ctx.accounts.ledger.is_empty(),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            !ctx.accounts.ledger.is_full(),
+            ProgramError::InvalidAccountData
+        );
+        ctx.accounts.ledger.checksum = 1;
+        ctx.accounts.ledger.last_space = ctx.accounts.ledger.current_space() as u64;
+        Ok(())
+    }
+
+    #[discrim = 36]
+    pub fn exercise_ledger_methods(ctx: &mut Context<ExerciseLedgerMethods>) -> Result<()> {
+        let ledger = &mut ctx.accounts.ledger;
+        require_eq!(
+            ledger.address(),
+            ledger.view().address(),
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(ledger.len(), 0, ProgramError::InvalidAccountData);
+
+        ledger.try_push(LedgerEntry { amount: 10 })?;
+        ledger.try_push(LedgerEntry { amount: 20 })?;
+        ledger.try_push(LedgerEntry { amount: 30 })?;
+        require_eq!(ledger.len(), 3, ProgramError::InvalidAccountData);
+        require_eq!(ledger.as_slice().len(), 3, ProgramError::InvalidAccountData);
+        require_eq!(
+            ledger.first().map(|entry| entry.amount),
+            Some(10),
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ledger.last().map(|entry| entry.amount),
+            Some(30),
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ledger.get(1).map(|entry| entry.amount),
+            Some(20),
+            ProgramError::InvalidAccountData
+        );
+
+        for entry in ledger.iter_mut() {
+            entry.amount += 1;
+        }
+        ledger.get_mut(1).ok_or(ProgramError::InvalidAccountData)?.amount = 99;
+        ledger[0].amount += 100;
+        ledger[2].amount += 1_000;
+        require_eq!(
+            ledger.iter().map(|entry| entry.amount).sum::<u64>(),
+            1_241,
+            ProgramError::InvalidAccountData
+        );
+
+        let removed = ledger.swap_remove(1);
+        require_eq!(removed.amount, 99, ProgramError::InvalidAccountData);
+        require_eq!(ledger.len(), 2, ProgramError::InvalidAccountData);
+        require_eq!(
+            ledger.as_slice()[0].amount,
+            111,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ledger.as_slice()[1].amount,
+            1_031,
+            ProgramError::InvalidAccountData
+        );
+
+        let popped = ledger.pop().ok_or(ProgramError::InvalidAccountData)?;
+        require_eq!(popped.amount, 1_031, ProgramError::InvalidAccountData);
+        ledger.truncate(8);
+        require_eq!(ledger.len(), 1, ProgramError::InvalidAccountData);
+        ledger.clear();
+        require!(ledger.is_empty(), ProgramError::InvalidAccountData);
+
+        while !ledger.is_full() {
+            ledger.try_push(LedgerEntry {
+                amount: ledger.len() as u64,
+            })?;
+        }
+        require_eq!(
+            ledger.try_push(LedgerEntry { amount: 99 }).err(),
+            Some(ProgramError::AccountDataTooSmall),
+            ProgramError::InvalidAccountData
+        );
+
+        ledger.resize_to_capacity(8)?;
+        ledger.top_up(ctx.accounts.payer.as_ref())?;
+        require_eq!(ledger.capacity(), 8, ProgramError::InvalidAccountData);
+        require_eq!(ledger.current_space(), LedgerAccount::space_for(8), ProgramError::InvalidAccountData);
+        require_eq!(ledger.len(), 4, ProgramError::InvalidAccountData);
+
+        ledger.resize_to_capacity(2)?;
+        require_eq!(ledger.capacity(), 2, ProgramError::InvalidAccountData);
+        require_eq!(ledger.len(), 2, ProgramError::InvalidAccountData);
+        ledger[1].amount += 7;
+        require_eq!(ledger[1].amount, 8, ProgramError::InvalidAccountData);
+        let mut payer_view = *ctx.accounts.payer.as_ref();
+        ledger.refund(&mut payer_view)?;
+
+        ledger.checksum = ledger.as_slice().iter().map(|entry| entry.amount).sum();
+        ledger.last_space = ledger.current_space() as u64;
+        Ok(())
+    }
 }
 
 // -- Accounts structs --------------------------------------------------------
@@ -607,6 +754,33 @@ pub struct InitializeTargetBeforePayer {
     pub counter: Account<Counter>,
     #[account(mut, unsafe(dup))]
     pub payer: Signer,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct TopUpCounter {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(mut, seeds = [b"counter"], bump)]
+    pub counter: Account<Counter>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct InitializeLedger {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(init, payer = payer, space = LedgerAccount::space_for(4), seeds = [b"ledger"], bump)]
+    pub ledger: LedgerAccount,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct ExerciseLedgerMethods {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(mut, seeds = [b"ledger"], bump)]
+    pub ledger: LedgerAccount,
     pub system_program: Program<System>,
 }
 
