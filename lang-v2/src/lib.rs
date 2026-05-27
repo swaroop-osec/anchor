@@ -158,10 +158,10 @@ pub use anchor_derive_accounts_v2::{emit_cpi, event_cpi};
 /// Instruction::new_with_bytes` without a manual field rename.
 ///
 /// `AccountMeta` itself comes from `solana-instruction`, whose account key
-/// field is named `solana_pubkey::Pubkey`. In current Solana crates that
-/// `Pubkey` is a re-export of `solana_address::Address`, so built-in program
-/// marker IDs such as `Token::id()` already return the same address type and
-/// do not need a byte-level conversion.
+/// field is named `solana_pubkey::Pubkey`. Anchor v2's compat module aliases
+/// `solana_program::pubkey::Pubkey` to [`Address`], but external Solana crates
+/// may still expose nominally distinct `Pubkey` newtypes with the same 32-byte
+/// representation.
 pub use solana_instruction::account_meta::AccountMeta;
 pub use {
     accounts::{AccountInitialize, SlabInit},

@@ -49,8 +49,20 @@ fn token_2022_program_id() -> Pubkey {
         .unwrap()
 }
 
+fn native_mint_id() -> Pubkey {
+    "So11111111111111111111111111111111111111112"
+        .parse()
+        .unwrap()
+}
+
 fn ata_program_id() -> Pubkey {
     "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        .parse()
+        .unwrap()
+}
+
+fn rent_sysvar_id() -> Pubkey {
+    "SysvarRent111111111111111111111111111111111"
         .parse()
         .unwrap()
 }
@@ -74,6 +86,32 @@ fn setup() -> (LiteSVM, Keypair) {
         .expect("load token_2022_spy program");
 
     let payer = keypair_for("spl-payer");
+    svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
+    (svm, payer)
+}
+
+fn setup_with_token_2022_spy() -> (LiteSVM, Keypair) {
+    let test_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let deploy_dir = test_dir.join("target/deploy");
+    build_program(
+        test_dir.join("programs/spl").to_str().unwrap(),
+        deploy_dir.to_str().unwrap(),
+    );
+    build_program(
+        test_dir.join("programs/token-2022-spy").to_str().unwrap(),
+        deploy_dir.to_str().unwrap(),
+    );
+
+    let mut svm = LiteSVM::new();
+    svm.add_program_from_file(program_id(), deploy_dir.join("spl_test.so"))
+        .expect("load spl_test program");
+    svm.add_program_from_file(
+        token_2022_program_id(),
+        deploy_dir.join("token_2022_spy.so"),
+    )
+    .expect("load token_2022_spy as the canonical Token-2022 program");
+
+    let payer = keypair_for("spl-token-2022-spy-payer");
     svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
     (svm, payer)
 }
@@ -360,6 +398,278 @@ fn close_account_returns_lamports_to_destination() {
     assert_eq!(dest_after, dest_before + token_lamports);
 }
 
+#[test]
+fn checked_mint_burn_and_approve_helpers_update_state() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("checked-mint-auth");
+    let owner = keypair_for("checked-owner");
+    let delegate = keypair_for("checked-delegate");
+    let (mint, token) = mint_and_fund(&mut svm, &payer, &mint_authority, &owner.pubkey(), 1000);
+
+    let mut data = vec![77];
+    data.extend_from_slice(&125u64.to_le_bytes());
+    data.push(6);
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(mint_authority.pubkey(), true),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        data,
+        metas,
+        &payer,
+        &[&mint_authority],
+    )
+    .expect("mint_to_checked should mint when decimals match");
+
+    let mut data = vec![79];
+    data.extend_from_slice(&400u64.to_le_bytes());
+    data.push(6);
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(delegate.pubkey(), false),
+        AccountMeta::new_readonly(owner.pubkey(), true),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[&owner])
+        .expect("approve_checked should set delegate allowance when decimals match");
+
+    let state = SplTokenAccount::unpack(&svm.get_account(&token).unwrap().data).unwrap();
+    let delegate_bytes = match state.delegate {
+        COption::Some(pk) => pk.to_bytes(),
+        COption::None => [0u8; 32],
+    };
+    assert_eq!(state.amount, 1125);
+    assert_eq!(state.delegated_amount, 400);
+    assert_eq!(delegate_bytes, delegate.pubkey().to_bytes());
+
+    let mut data = vec![78];
+    data.extend_from_slice(&225u64.to_le_bytes());
+    data.push(6);
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(owner.pubkey(), true),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[&owner])
+        .expect("burn_checked should burn when decimals match");
+
+    let mint_state = SplMint::unpack(&svm.get_account(&mint).unwrap().data).unwrap();
+    let token_state = SplTokenAccount::unpack(&svm.get_account(&token).unwrap().data).unwrap();
+    assert_eq!(mint_state.supply, 900);
+    assert_eq!(token_state.amount, 900);
+}
+
+#[test]
+fn freeze_and_thaw_helpers_update_account_state() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("freeze-mint-auth");
+    let freeze_authority = keypair_for("freeze-authority");
+    let owner = keypair_for("freeze-owner");
+    let mint = Pubkey::new_unique();
+    let token = Pubkey::new_unique();
+
+    seed_token_owned_account(
+        &mut svm,
+        mint,
+        token_program_id(),
+        pack_base_mint_with_freeze(&mint_authority.pubkey(), &freeze_authority.pubkey(), 6, 0)
+            .to_vec(),
+    );
+    seed_token_owned_account(
+        &mut svm,
+        token,
+        token_program_id(),
+        pack_base_token_account(&mint, &owner.pubkey(), 0).to_vec(),
+    );
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(freeze_authority.pubkey(), true),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![80],
+        metas,
+        &payer,
+        &[&freeze_authority],
+    )
+    .expect("freeze_account should mark token account frozen");
+
+    let state = SplTokenAccount::unpack(&svm.get_account(&token).unwrap().data).unwrap();
+    assert_eq!(state.state, AccountState::Frozen);
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(freeze_authority.pubkey(), true),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![81],
+        metas,
+        &payer,
+        &[&freeze_authority],
+    )
+    .expect("thaw_account should restore initialized state");
+
+    let state = SplTokenAccount::unpack(&svm.get_account(&token).unwrap().data).unwrap();
+    assert_eq!(state.state, AccountState::Initialized);
+}
+
+#[test]
+fn sync_native_helper_updates_wrapped_sol_amount() {
+    let (mut svm, payer) = setup();
+    let owner = keypair_for("native-owner");
+    let token = Pubkey::new_unique();
+    let reserve = svm.minimum_balance_for_rent_exemption(SplTokenAccount::LEN);
+    let synced_amount = 12_345u64;
+
+    svm.set_account(
+        token,
+        Account {
+            lamports: reserve + synced_amount,
+            data: pack_native_token_account(&owner.pubkey(), 0, reserve).to_vec(),
+            owner: token_program_id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .expect("seed wrapped SOL account");
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![82], metas, &payer, &[])
+        .expect("sync_native should derive amount from lamports minus rent reserve");
+
+    let state = SplTokenAccount::unpack(&svm.get_account(&token).unwrap().data).unwrap();
+    assert_eq!(state.is_native, COption::Some(reserve));
+    assert_eq!(state.amount, synced_amount);
+}
+
+#[test]
+fn initialize_mint_helpers_write_expected_state() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("raw-initialize-mint-authority");
+    let mint_with_rent = Pubkey::new_unique();
+    let mint_without_rent = Pubkey::new_unique();
+
+    seed_uninitialized_token_owned_account(&mut svm, mint_with_rent, SplMint::LEN);
+    seed_uninitialized_token_owned_account(&mut svm, mint_without_rent, SplMint::LEN);
+
+    let mut data = vec![83, 5];
+    data.extend_from_slice(&authority.pubkey().to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint_with_rent, false),
+        AccountMeta::new_readonly(rent_sysvar_id(), false),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("initialize_mint should initialize a token-owned mint");
+
+    let mut data = vec![84, 7];
+    data.extend_from_slice(&authority.pubkey().to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint_without_rent, false),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("initialize_mint2 should initialize a token-owned mint without rent sysvar");
+
+    let mint_a = SplMint::unpack(&svm.get_account(&mint_with_rent).unwrap().data).unwrap();
+    let mint_b = SplMint::unpack(&svm.get_account(&mint_without_rent).unwrap().data).unwrap();
+    assert_eq!(mint_a.decimals, 5);
+    assert_eq!(mint_b.decimals, 7);
+    assert_eq!(mint_a.supply, 0);
+    assert_eq!(mint_b.supply, 0);
+    assert_eq!(
+        mint_a.mint_authority,
+        COption::Some(to_spl(&authority.pubkey()))
+    );
+    assert_eq!(
+        mint_b.mint_authority,
+        COption::Some(to_spl(&authority.pubkey()))
+    );
+}
+
+#[test]
+fn initialize_account_helpers_write_expected_state() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("raw-init-account-mint-auth");
+    let owner = keypair_for("raw-init-account-owner");
+    let mint = Keypair::new();
+    let account_with_rent = Pubkey::new_unique();
+    let account_without_rent = Pubkey::new_unique();
+
+    do_init_mint(&mut svm, &payer, &mint, &mint_authority.pubkey());
+    seed_uninitialized_token_owned_account(&mut svm, account_with_rent, SplTokenAccount::LEN);
+    seed_uninitialized_token_owned_account(&mut svm, account_without_rent, SplTokenAccount::LEN);
+
+    let metas = vec![
+        AccountMeta::new(account_with_rent, false),
+        AccountMeta::new_readonly(mint.pubkey(), false),
+        AccountMeta::new_readonly(owner.pubkey(), false),
+        AccountMeta::new_readonly(rent_sysvar_id(), false),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![85], metas, &payer, &[])
+        .expect("initialize_account should initialize a token-owned account");
+
+    let metas = vec![
+        AccountMeta::new(account_without_rent, false),
+        AccountMeta::new_readonly(mint.pubkey(), false),
+        AccountMeta::new_readonly(owner.pubkey(), false),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![86], metas, &payer, &[])
+        .expect("initialize_account3 should initialize a token-owned account without rent sysvar");
+
+    for token in [account_with_rent, account_without_rent] {
+        let state = SplTokenAccount::unpack(&svm.get_account(&token).unwrap().data).unwrap();
+        assert_eq!(state.mint.to_bytes(), mint.pubkey().to_bytes());
+        assert_eq!(state.owner.to_bytes(), owner.pubkey().to_bytes());
+        assert_eq!(state.amount, 0);
+        assert_eq!(state.state, AccountState::Initialized);
+    }
+}
+
+#[test]
+fn set_close_authority_helper_updates_token_account() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("set-authority-mint-auth");
+    let owner = keypair_for("set-authority-owner");
+    let close_authority = keypair_for("set-authority-close");
+    let (_mint, token) = mint_and_fund(&mut svm, &payer, &mint_authority, &owner.pubkey(), 0);
+
+    let mut data = vec![87];
+    data.extend_from_slice(&close_authority.pubkey().to_bytes());
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(owner.pubkey(), true),
+        AccountMeta::new_readonly(token_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[&owner])
+        .expect("set_authority should set token close authority");
+
+    let state = SplTokenAccount::unpack(&svm.get_account(&token).unwrap().data).unwrap();
+    assert_eq!(
+        state.close_authority,
+        COption::Some(to_spl(&close_authority.pubkey()))
+    );
+}
+
 // ---- Accessor methods ------------------------------------------------------
 
 #[test]
@@ -420,6 +730,71 @@ fn read_token_account_rejects_uninitialized_token_owned_account() {
     assert_uninitialized_account_error(
         send_instruction(&mut svm, program_id(), vec![10], metas, &payer, &[]),
         "uninitialized Token-owned token account should not load as Account<TokenAccount>",
+    );
+}
+
+#[test]
+fn mint_accessors_decode_non_default_state() {
+    let (mut svm, payer) = setup();
+    let authority = keypair_for("rich-mint-authority");
+    let freeze_authority = keypair_for("rich-mint-freeze-authority");
+    let mint = Pubkey::new_unique();
+
+    seed_token_owned_account(
+        &mut svm,
+        mint,
+        token_program_id(),
+        pack_base_mint_with_freeze(&authority.pubkey(), &freeze_authority.pubkey(), 4, 987)
+            .to_vec(),
+    );
+
+    let mut data = vec![88];
+    data.extend_from_slice(&authority.pubkey().to_bytes());
+    data.extend_from_slice(&freeze_authority.pubkey().to_bytes());
+    data.extend_from_slice(&987u64.to_le_bytes());
+    data.push(4);
+    let metas = vec![AccountMeta::new_readonly(mint, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("mint accessors should decode authority, freeze authority, supply, and decimals");
+}
+
+#[test]
+fn token_account_accessors_decode_delegate_native_close_and_frozen_state() {
+    let (mut svm, payer) = setup();
+    let mint = Pubkey::new_unique();
+    let owner = keypair_for("rich-token-owner");
+    let delegate = keypair_for("rich-token-delegate");
+    let close_authority = keypair_for("rich-token-close-authority");
+    let token = Pubkey::new_unique();
+    let native_reserve = 2_039_280u64;
+
+    seed_token_owned_account(
+        &mut svm,
+        token,
+        token_program_id(),
+        pack_rich_token_account(
+            &mint,
+            &owner.pubkey(),
+            55_000,
+            &delegate.pubkey(),
+            12_345,
+            native_reserve,
+            &close_authority.pubkey(),
+        )
+        .to_vec(),
+    );
+
+    let mut data = vec![89];
+    data.extend_from_slice(&mint.to_bytes());
+    data.extend_from_slice(&owner.pubkey().to_bytes());
+    data.extend_from_slice(&55_000u64.to_le_bytes());
+    data.extend_from_slice(&delegate.pubkey().to_bytes());
+    data.extend_from_slice(&12_345u64.to_le_bytes());
+    data.extend_from_slice(&close_authority.pubkey().to_bytes());
+    data.extend_from_slice(&native_reserve.to_le_bytes());
+    let metas = vec![AccountMeta::new_readonly(token, false)];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[]).expect(
+        "token account accessors should decode delegate, native reserve, close authority, and frozen state",
     );
 }
 
@@ -885,6 +1260,50 @@ fn pack_base_token_account(
     base
 }
 
+fn pack_native_token_account(
+    owner: &Pubkey,
+    amount: u64,
+    rent_exempt_reserve: u64,
+) -> [u8; SplTokenAccount::LEN] {
+    let state = SplTokenAccount {
+        mint: to_spl(&native_mint_id()),
+        owner: to_spl(owner),
+        amount,
+        delegate: COption::None,
+        state: AccountState::Initialized,
+        is_native: COption::Some(rent_exempt_reserve),
+        delegated_amount: 0,
+        close_authority: COption::None,
+    };
+    let mut base = [0u8; SplTokenAccount::LEN];
+    state.pack_into_slice(&mut base);
+    base
+}
+
+fn pack_rich_token_account(
+    mint: &Pubkey,
+    owner: &Pubkey,
+    amount: u64,
+    delegate: &Pubkey,
+    delegated_amount: u64,
+    native_reserve: u64,
+    close_authority: &Pubkey,
+) -> [u8; SplTokenAccount::LEN] {
+    let state = SplTokenAccount {
+        mint: to_spl(mint),
+        owner: to_spl(owner),
+        amount,
+        delegate: COption::Some(to_spl(delegate)),
+        state: AccountState::Frozen,
+        is_native: COption::Some(native_reserve),
+        delegated_amount,
+        close_authority: COption::Some(to_spl(close_authority)),
+    };
+    let mut base = [0u8; SplTokenAccount::LEN];
+    state.pack_into_slice(&mut base);
+    base
+}
+
 /// Append a single TLV entry to `buf`: `u16_le type | u16_le length | value`.
 fn push_tlv(buf: &mut Vec<u8>, ext_type: u16, value: &[u8]) {
     buf.extend_from_slice(&ext_type.to_le_bytes());
@@ -952,6 +1371,28 @@ fn seed_token_owned_account(svm: &mut LiteSVM, address: Pubkey, owner: Pubkey, d
     .expect("seed token-owned account");
 }
 
+fn seed_uninitialized_token_owned_account(svm: &mut LiteSVM, address: Pubkey, data_len: usize) {
+    let lamports = svm.minimum_balance_for_rent_exemption(data_len);
+    svm.set_account(
+        address,
+        Account {
+            lamports,
+            data: vec![0; data_len],
+            owner: token_program_id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+    .expect("seed uninitialized token-owned account");
+}
+
+fn seed_basic_token_2022_mint(svm: &mut LiteSVM, authority_label: &str) -> Pubkey {
+    let authority = keypair_for(authority_label);
+    let mint = Pubkey::new_unique();
+    seed_token_2022_account(svm, mint, build_mint_data(&authority.pubkey(), 6, 0, &[]));
+    mint
+}
+
 fn assert_uninitialized_account_error<T, E: std::fmt::Display>(
     result: Result<T, E>,
     context: &str,
@@ -985,6 +1426,20 @@ fn assert_invalid_argument_error<T, E: std::fmt::Display>(result: Result<T, E>, 
     assert!(
         error.contains("InvalidArgument") || error.contains("invalid program argument"),
         "{context}: expected InvalidArgument, got:\n{error}"
+    );
+}
+
+fn assert_invalid_instruction_data_error<T, E: std::fmt::Display>(
+    result: Result<T, E>,
+    context: &str,
+) {
+    let Err(error) = result else {
+        panic!("{context}");
+    };
+    let error = error.to_string();
+    assert!(
+        error.contains("InvalidInstructionData") || error.contains("invalid instruction data"),
+        "{context}: expected InvalidInstructionData, got:\n{error}"
     );
 }
 
@@ -2958,6 +3413,36 @@ fn group_pointer_update_helper_rejects_non_token_2022_program() {
 }
 
 #[test]
+fn group_pointer_update_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint_authority = keypair_for("spy-gp-ok-mint-auth");
+    let authority = keypair_for("spy-gp-ok-authority");
+    let group = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_group_pointer(&authority.pubkey(), &group),
+        ),
+    );
+
+    let mut data = vec![41];
+    data.extend_from_slice(&group.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(authority.pubkey(), true),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[&authority])
+        .expect("group pointer update helper should invoke the canonical Token-2022 program");
+}
+
+#[test]
 fn group_member_pointer_update_helper_rejects_non_token_2022_program() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("spy-gmp-mint-auth");
@@ -2987,6 +3472,37 @@ fn group_member_pointer_update_helper_rejects_non_token_2022_program() {
     assert!(
         result.is_err(),
         "group member pointer update helper should reject non-Token-2022 program ids before CPI"
+    );
+}
+
+#[test]
+fn group_member_pointer_update_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint_authority = keypair_for("spy-gmp-ok-mint-auth");
+    let authority = keypair_for("spy-gmp-ok-authority");
+    let member = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(
+            &mint_authority.pubkey(),
+            6,
+            0,
+            &tlv_group_member_pointer(&authority.pubkey(), &member),
+        ),
+    );
+
+    let mut data = vec![42];
+    data.extend_from_slice(&member.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(authority.pubkey(), true),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[&authority]).expect(
+        "group member pointer update helper should invoke the canonical Token-2022 program",
     );
 }
 
@@ -3023,6 +3539,622 @@ fn reallocate_helper_rejects_non_token_2022_program() {
         result.is_err(),
         "reallocate helper should reject non-Token-2022 program ids before CPI"
     );
+}
+
+#[test]
+fn reallocate_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint_authority = keypair_for("spy-realloc-ok-mint-auth");
+    let owner = keypair_for("spy-realloc-ok-owner");
+    let token = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &[]),
+    );
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new(payer.pubkey(), true),
+        AccountMeta::new_readonly(solana_sdk_ids::system_program::ID, false),
+        AccountMeta::new_readonly(mint_authority.pubkey(), true),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(
+        &mut svm,
+        program_id(),
+        vec![43],
+        metas,
+        &payer,
+        &[&mint_authority],
+    )
+    .expect("reallocate helper should invoke the canonical Token-2022 program");
+}
+
+#[test]
+fn token_2022_immutable_owner_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let owner = keypair_for("spy-token-2022-immutable-owner-ok-owner");
+    let token = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &[]),
+    );
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![68], metas, &payer, &[]).expect(
+        "direct Token-2022 immutable owner helper should invoke the canonical Token-2022 program",
+    );
+}
+
+#[test]
+fn token_2022_mint_close_authority_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-token-2022-close-authority-ok-mint-auth");
+    let close_authority = Pubkey::new_unique();
+
+    let mut data = vec![69];
+    data.extend_from_slice(&close_authority.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[]).expect(
+        "direct Token-2022 mint close authority helper should invoke the canonical Token-2022 program",
+    );
+}
+
+#[test]
+fn token_2022_non_transferable_mint_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-token-2022-non-transferable-ok-mint-auth");
+
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![70], metas, &payer, &[]).expect(
+        "direct Token-2022 non-transferable mint helper should invoke the canonical Token-2022 program",
+    );
+}
+
+#[test]
+fn token_2022_permanent_delegate_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint =
+        seed_basic_token_2022_mint(&mut svm, "spy-token-2022-permanent-delegate-ok-mint-auth");
+    let permanent_delegate = Pubkey::new_unique();
+
+    let mut data = vec![71];
+    data.extend_from_slice(&permanent_delegate.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[]).expect(
+        "direct Token-2022 permanent delegate helper should invoke the canonical Token-2022 program",
+    );
+}
+
+#[test]
+fn token_2022_get_account_data_size_helper_reads_return_data() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-token-2022-account-data-size-mint-auth");
+
+    let metas = vec![
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![72], metas, &payer, &[])
+        .expect("direct Token-2022 get_account_data_size helper should decode callee return data");
+}
+
+#[test]
+fn token_2022_amount_to_ui_amount_helper_reads_return_data() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-token-2022-amount-to-ui-mint-auth");
+
+    let metas = vec![
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![73], metas, &payer, &[])
+        .expect("direct Token-2022 amount_to_ui_amount helper should decode callee return data");
+}
+
+#[test]
+fn token_2022_amount_to_ui_amount_helper_rejects_invalid_utf8_return_data() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint =
+        seed_basic_token_2022_mint(&mut svm, "spy-token-2022-amount-to-ui-bad-return-mint-auth");
+
+    let metas = vec![
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    assert_invalid_instruction_data_error(
+        send_instruction(&mut svm, program_id(), vec![74], metas, &payer, &[]),
+        "invalid UTF-8 Token-2022 return data should be rejected",
+    );
+}
+
+#[test]
+fn token_2022_ui_amount_to_amount_helper_reads_return_data() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-token-2022-ui-to-amount-mint-auth");
+
+    let metas = vec![
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![75], metas, &payer, &[])
+        .expect("direct Token-2022 ui_amount_to_amount helper should decode callee return data");
+}
+
+#[test]
+fn token_2022_ui_amount_to_amount_helper_rejects_short_return_data() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(
+        &mut svm,
+        "spy-token-2022-ui-to-amount-short-return-mint-auth",
+    );
+
+    let metas = vec![
+        AccountMeta::new_readonly(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    assert_invalid_instruction_data_error(
+        send_instruction(&mut svm, program_id(), vec![76], metas, &payer, &[]),
+        "short Token-2022 return data should be rejected",
+    );
+}
+
+#[test]
+fn immutable_owner_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let owner = keypair_for("spy-immutable-owner-reject-owner");
+    let token = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &[]),
+    );
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), vec![57], metas, &payer, &[]),
+        "immutable owner initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn immutable_owner_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let owner = keypair_for("spy-immutable-owner-ok-owner");
+    let token = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &[]),
+    );
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![57], metas, &payer, &[])
+        .expect("immutable owner initialize helper should invoke the canonical Token-2022 program");
+}
+
+#[test]
+fn non_transferable_mint_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("spy-non-transferable-reject-mint-auth");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), vec![58], metas, &payer, &[]),
+        "non-transferable mint initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn non_transferable_mint_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint_authority = keypair_for("spy-non-transferable-ok-mint-auth");
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![58], metas, &payer, &[]).expect(
+        "non-transferable mint initialize helper should invoke the canonical Token-2022 program",
+    );
+}
+
+#[test]
+fn mint_close_authority_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("spy-close-authority-reject-mint-auth");
+    let close_authority = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+
+    let mut data = vec![59];
+    data.extend_from_slice(&close_authority.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "mint close authority initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn mint_close_authority_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint_authority = keypair_for("spy-close-authority-ok-mint-auth");
+    let close_authority = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+
+    let mut data = vec![59];
+    data.extend_from_slice(&close_authority.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[]).expect(
+        "mint close authority initialize helper should invoke the canonical Token-2022 program",
+    );
+}
+
+#[test]
+fn permanent_delegate_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("spy-permanent-delegate-reject-mint-auth");
+    let permanent_delegate = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+
+    let mut data = vec![60];
+    data.extend_from_slice(&permanent_delegate.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "permanent delegate initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn permanent_delegate_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint_authority = keypair_for("spy-permanent-delegate-ok-mint-auth");
+    let permanent_delegate = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        mint,
+        build_mint_data(&mint_authority.pubkey(), 6, 0, &[]),
+    );
+
+    let mut data = vec![60];
+    data.extend_from_slice(&permanent_delegate.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[]).expect(
+        "permanent delegate initialize helper should invoke the canonical Token-2022 program",
+    );
+}
+
+#[test]
+fn default_account_state_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-default-state-reject-mint-auth");
+
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), vec![61], metas, &payer, &[]),
+        "default account state initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn default_account_state_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-default-state-ok-mint-auth");
+
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![61], metas, &payer, &[]).expect(
+        "default account state initialize helper should invoke the canonical Token-2022 program",
+    );
+}
+
+#[test]
+fn memo_transfer_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let owner = keypair_for("spy-memo-transfer-reject-owner");
+    let token = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &[]),
+    );
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(owner.pubkey(), true),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), vec![62], metas, &payer, &[&owner]),
+        "memo transfer initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn memo_transfer_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let owner = keypair_for("spy-memo-transfer-ok-owner");
+    let token = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+
+    seed_token_2022_account(
+        &mut svm,
+        token,
+        build_token_account_data(&mint, &owner.pubkey(), 0, &[]),
+    );
+
+    let metas = vec![
+        AccountMeta::new(token, false),
+        AccountMeta::new_readonly(owner.pubkey(), true),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), vec![62], metas, &payer, &[&owner])
+        .expect("memo transfer initialize helper should invoke the canonical Token-2022 program");
+}
+
+#[test]
+fn metadata_pointer_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-metadata-pointer-reject-mint-auth");
+    let authority = Pubkey::new_unique();
+    let metadata_address = Pubkey::new_unique();
+
+    let mut data = vec![63];
+    data.extend_from_slice(&authority.to_bytes());
+    data.extend_from_slice(&metadata_address.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "metadata pointer initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn metadata_pointer_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-metadata-pointer-ok-mint-auth");
+    let authority = Pubkey::new_unique();
+    let metadata_address = Pubkey::new_unique();
+
+    let mut data = vec![63];
+    data.extend_from_slice(&authority.to_bytes());
+    data.extend_from_slice(&metadata_address.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[]).expect(
+        "metadata pointer initialize helper should invoke the canonical Token-2022 program",
+    );
+}
+
+#[test]
+fn transfer_hook_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-transfer-hook-reject-mint-auth");
+    let authority = Pubkey::new_unique();
+    let hook_program = Pubkey::new_unique();
+
+    let mut data = vec![64];
+    data.extend_from_slice(&authority.to_bytes());
+    data.extend_from_slice(&hook_program.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "transfer hook initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn transfer_hook_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-transfer-hook-ok-mint-auth");
+    let authority = Pubkey::new_unique();
+    let hook_program = Pubkey::new_unique();
+
+    let mut data = vec![64];
+    data.extend_from_slice(&authority.to_bytes());
+    data.extend_from_slice(&hook_program.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("transfer hook initialize helper should invoke the canonical Token-2022 program");
+}
+
+#[test]
+fn interest_bearing_mint_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-interest-bearing-reject-mint-auth");
+    let rate_authority = Pubkey::new_unique();
+
+    let mut data = vec![65];
+    data.extend_from_slice(&rate_authority.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "interest-bearing mint initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn interest_bearing_mint_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-interest-bearing-ok-mint-auth");
+    let rate_authority = Pubkey::new_unique();
+
+    let mut data = vec![65];
+    data.extend_from_slice(&rate_authority.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[]).expect(
+        "interest-bearing mint initialize helper should invoke the canonical Token-2022 program",
+    );
+}
+
+#[test]
+fn pausable_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-pausable-reject-mint-auth");
+    let authority = Pubkey::new_unique();
+
+    let mut data = vec![66];
+    data.extend_from_slice(&authority.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "pausable initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn pausable_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-pausable-ok-mint-auth");
+    let authority = Pubkey::new_unique();
+
+    let mut data = vec![66];
+    data.extend_from_slice(&authority.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("pausable initialize helper should invoke the canonical Token-2022 program");
+}
+
+#[test]
+fn transfer_fee_initialize_helper_rejects_non_token_2022_program() {
+    let (mut svm, payer) = setup();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-transfer-fee-reject-mint-auth");
+    let config_authority = Pubkey::new_unique();
+
+    let mut data = vec![67];
+    data.extend_from_slice(&config_authority.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(spy_program_id(), false),
+    ];
+    assert_incorrect_token_2022_program_error(
+        send_instruction(&mut svm, program_id(), data, metas, &payer, &[]),
+        "transfer fee initialize helper should reject non-Token-2022 program ids before CPI",
+    );
+}
+
+#[test]
+fn transfer_fee_initialize_helper_invokes_token_2022_program() {
+    let (mut svm, payer) = setup_with_token_2022_spy();
+    let mint = seed_basic_token_2022_mint(&mut svm, "spy-transfer-fee-ok-mint-auth");
+    let config_authority = Pubkey::new_unique();
+
+    let mut data = vec![67];
+    data.extend_from_slice(&config_authority.to_bytes());
+    let metas = vec![
+        AccountMeta::new(mint, false),
+        AccountMeta::new_readonly(token_2022_program_id(), false),
+    ];
+    send_instruction(&mut svm, program_id(), data, metas, &payer, &[])
+        .expect("transfer fee initialize helper should invoke the canonical Token-2022 program");
 }
 
 #[test]

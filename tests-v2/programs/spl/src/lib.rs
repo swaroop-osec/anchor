@@ -141,6 +141,171 @@ pub mod spl_test {
         Ok(())
     }
 
+    /// MintToChecked verifies both the mint authority and declared decimals.
+    #[discrim = 77]
+    pub fn do_mint_to_checked(
+        ctx: &mut Context<DoMintToChecked>,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<()> {
+        let accs = token::MintToChecked {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+            to: ctx.accounts.to.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::mint_to_checked(cpi_ctx, amount, decimals)?;
+        Ok(())
+    }
+
+    /// BurnChecked verifies both the token owner and declared decimals.
+    #[discrim = 78]
+    pub fn do_burn_checked(
+        ctx: &mut Context<DoBurnChecked>,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<()> {
+        let accs = token::BurnChecked {
+            from: ctx.accounts.account.cpi_handle_mut(),
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::burn_checked(cpi_ctx, amount, decimals)?;
+        Ok(())
+    }
+
+    /// ApproveChecked verifies delegate allowance against the mint decimals.
+    #[discrim = 79]
+    pub fn do_approve_checked(
+        ctx: &mut Context<DoApproveChecked>,
+        amount: u64,
+        decimals: u8,
+    ) -> Result<()> {
+        let accs = token::ApproveChecked {
+            to: ctx.accounts.source.cpi_handle_mut(),
+            mint: ctx.accounts.mint.cpi_handle(),
+            delegate: ctx.accounts.delegate.cpi_handle(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::approve_checked(cpi_ctx, amount, decimals)?;
+        Ok(())
+    }
+
+    /// Freeze and thaw cover Token account state transitions driven by the
+    /// mint's freeze authority.
+    #[discrim = 80]
+    pub fn do_freeze_account(ctx: &mut Context<DoFreezeAccount>) -> Result<()> {
+        let accs = token::FreezeAccount {
+            account: ctx.accounts.account.cpi_handle_mut(),
+            mint: ctx.accounts.mint.cpi_handle(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::freeze_account(cpi_ctx)?;
+        Ok(())
+    }
+
+    #[discrim = 81]
+    pub fn do_thaw_account(ctx: &mut Context<DoThawAccount>) -> Result<()> {
+        let accs = token::ThawAccount {
+            account: ctx.accounts.account.cpi_handle_mut(),
+            mint: ctx.accounts.mint.cpi_handle(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::thaw_account(cpi_ctx)?;
+        Ok(())
+    }
+
+    /// SyncNative updates a wrapped SOL account's token amount from lamports.
+    #[discrim = 82]
+    pub fn do_sync_native(ctx: &mut Context<DoSyncNative>) -> Result<()> {
+        let accs = token::SyncNative {
+            account: ctx.accounts.account.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::sync_native(cpi_ctx)?;
+        Ok(())
+    }
+
+    /// Direct CPI wrappers for token initialization helpers. These are separate
+    /// from Anchor's `#[account(init, ...)]` path so the shared CPI helpers are
+    /// exercised directly.
+    #[discrim = 83]
+    pub fn do_initialize_mint(
+        ctx: &mut Context<DoInitializeMint>,
+        decimals: u8,
+        authority: Address,
+    ) -> Result<()> {
+        let accs = token::InitializeMint {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+            rent: ctx.accounts.rent.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::initialize_mint(cpi_ctx, decimals, &authority, None)?;
+        Ok(())
+    }
+
+    #[discrim = 84]
+    pub fn do_initialize_mint2(
+        ctx: &mut Context<DoInitializeMint2>,
+        decimals: u8,
+        authority: Address,
+    ) -> Result<()> {
+        let accs = token::InitializeMint2 {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::initialize_mint2(cpi_ctx, decimals, &authority, None)?;
+        Ok(())
+    }
+
+    #[discrim = 85]
+    pub fn do_initialize_account(ctx: &mut Context<DoInitializeAccount>) -> Result<()> {
+        let accs = token::InitializeAccount {
+            account: ctx.accounts.account.cpi_handle_mut(),
+            mint: ctx.accounts.mint.cpi_handle(),
+            authority: ctx.accounts.authority.cpi_handle(),
+            rent: ctx.accounts.rent.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::initialize_account(cpi_ctx)?;
+        Ok(())
+    }
+
+    #[discrim = 86]
+    pub fn do_initialize_account3(ctx: &mut Context<DoInitializeAccount3>) -> Result<()> {
+        let accs = token::InitializeAccount3 {
+            account: ctx.accounts.account.cpi_handle_mut(),
+            mint: ctx.accounts.mint.cpi_handle(),
+            authority: ctx.accounts.authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::initialize_account3(cpi_ctx)?;
+        Ok(())
+    }
+
+    /// Set close authority through the legacy `token::set_authority` shim.
+    #[discrim = 87]
+    pub fn do_set_close_authority(
+        ctx: &mut Context<DoSetAuthority>,
+        new_authority: Address,
+    ) -> Result<()> {
+        let accs = token::SetAuthority {
+            account_or_mint: ctx.accounts.account_or_mint.cpi_handle_mut(),
+            current_authority: ctx.accounts.current_authority.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token::set_authority(
+            cpi_ctx,
+            token::spl_token::instruction::AuthorityType::CloseAccount,
+            Some(new_authority),
+        )?;
+        Ok(())
+    }
+
     /// Reads every `Mint` accessor — supply, decimals, authority flags,
     /// freeze flags. Logs nothing (logging costs CUs); the assertion is that
     /// the call succeeds and the traces cover the accessor methods.
@@ -175,6 +340,98 @@ pub mod spl_test {
         let _ = ta.close_authority();
         let _ = ta.is_initialized();
         let _ = ta.is_frozen();
+        Ok(())
+    }
+
+    /// Assert every Mint accessor against a deliberately non-default state.
+    #[discrim = 88]
+    pub fn assert_mint_accessors(
+        ctx: &mut Context<ReadMint>,
+        expected_authority: Address,
+        expected_freeze_authority: Address,
+        expected_supply: u64,
+        expected_decimals: u8,
+    ) -> Result<()> {
+        let m = &*ctx.accounts.mint;
+        require_eq!(
+            m.supply(),
+            expected_supply,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            m.decimals(),
+            expected_decimals,
+            ProgramError::InvalidAccountData
+        );
+        require!(m.has_mint_authority(), ProgramError::InvalidAccountData);
+        require_eq!(
+            m.mint_authority(),
+            Some(&expected_authority),
+            ProgramError::InvalidAccountData
+        );
+        require!(m.is_initialized(), ProgramError::InvalidAccountData);
+        require!(m.has_freeze_authority(), ProgramError::InvalidAccountData);
+        require_eq!(
+            m.freeze_authority(),
+            Some(&expected_freeze_authority),
+            ProgramError::InvalidAccountData
+        );
+        Ok(())
+    }
+
+    /// Assert every TokenAccount accessor against a deliberately rich state:
+    /// delegate, close authority, native reserve, and frozen status.
+    #[discrim = 89]
+    pub fn assert_token_account_accessors(
+        ctx: &mut Context<ReadTokenAccount>,
+        expected_mint: Address,
+        expected_owner: Address,
+        expected_amount: u64,
+        expected_delegate: Address,
+        expected_delegated_amount: u64,
+        expected_close_authority: Address,
+        expected_native_amount: u64,
+    ) -> Result<()> {
+        let ta = &*ctx.accounts.token_account;
+        require!(
+            anchor_lang_v2::address_eq(ta.mint(), &expected_mint),
+            ProgramError::InvalidAccountData
+        );
+        require!(
+            anchor_lang_v2::address_eq(ta.owner(), &expected_owner),
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ta.amount(),
+            expected_amount,
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(
+            ta.delegated_amount(),
+            expected_delegated_amount,
+            ProgramError::InvalidAccountData
+        );
+        require!(ta.has_delegate(), ProgramError::InvalidAccountData);
+        require_eq!(
+            ta.delegate(),
+            Some(&expected_delegate),
+            ProgramError::InvalidAccountData
+        );
+        require_eq!(ta.state(), 2, ProgramError::InvalidAccountData);
+        require!(ta.is_native(), ProgramError::InvalidAccountData);
+        require_eq!(
+            ta.native_amount(),
+            Some(expected_native_amount),
+            ProgramError::InvalidAccountData
+        );
+        require!(ta.has_close_authority(), ProgramError::InvalidAccountData);
+        require_eq!(
+            ta.close_authority(),
+            Some(&expected_close_authority),
+            ProgramError::InvalidAccountData
+        );
+        require!(ta.is_initialized(), ProgramError::InvalidAccountData);
+        require!(ta.is_frozen(), ProgramError::InvalidAccountData);
         Ok(())
     }
 
@@ -611,6 +868,305 @@ pub mod spl_test {
         Ok(())
     }
 
+    /// Invoke the direct Token-2022 immutable owner helper against the spy program.
+    #[discrim = 68]
+    pub fn spy_token_2022_immutable_owner_initialize(
+        ctx: &mut Context<SpyImmutableOwnerInitialize>,
+    ) -> Result<()> {
+        let accs = token_2022_cpi::InitializeImmutableOwner {
+            account: ctx.accounts.token_account.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_cpi::initialize_immutable_owner(cpi_ctx)?;
+        Ok(())
+    }
+
+    /// Invoke the direct Token-2022 mint close authority helper against the spy program.
+    #[discrim = 69]
+    pub fn spy_token_2022_mint_close_authority_initialize(
+        ctx: &mut Context<SpyMintCloseAuthorityInitialize>,
+        close_authority: Address,
+    ) -> Result<()> {
+        let accs = token_2022_cpi::InitializeMintCloseAuthority {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_cpi::initialize_mint_close_authority(cpi_ctx, Some(&close_authority))?;
+        Ok(())
+    }
+
+    /// Invoke the direct Token-2022 non-transferable mint helper against the spy program.
+    #[discrim = 70]
+    pub fn spy_token_2022_non_transferable_mint_initialize(
+        ctx: &mut Context<SpyNonTransferableMintInitialize>,
+    ) -> Result<()> {
+        let accs = token_2022_cpi::InitializeNonTransferableMint {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_cpi::initialize_non_transferable_mint(cpi_ctx)?;
+        Ok(())
+    }
+
+    /// Invoke the direct Token-2022 permanent delegate helper against the spy program.
+    #[discrim = 71]
+    pub fn spy_token_2022_permanent_delegate_initialize(
+        ctx: &mut Context<SpyPermanentDelegateInitialize>,
+        permanent_delegate: Address,
+    ) -> Result<()> {
+        let accs = token_2022_cpi::PermanentDelegateInitialize {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_cpi::initialize_permanent_delegate(cpi_ctx, &permanent_delegate)?;
+        Ok(())
+    }
+
+    /// Invoke the direct Token-2022 get-account-data-size helper and assert its return data.
+    #[discrim = 72]
+    pub fn spy_token_2022_get_account_data_size(
+        ctx: &mut Context<SpyToken2022ReturnDataMint>,
+    ) -> Result<()> {
+        let accs = token_2022_cpi::GetAccountDataSize {
+            mint: ctx.accounts.mint.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        let size = token_2022_cpi::get_account_data_size(
+            cpi_ctx,
+            &[
+                token_2022_cpi::ExtensionType::ImmutableOwner,
+                token_2022_cpi::ExtensionType::NonTransferable,
+            ],
+        )?;
+        require_eq!(size, 4242u64, ProgramError::InvalidInstructionData);
+        Ok(())
+    }
+
+    /// Invoke the direct Token-2022 amount-to-ui-amount helper and assert its return data.
+    #[discrim = 73]
+    pub fn spy_token_2022_amount_to_ui_amount(
+        ctx: &mut Context<SpyToken2022ReturnDataMint>,
+    ) -> Result<()> {
+        let accs = token_2022_cpi::AmountToUiAmount {
+            account: ctx.accounts.mint.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        let ui_amount = token_2022_cpi::amount_to_ui_amount(cpi_ctx, 123456789)?;
+        require!(
+            ui_amount.as_bytes() == b"1234.56789",
+            ProgramError::InvalidInstructionData
+        );
+        Ok(())
+    }
+
+    /// Invoke amount-to-ui-amount against a callee that returns invalid UTF-8.
+    #[discrim = 74]
+    pub fn spy_token_2022_amount_to_ui_amount_invalid_utf8(
+        ctx: &mut Context<SpyToken2022ReturnDataMint>,
+    ) -> Result<()> {
+        let accs = token_2022_cpi::AmountToUiAmount {
+            account: ctx.accounts.mint.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        let _ = token_2022_cpi::amount_to_ui_amount(cpi_ctx, 987654321)?;
+        Ok(())
+    }
+
+    /// Invoke the direct Token-2022 ui-amount-to-amount helper and assert its return data.
+    #[discrim = 75]
+    pub fn spy_token_2022_ui_amount_to_amount(
+        ctx: &mut Context<SpyToken2022ReturnDataMint>,
+    ) -> Result<()> {
+        let accs = token_2022_cpi::UiAmountToAmount {
+            account: ctx.accounts.mint.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        let amount = token_2022_cpi::ui_amount_to_amount(cpi_ctx, "42.125")?;
+        require_eq!(amount, 42125u64, ProgramError::InvalidInstructionData);
+        Ok(())
+    }
+
+    /// Invoke ui-amount-to-amount against a callee that returns too few bytes.
+    #[discrim = 76]
+    pub fn spy_token_2022_ui_amount_to_amount_short_return(
+        ctx: &mut Context<SpyToken2022ReturnDataMint>,
+    ) -> Result<()> {
+        let accs = token_2022_cpi::UiAmountToAmount {
+            account: ctx.accounts.mint.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        let _ = token_2022_cpi::ui_amount_to_amount(cpi_ctx, "badret")?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 immutable owner initialization against the spy program.
+    #[discrim = 57]
+    pub fn spy_immutable_owner_initialize(
+        ctx: &mut Context<SpyImmutableOwnerInitialize>,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::ImmutableOwnerInitialize {
+            token_account: ctx.accounts.token_account.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::immutable_owner_initialize(cpi_ctx)?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 non-transferable mint initialization against the spy program.
+    #[discrim = 58]
+    pub fn spy_non_transferable_mint_initialize(
+        ctx: &mut Context<SpyNonTransferableMintInitialize>,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::NonTransferableMintInitialize {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::non_transferable_mint_initialize(cpi_ctx)?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 mint close authority initialization against the spy program.
+    #[discrim = 59]
+    pub fn spy_mint_close_authority_initialize(
+        ctx: &mut Context<SpyMintCloseAuthorityInitialize>,
+        close_authority: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::MintCloseAuthorityInitialize {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::mint_close_authority_initialize(cpi_ctx, Some(&close_authority))?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 permanent delegate initialization against the spy program.
+    #[discrim = 60]
+    pub fn spy_permanent_delegate_initialize(
+        ctx: &mut Context<SpyPermanentDelegateInitialize>,
+        permanent_delegate: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::PermanentDelegateInitialize {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::permanent_delegate_initialize(cpi_ctx, &permanent_delegate)?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 default account state initialization against the spy program.
+    #[discrim = 61]
+    pub fn spy_default_account_state_initialize(
+        ctx: &mut Context<SpyDefaultAccountStateInitialize>,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::DefaultAccountStateInitialize {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::default_account_state_initialize(
+            cpi_ctx,
+            &token_2022_cpi::spl_token_2022::state::AccountState::Frozen,
+        )?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 memo transfer enablement against the spy program.
+    #[discrim = 62]
+    pub fn spy_memo_transfer_initialize(ctx: &mut Context<SpyMemoTransfer>) -> Result<()> {
+        let accs = token_2022_ext_cpi::MemoTransfer {
+            account: ctx.accounts.account.cpi_handle_mut(),
+            owner: ctx.accounts.owner.cpi_handle(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::memo_transfer_initialize(cpi_ctx)?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 metadata pointer initialization against the spy program.
+    #[discrim = 63]
+    pub fn spy_metadata_pointer_initialize(
+        ctx: &mut Context<SpyMetadataPointerInitialize>,
+        authority: Address,
+        metadata_address: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::MetadataPointerInitialize {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::metadata_pointer_initialize(
+            cpi_ctx,
+            Some(&authority),
+            Some(&metadata_address),
+        )?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 transfer hook initialization against the spy program.
+    #[discrim = 64]
+    pub fn spy_transfer_hook_initialize(
+        ctx: &mut Context<SpyTransferHookInitialize>,
+        authority: Address,
+        hook_program: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::TransferHookInitialize {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::transfer_hook_initialize(
+            cpi_ctx,
+            Some(&authority),
+            Some(&hook_program),
+        )?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 interest-bearing mint initialization against the spy program.
+    #[discrim = 65]
+    pub fn spy_interest_bearing_mint_initialize(
+        ctx: &mut Context<SpyInterestBearingMintInitialize>,
+        rate_authority: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::InterestBearingMintInitialize {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::interest_bearing_mint_initialize(cpi_ctx, Some(&rate_authority), 125)?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 pausable initialization against the spy program.
+    #[discrim = 66]
+    pub fn spy_pausable_initialize(
+        ctx: &mut Context<SpyPausableInitialize>,
+        authority: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::PausableInitialize {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::pausable_initialize(cpi_ctx, &authority)?;
+        Ok(())
+    }
+
+    /// Invoke Token-2022 transfer fee initialization against the spy program.
+    #[discrim = 67]
+    pub fn spy_transfer_fee_initialize(
+        ctx: &mut Context<SpyTransferFeeInitialize>,
+        config_authority: Address,
+    ) -> Result<()> {
+        let accs = token_2022_ext_cpi::TransferFeeInitialize {
+            mint: ctx.accounts.mint.cpi_handle_mut(),
+        };
+        let cpi_ctx = CpiContext::new(ctx.accounts.token_program.address(), accs);
+        token_2022_ext_cpi::transfer_fee_initialize(
+            cpi_ctx,
+            Some(&config_authority),
+            None,
+            111,
+            42,
+        )?;
+        Ok(())
+    }
+
     /// Invoke Token Metadata remove_key against the spy program.
     #[discrim = 47]
     pub fn spy_token_metadata_remove_key(
@@ -843,6 +1399,103 @@ pub struct DoCloseAccount {
     #[account(mut)]
     pub destination: UncheckedAccount,
     pub authority: Signer,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoMintToChecked {
+    #[account(mut)]
+    pub mint: Account<Mint>,
+    #[account(mut)]
+    pub to: Account<TokenAccount>,
+    pub authority: Signer,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoBurnChecked {
+    #[account(mut)]
+    pub account: Account<TokenAccount>,
+    #[account(mut)]
+    pub mint: Account<Mint>,
+    pub authority: Signer,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoApproveChecked {
+    #[account(mut)]
+    pub source: Account<TokenAccount>,
+    pub mint: Account<Mint>,
+    pub delegate: UncheckedAccount,
+    pub authority: Signer,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoFreezeAccount {
+    #[account(mut)]
+    pub account: Account<TokenAccount>,
+    pub mint: Account<Mint>,
+    pub authority: Signer,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoThawAccount {
+    #[account(mut)]
+    pub account: Account<TokenAccount>,
+    pub mint: Account<Mint>,
+    pub authority: Signer,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoSyncNative {
+    #[account(mut)]
+    pub account: Account<TokenAccount>,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoInitializeMint {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub rent: UncheckedAccount,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoInitializeMint2 {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoInitializeAccount {
+    #[account(mut)]
+    pub account: UncheckedAccount,
+    pub mint: UncheckedAccount,
+    pub authority: UncheckedAccount,
+    pub rent: UncheckedAccount,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoInitializeAccount3 {
+    #[account(mut)]
+    pub account: UncheckedAccount,
+    pub mint: UncheckedAccount,
+    pub authority: UncheckedAccount,
+    pub token_program: Program<Token>,
+}
+
+#[derive(Accounts)]
+pub struct DoSetAuthority {
+    #[account(mut)]
+    pub account_or_mint: Account<TokenAccount>,
+    pub current_authority: Signer,
     pub token_program: Program<Token>,
 }
 
@@ -1135,6 +1788,90 @@ pub struct SpyReallocate {
     pub payer: Signer,
     pub system_program: UncheckedAccount,
     pub authority: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyImmutableOwnerInitialize {
+    #[account(mut)]
+    pub token_account: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyNonTransferableMintInitialize {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyMintCloseAuthorityInitialize {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyPermanentDelegateInitialize {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyToken2022ReturnDataMint {
+    pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyDefaultAccountStateInitialize {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyMemoTransfer {
+    #[account(mut)]
+    pub account: UncheckedAccount,
+    pub owner: Signer,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyMetadataPointerInitialize {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyTransferHookInitialize {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyInterestBearingMintInitialize {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyPausableInitialize {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
+    pub token_program: UncheckedAccount,
+}
+
+#[derive(Accounts)]
+pub struct SpyTransferFeeInitialize {
+    #[account(mut)]
+    pub mint: UncheckedAccount,
     pub token_program: UncheckedAccount,
 }
 

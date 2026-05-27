@@ -62,6 +62,7 @@ sha2 = "0.10"
 anyhow = "1"
 
 [dev-dependencies]
+anchor-lang-idl = { path = "../idl", version = "0.1.2", features = ["convert"] }
 anchor-spl-v2 = { path = "../spl-v2" }
 anchor-lang-idl-spec = { path = "../idl/spec", version = "0.1.0" }
 proptest = "1"

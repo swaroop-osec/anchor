@@ -95,36 +95,29 @@ coverage-v2-host:
 # records `DA:N,0` because the machine code lives at the callsite, not the
 # source site. Naive merge ends up displaying those lines as uncovered.
 #
-# The filter scrubs host's `DA:N,0` entries **only when SBF recorded a hit at
-# the same (file, line)**. Zero-hit lines on both sides remain in the report
-# as genuinely uncovered — which matters: earlier versions of this filter
-# stripped every zero-hit line for any file that appeared in sbf.lcov, which
-# made files with genuine uncovered regions (e.g. spl-v2/src/token.rs's many
-# untested CPI branches) look artificially at 100%. See analysis in
-# `ci.lcov` vs Codecov comparison (spl-v2/src/token.rs was reported as
-# 82/82 locally vs. 82/347 on CI, all because of this scrub). Line-level
-# matching preserves the SBF-only-executed fix without over-reaching.
+# The filter scrubs host's `DA:N,0` entries when SBF recorded a hit at the same
+# (file, line). It also removes host zeroes for non-executable Rust source
+# lines: delimiter-only lines, plus function signature continuation lines when
+# SBF hit the function's `fn` line. Zero-hit executable lines on both sides
+# remain in the report as genuinely uncovered — which matters: earlier versions
+# of this filter stripped every zero-hit line for any file that appeared in
+# sbf.lcov, which made files with genuine uncovered regions (e.g.
+# spl-v2/src/token.rs's many untested CPI branches) look artificially at 100%.
+# See analysis in `ci.lcov` vs Codecov comparison (spl-v2/src/token.rs was
+# reported as 82/82 locally vs. 82/347 on CI, all because of this scrub).
+# Source-aware line filtering preserves the SBF-only-executed fix without
+# over-reaching.
 .PHONY: coverage-v2-merge
-coverage-v2-merge: $(COVERAGE_DIR)/sbf.lcov $(COVERAGE_DIR)/host.lcov
+coverage-v2-merge: build-anchor-debug $(COVERAGE_DIR)/sbf.lcov $(COVERAGE_DIR)/host.lcov
 	@echo "==> Merging coverage"
 	@command -v lcov >/dev/null || { \
 		echo "lcov not installed. Run: brew install lcov  (or apt install lcov)"; \
 		exit 1; \
 	}
-	awk -F'[:,]' ' \
-		FNR == NR { \
-			if ($$1 == "SF") { f = $$0; sub("^SF:", "", f) } \
-			else if ($$1 == "DA" && $$3+0 > 0) sbf_hit[f "," $$2+0] = 1; \
-			next \
-		} \
-		$$1 == "SF" { f = $$0; sub("^SF:", "", f); print; next } \
-		$$1 == "DA" { \
-			if ($$3+0 == 0 && (f "," $$2+0) in sbf_hit) next; \
-			print; next; \
-		} \
-		{ print } \
-		' $(COVERAGE_DIR)/sbf.lcov $(COVERAGE_DIR)/host.lcov \
-		> $(COVERAGE_DIR)/host.filtered.lcov
+	$(PWD)/target/debug/anchor coverage-filter-host \
+		--sbf-lcov $(COVERAGE_DIR)/sbf.lcov \
+		--host-lcov $(COVERAGE_DIR)/host.lcov \
+		--output $(COVERAGE_DIR)/host.filtered.lcov
 	# Recompute LF/LH for files we mutated — lcov -a keeps the original
 	# counts if they don't agree with the DA lines. Drop stale summary
 	# lines and let lcov rebuild them on load.
@@ -133,7 +126,11 @@ coverage-v2-merge: $(COVERAGE_DIR)/sbf.lcov $(COVERAGE_DIR)/host.lcov
 	lcov -a $(COVERAGE_DIR)/sbf.lcov -a $(COVERAGE_DIR)/host.filtered.lcov \
 		-o $(COVERAGE_DIR)/combined.lcov \
 		--ignore-errors empty
-	# Drop cargo-registry and target-generated paths. Lcov's glob handling
+	# Drop cargo-registry, target-generated, and tests-v2 source paths. The
+	# tests-v2 crates still drive host/SBF execution above, but the report is
+	# meant to show framework coverage rather than test harness/program code.
+	#
+	# Lcov's glob handling
 	# varies by version: the shell-style patterns below look redundant but
 	# cover both behaviors. Older lcov (Ubuntu 1.14/1.16) treats `*` as
 	# non-slash-crossing, so `*/.cargo/*` doesn't match an absolute path
@@ -144,6 +141,7 @@ coverage-v2-merge: $(COVERAGE_DIR)/sbf.lcov $(COVERAGE_DIR)/host.lcov
 	lcov --remove $(COVERAGE_DIR)/combined.lcov \
 		'*/.cargo/*' '**/.cargo/**' '*.cargo*' \
 		'*/target/*' '**/target/**' \
+		'*/tests-v2/*' '**/tests-v2/**' \
 		-o $(COVERAGE_DIR)/combined.lcov \
 		--ignore-errors unused \
 		--ignore-errors empty
