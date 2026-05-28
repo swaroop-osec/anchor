@@ -677,76 +677,100 @@ fn classify_seed_inner(expr: &Expr, field_names: &[String], ix_arg_names: &[Stri
         }
     }
 
-    // Bare ident — field ref wins, then ix arg, otherwise it's opaque.
-    if let Expr::Path(ep) = cur {
-        if ep.qself.is_none() && ep.path.segments.len() == 1 && ep.path.leading_colon.is_none() {
-            let seg = &ep.path.segments[0];
-            if seg.arguments.is_empty() {
-                let name = seg.ident.to_string();
-                if field_names.contains(&name) {
-                    return static_seed(account_seed_value(&name));
-                }
-                if ix_arg_names.contains(&name) {
-                    return static_seed(arg_seed_value(&name));
-                }
-            }
-        }
-    }
-
-    // Method-call / field-access chains: walk to the receiver's bare
-    // ident. Handles `foo.bar()`, `foo.bar.baz`, `foo.key().as_ref()`,
-    // `foo.to_le_bytes()`, `foo[0]`, `(foo)`, etc.
-    if let Some(root) = receiver_root_ident(cur) {
+    if let Some(root) = account_seed_root_ident(cur) {
         if field_names.contains(&root) {
             return static_seed(account_seed_value(&root));
         }
+    }
+
+    if let Some(root) = arg_seed_root_ident(cur) {
         if ix_arg_names.contains(&root) {
             return static_seed(arg_seed_value(&root));
         }
     }
 
-    // `"literal".as_bytes()` — receiver is a string literal, not an
-    // ident, so the walk above missed it. Pick it up here.
-    if let Expr::MethodCall(mc) = cur {
-        if let Expr::Lit(syn::ExprLit {
-            lit: Lit::Str(s), ..
-        }) = &*mc.receiver
-        {
-            if mc.method == "as_bytes" {
-                return static_seed(const_seed_value(s.value().as_bytes()));
-            }
-        }
+    if let Some(s) = string_as_bytes(cur) {
+        return static_seed(const_seed_value(s.value().as_bytes()));
     }
 
     static_seed(json!({ "kind": "expr" }))
 }
 
-/// Walk down a method-call / field-access / index chain and return the
-/// bare ident at its root, if any. `foo.key().as_ref()` → `foo`;
-/// `foo.bar.baz` → `foo`; `foo[0]` → `foo`; `(foo)` → `foo`.
+/// Return the bare root ident for simple, client-derivable seed expressions.
+/// This intentionally does not walk arbitrary field/index chains because
+/// `account.data.to_le_bytes()` is account data, not the account pubkey.
 pub fn receiver_root_ident_str(expr: &Expr) -> Option<String> {
-    receiver_root_ident(expr)
+    account_seed_root_ident(expr).or_else(|| arg_seed_root_ident(expr))
 }
 
-fn receiver_root_ident(expr: &Expr) -> Option<String> {
-    let mut cur = expr;
+fn peel_seed_wrappers(mut expr: &Expr) -> &Expr {
     loop {
-        match cur {
-            Expr::MethodCall(mc) => cur = &mc.receiver,
-            Expr::Field(fa) => cur = &fa.base,
-            Expr::Index(ix) => cur = &ix.expr,
-            Expr::Paren(p) => cur = &p.expr,
-            Expr::Reference(r) => cur = &r.expr,
-            Expr::Path(ep)
-                if ep.qself.is_none()
-                    && ep.path.segments.len() == 1
-                    && ep.path.leading_colon.is_none()
-                    && ep.path.segments[0].arguments.is_empty() =>
-            {
-                return Some(ep.path.segments[0].ident.to_string());
-            }
-            _ => return None,
+        match expr {
+            Expr::Paren(p) => expr = &p.expr,
+            Expr::Reference(r) => expr = &r.expr,
+            _ => return expr,
         }
+    }
+}
+
+fn bare_ident(expr: &Expr) -> Option<String> {
+    let Expr::Path(ep) = peel_seed_wrappers(expr) else {
+        return None;
+    };
+    if ep.qself.is_none()
+        && ep.path.segments.len() == 1
+        && ep.path.leading_colon.is_none()
+        && ep.path.segments[0].arguments.is_empty()
+    {
+        Some(ep.path.segments[0].ident.to_string())
+    } else {
+        None
+    }
+}
+
+fn method_receiver<'a>(expr: &'a Expr, method: &str) -> Option<&'a Expr> {
+    let Expr::MethodCall(mc) = peel_seed_wrappers(expr) else {
+        return None;
+    };
+    (mc.method == method && mc.args.is_empty()).then_some(&*mc.receiver)
+}
+
+fn account_seed_root_ident(expr: &Expr) -> Option<String> {
+    let expr = peel_seed_wrappers(expr);
+    if let Some(root) = bare_ident(expr) {
+        return Some(root);
+    }
+
+    let as_ref_receiver = method_receiver(expr, "as_ref").unwrap_or(expr);
+    if let Some(root) = bare_ident(as_ref_receiver) {
+        return Some(root);
+    }
+
+    method_receiver(as_ref_receiver, "address")
+        .or_else(|| method_receiver(as_ref_receiver, "key"))
+        .and_then(bare_ident)
+}
+
+fn arg_seed_root_ident(expr: &Expr) -> Option<String> {
+    let expr = peel_seed_wrappers(expr);
+    if let Some(root) = bare_ident(expr) {
+        return Some(root);
+    }
+
+    method_receiver(expr, "as_ref")
+        .or_else(|| method_receiver(expr, "to_le_bytes"))
+        .and_then(bare_ident)
+}
+
+fn string_as_bytes(expr: &Expr) -> Option<&syn::LitStr> {
+    let receiver = method_receiver(expr, "as_bytes")?;
+    if let Expr::Lit(syn::ExprLit {
+        lit: Lit::Str(s), ..
+    }) = peel_seed_wrappers(receiver)
+    {
+        Some(s)
+    } else {
+        None
     }
 }
 
@@ -894,6 +918,12 @@ mod tests {
     }
 
     #[test]
+    fn account_as_ref_resolves_account_root() {
+        let s = expect_static(classify(syn::parse_quote!(user.as_ref()), &["user"], &[]));
+        assert_eq!(s, r#"{"kind":"account","path":"user"}"#);
+    }
+
+    #[test]
     fn method_chain_resolves_arg_root() {
         let s = expect_static(classify(
             syn::parse_quote!(nonce.to_le_bytes()),
@@ -901,6 +931,26 @@ mod tests {
             &["nonce"],
         ));
         assert_eq!(s, r#"{"kind":"arg","path":"nonce"}"#);
+    }
+
+    #[test]
+    fn account_field_method_chain_is_opaque_expr() {
+        let s = expect_static(classify(
+            syn::parse_quote!(manager.next_oracle_id.to_le_bytes()),
+            &["manager"],
+            &[],
+        ));
+        assert_eq!(s, r#"{"kind":"expr"}"#);
+    }
+
+    #[test]
+    fn nested_account_address_chain_is_opaque_expr() {
+        let s = expect_static(classify(
+            syn::parse_quote!(manager.account().address().as_ref()),
+            &["manager"],
+            &[],
+        ));
+        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]

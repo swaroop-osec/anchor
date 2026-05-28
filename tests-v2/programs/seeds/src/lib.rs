@@ -29,6 +29,16 @@ pub struct Data {
     pub _pad: [u8; 7],
 }
 
+#[account]
+pub struct Manager {
+    pub next_oracle_id: u64,
+}
+
+#[account]
+pub struct Oracle {
+    pub bump: u8,
+}
+
 // -- Instructions ------------------------------------------------------------
 
 #[program]
@@ -76,6 +86,28 @@ pub mod seeds {
 
     #[discrim = 8]
     pub fn check_mixed(_ctx: &mut Context<CheckMixed>) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 9]
+    pub fn init_direct_account_field_seed(
+        _ctx: &mut Context<InitDirectAccountFieldSeed>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 10]
+    pub fn init_wrapped_account_field_seed(
+        _ctx: &mut Context<InitWrappedAccountFieldSeed>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 11]
+    pub fn init_wrapped_arg_seed(
+        _ctx: &mut Context<InitWrappedArgSeed>,
+        _next_oracle_id: u64,
+    ) -> Result<()> {
         Ok(())
     }
 }
@@ -161,4 +193,55 @@ pub struct CheckMixed {
     pub payer: Signer,
     #[account(seeds = [b"user", payer.address().as_ref()], bump)]
     pub data: Account<Data>,
+}
+
+// 9. Init + account data field seed.
+//
+// The IDL/client seed classifier should not confuse this with a manager pubkey
+// seed. Runtime validation still evaluates the original account field expr.
+#[derive(Accounts)]
+pub struct InitDirectAccountFieldSeed {
+    #[account(mut)]
+    pub payer: Signer,
+    pub manager: Account<Manager>,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [b"oracle-direct", manager.next_oracle_id.to_le_bytes()],
+        bump
+    )]
+    pub oracle: Account<Oracle>,
+    pub system_program: Program<System>,
+}
+
+// 10. Init + wrapped account data field seed.
+#[derive(Accounts)]
+pub struct InitWrappedAccountFieldSeed {
+    #[account(mut)]
+    pub payer: Signer,
+    pub manager: Account<Manager>,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [b"oracle-wrapped-account", u64::from(manager.next_oracle_id).to_le_bytes()],
+        bump
+    )]
+    pub oracle: Account<Oracle>,
+    pub system_program: Program<System>,
+}
+
+// 11. Init + wrapped instruction arg seed.
+#[derive(Accounts)]
+#[instruction(next_oracle_id: u64)]
+pub struct InitWrappedArgSeed {
+    #[account(mut)]
+    pub payer: Signer,
+    #[account(
+        init,
+        payer = payer,
+        seeds = [b"oracle-wrapped-arg", u64::from(next_oracle_id).to_le_bytes()],
+        bump
+    )]
+    pub oracle: Account<Oracle>,
+    pub system_program: Program<System>,
 }
