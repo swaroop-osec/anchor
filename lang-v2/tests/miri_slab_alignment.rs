@@ -31,9 +31,7 @@ struct HeaderAlign1 {
 }
 
 impl Owner for HeaderAlign1 {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
 
 impl Discriminator for HeaderAlign1 {
@@ -85,11 +83,9 @@ fn slab_align1_push_pop_roundtrip() {
     data[..8].copy_from_slice(&HEADER_DISC);
     buf.write_data(&data);
     buf.set_lamports(1_000_000_000);
-
-    let program_id = Address::new_from_array(PROGRAM_ID);
     let view = unsafe { buf.view() };
     let mut slab =
-        unsafe { Slab::<HeaderAlign1, ItemAlign1>::load_mut(view, &program_id) }.unwrap();
+        unsafe { Slab::<HeaderAlign1, ItemAlign1>::load_mut(view) }.unwrap();
 
     // Push 3 items.
     let items = [
@@ -121,11 +117,9 @@ fn slab_align1_swap_remove_preserves_correctness() {
     data[..8].copy_from_slice(&HEADER_DISC);
     buf.write_data(&data);
     buf.set_lamports(1_000_000_000);
-
-    let program_id = Address::new_from_array(PROGRAM_ID);
     let view = unsafe { buf.view() };
     let mut slab =
-        unsafe { Slab::<HeaderAlign1, ItemAlign1>::load_mut(view, &program_id) }.unwrap();
+        unsafe { Slab::<HeaderAlign1, ItemAlign1>::load_mut(view) }.unwrap();
 
     let a = ItemAlign1([0xAA; 16]);
     let b = ItemAlign1([0xBB; 16]);

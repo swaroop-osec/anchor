@@ -35,9 +35,7 @@ struct Counter {
 }
 
 impl Owner for Counter {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
 
 impl Discriminator for Counter {
@@ -51,9 +49,7 @@ struct ForeignCounter {
 }
 
 impl Owner for ForeignCounter {
-    fn owner(_program_id: &Address) -> Address {
-        Address::new_from_array(FOREIGN_PROGRAM_ID)
-    }
+    const OWNER: Address = Address::new_from_array(FOREIGN_PROGRAM_ID);
 }
 
 impl Discriminator for ForeignCounter {
@@ -66,9 +62,7 @@ struct ShrinkableBytes {
 }
 
 impl Owner for ShrinkableBytes {
-    fn owner(program_id: &Address) -> Address {
-        *program_id
-    }
+    const OWNER: Address = Address::new_from_array(PROGRAM_ID);
 }
 
 impl Discriminator for ShrinkableBytes {
@@ -149,11 +143,10 @@ fn read_data_bytes(buf: &AccountBuffer<256>, offset: usize, len: usize) -> Vec<u
 fn exit_writes_modified_in_memory_state_to_guard() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     {
         let view = unsafe { buf.view() };
-        let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+        let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
         assert_eq!(acct.value, 42);
         acct.value = 999;
         acct.exit().unwrap();
@@ -165,41 +158,37 @@ fn exit_writes_modified_in_memory_state_to_guard() {
 }
 
 #[test]
-fn exit_skips_serialization_for_foreign_owned_account() {
+fn exit_serializes_mutably_loaded_foreign_owned_account() {
     let mut buf = AccountBuffer::<256>::new();
     setup_foreign_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     {
         let view = unsafe { buf.view() };
-        let mut acct =
-            unsafe { BorshAccount::<ForeignCounter>::load_mut(view, &program_id) }.unwrap();
+        let mut acct = unsafe { BorshAccount::<ForeignCounter>::load_mut(view) }.unwrap();
         assert_eq!(acct.value, 42);
         acct.value = 999;
         acct.exit().unwrap();
     }
 
     let bytes = read_data_bytes(&buf, 8, 8);
-    assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 42);
+    assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 999);
 }
 
 #[test]
-fn release_borrow_skips_serialization_for_foreign_owned_account() {
+fn release_borrow_serializes_mutably_loaded_foreign_owned_account() {
     let mut buf = AccountBuffer::<256>::new();
     setup_foreign_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     {
         let view = unsafe { buf.view() };
-        let mut acct =
-            unsafe { BorshAccount::<ForeignCounter>::load_mut(view, &program_id) }.unwrap();
+        let mut acct = unsafe { BorshAccount::<ForeignCounter>::load_mut(view) }.unwrap();
         assert_eq!(acct.value, 42);
         acct.value = 999;
         acct.release_borrow().unwrap();
     }
 
     let bytes = read_data_bytes(&buf, 8, 8);
-    assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 42);
+    assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 999);
 }
 
 // -- 2. Stale detection: content-only change is NOT detected ---------
@@ -217,17 +206,15 @@ fn release_borrow_skips_serialization_for_foreign_owned_account() {
 // correctly rejects it. Covered under regular `cargo test`.
 #[cfg_attr(
     miri,
-    ignore = "simulates external mutation by violating Rust's \
-    exclusive-borrow invariant — inexpressible under Tree Borrows; covered \
-    under cargo test"
+    ignore = "simulates external mutation by violating Rust's exclusive-borrow invariant — \
+              inexpressible under Tree Borrows; covered under cargo test"
 )]
 fn stale_detection_misses_content_only_out_of_band_mutation() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
     assert_eq!(acct.value, 42);
 
     // Out-of-band: somehow the bytes at data[8..16] get mutated while
@@ -263,10 +250,9 @@ fn stale_detection_misses_content_only_out_of_band_mutation() {
 fn reacquire_refreshes_self_data_from_cpi_changes() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
 
     // Step 1: user modifies self.data.
     acct.value = 100;
@@ -279,7 +265,7 @@ fn reacquire_refreshes_self_data_from_cpi_changes() {
     set_data_bytes(&mut buf, 8, &777u64.to_le_bytes());
 
     // Step 4: user reacquires the borrow.
-    acct.reacquire_borrow_mut(&program_id).unwrap();
+    acct.reacquire_borrow_mut().unwrap();
 
     // Step 5: reacquire re-deserialized from buffer, so self.data
     // now reflects the CPI's write of 777, not the user's pre-release
@@ -314,10 +300,9 @@ fn reacquire_refreshes_self_data_from_cpi_changes() {
 fn reacquire_rejects_when_discriminator_changes_during_release() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
 
     acct.release_borrow().unwrap();
 
@@ -327,7 +312,7 @@ fn reacquire_rejects_when_discriminator_changes_during_release() {
     let foreign_disc = [0xDE, 0xAD, 0xBE, 0xEF, 0xDE, 0xAD, 0xBE, 0xEF];
     set_data_bytes(&mut buf, 0, &foreign_disc);
 
-    let result = acct.reacquire_borrow_mut(&program_id);
+    let result = acct.reacquire_borrow_mut();
     assert_eq!(
         result.err(),
         Some(ProgramError::InvalidAccountData),
@@ -341,18 +326,16 @@ fn reacquire_rejects_when_discriminator_changes_during_release() {
 // Even with disc + payload still valid, a released-window CPI could
 // transfer the account to a different owner. Without an owner check,
 // `reacquire_borrow_mut` would silently accept the now-foreign-owned
-// account as `BorshAccount<T>`. Post-fix: the caller passes `program_id`
-// into `reacquire_borrow_mut`, which re-runs `view.owned_by(&T::owner(program_id))`
-// against the live header.
+// account as `BorshAccount<T>`. Post-fix: `reacquire_borrow_mut` re-runs
+// `view.owned_by(&T::OWNER)` against the live header.
 
 #[test]
 fn reacquire_rejects_when_owner_changes_during_release() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
 
     acct.release_borrow().unwrap();
 
@@ -361,13 +344,12 @@ fn reacquire_rejects_when_owner_changes_during_release() {
     // changes.
     buf.set_owner([0xFE; 32]);
 
-    let result = acct.reacquire_borrow_mut(&program_id);
+    let result = acct.reacquire_borrow_mut();
     assert_eq!(
         result.err(),
         Some(ProgramError::IllegalOwner),
-        "reacquire_borrow_mut must reject when the on-chain owner no longer matches \
-         `T::owner(program_id)` — otherwise the program continues holding BorshAccount<T> over a \
-         foreign-owned account."
+        "reacquire_borrow_mut must reject when the on-chain owner no longer matches `T::OWNER` — \
+         otherwise the program continues holding BorshAccount<T> over a foreign-owned account."
     );
 }
 
@@ -380,10 +362,9 @@ fn reacquire_rejects_when_owner_changes_during_release() {
 fn exit_on_zero_lamport_account_is_noop() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
 
     // Modify self.data.
     acct.value = 999;
@@ -414,10 +395,9 @@ fn exit_on_zero_lamport_account_is_noop() {
 fn release_borrow_commits_in_memory_changes_to_buffer() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
 
     acct.value = 100;
     acct.release_borrow().unwrap();
@@ -434,12 +414,10 @@ fn release_borrow_commits_in_memory_changes_to_buffer() {
 fn exit_zeroes_bytes_between_new_and_old_serialized_lengths() {
     let mut buf = AccountBuffer::<256>::new();
     setup_shrinkable_bytes_buf(&mut buf, &[1, 2, 3], &[0xAA, 0xBB]);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     {
         let view = unsafe { buf.view() };
-        let mut acct =
-            unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view, &program_id) }.unwrap();
+        let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view) }.unwrap();
         acct.items = vec![1, 2];
         acct.exit().unwrap();
     }
@@ -459,10 +437,9 @@ fn exit_zeroes_bytes_between_new_and_old_serialized_lengths() {
 fn release_borrow_zeroes_bytes_between_new_and_old_serialized_lengths() {
     let mut buf = AccountBuffer::<256>::new();
     setup_shrinkable_bytes_buf(&mut buf, &[1, 2, 3], &[0xAA, 0xBB]);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<ShrinkableBytes>::load_mut(view) }.unwrap();
     acct.items.clear();
     acct.release_borrow().unwrap();
 
@@ -482,10 +459,9 @@ fn release_borrow_zeroes_bytes_between_new_and_old_serialized_lengths() {
 fn deref_mut_panics_after_release_borrow() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
 
     acct.release_borrow().unwrap();
     acct.value = 100;
@@ -501,10 +477,9 @@ fn deref_mut_panics_after_release_borrow() {
 fn stale_detection_fires_on_data_len_change() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
 
     acct.value = 100;
 
@@ -573,10 +548,9 @@ fn codec_round_trip_advances_cursor() {
 fn reacquire_guard_only_rejects_buffer_shorter_than_discriminator() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
 
     // Simulate `realloc_account(new_space = 4)`: shrink below DISC_LEN.
     acct.release_borrow().unwrap();
@@ -598,10 +572,9 @@ fn reacquire_guard_only_rejects_buffer_shorter_than_discriminator() {
 fn exit_rejects_external_shrink_below_discriminator() {
     let mut buf = AccountBuffer::<256>::new();
     setup_counter_buf(&mut buf, 42);
-    let program_id = Address::new_from_array(PROGRAM_ID);
 
     let view = unsafe { buf.view() };
-    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view, &program_id) }.unwrap();
+    let mut acct = unsafe { BorshAccount::<Counter>::load_mut(view) }.unwrap();
     acct.value = 100;
 
     // Simulate an external resize to 4 bytes (below DISC_LEN = 8).

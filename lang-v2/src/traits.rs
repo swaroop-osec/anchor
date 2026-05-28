@@ -146,7 +146,7 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// check).
     const MIN_DATA_LEN: usize = 0;
 
-    fn load(view: AccountView, program_id: &Address) -> core::result::Result<Self, ProgramError>;
+    fn load(view: AccountView) -> core::result::Result<Self, ProgramError>;
 
     /// Load an account for mutable access.
     ///
@@ -162,14 +162,11 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     /// override to use `borrow_unchecked_mut` for write provenance.
     /// `Signer` overrides with a fused `is_signer` + `is_writable` check.
     #[inline(always)]
-    unsafe fn load_mut(
-        view: AccountView,
-        program_id: &Address,
-    ) -> core::result::Result<Self, ProgramError> {
+    unsafe fn load_mut(view: AccountView) -> core::result::Result<Self, ProgramError> {
         if !view.is_writable() {
             return Err(crate::ErrorCode::ConstraintMut.into());
         }
-        Self::load(view, program_id)
+        Self::load(view)
     }
 
     /// Like [`load_mut`], but called right after
@@ -183,11 +180,8 @@ pub trait AnchorAccount: Deref<Target = Self::Data> + Sized {
     ///
     /// [`load_mut`]: Self::load_mut
     #[inline(always)]
-    unsafe fn load_mut_after_init(
-        view: AccountView,
-        program_id: &Address,
-    ) -> core::result::Result<Self, ProgramError> {
-        Self::load_mut(view, program_id)
+    unsafe fn load_mut_after_init(view: AccountView) -> core::result::Result<Self, ProgramError> {
+        Self::load_mut(view)
     }
 
     fn account(&self) -> &AccountView;
@@ -472,16 +466,16 @@ impl<T: AsRef<AccountView>> Lamports for T {}
 /// Declares which program owns accounts of this data type.
 ///
 /// For your own program's types, `#[account]` generates this automatically
-/// returning `*program_id` (no `declare_id!` needed).
+/// from the program's declared ID.
 ///
 /// External crates implement this with their program's address:
 /// ```ignore
 /// impl Owner for TokenAccountData {
-///     fn owner(_program_id: &Address) -> Address { Token::id() }
+///     const OWNER: Address = Token::ID;
 /// }
 /// ```
 pub trait Owner {
-    fn owner(program_id: &Address) -> Address;
+    const OWNER: Address;
 }
 
 /// Declares the on-chain address for a program marker type.
@@ -544,7 +538,7 @@ pub trait AccountInitialize: Sized {
         payer: &AccountView,
         account: &AccountView,
         space: usize,
-        program_id: &Address,
+        owner: &Address,
         params: &Self::Params<'a>,
         signer_seeds: Option<&[&[u8]]>,
     ) -> Result<Self, ProgramError>;
