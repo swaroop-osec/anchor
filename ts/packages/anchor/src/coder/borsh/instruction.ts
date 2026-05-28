@@ -69,7 +69,7 @@ export class BorshInstructionCoder implements InstructionCoder {
       }
       const missing = encoder.args
         .map((a) => a.name)
-        .filter((name) => !Object.prototype.hasOwnProperty.call(ix, name));
+        .filter((name) => !ix.hasOwnProperty(name));
       if (missing.length > 0) {
         throw new Error(
           `Invalid arguments for instruction "${ixName}": missing field${
