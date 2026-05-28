@@ -446,6 +446,29 @@ fn init_rejects_wrong_associated_token_program() {
 }
 
 #[test]
+fn direct_create_creates_missing_legacy_ata() {
+    let (mut svm, payer) = setup();
+    let mint_authority = keypair_for("spl-ata-direct-create-mint-authority");
+    let owner = keypair_for("spl-ata-direct-create-owner");
+    let mint = Keypair::new();
+    let ata = associated_token_address(&owner.pubkey(), &mint.pubkey(), &token_program_id());
+    init_mint(&mut svm, &payer, &mint, &mint_authority.pubkey());
+
+    send_direct_create_ata(
+        &mut svm,
+        &payer,
+        mint.pubkey(),
+        owner.pubkey(),
+        ata,
+        token_program_id(),
+        ata_program_id(),
+    )
+    .expect("direct create should create a missing ATA");
+
+    assert_token_account_state(&svm, ata, mint.pubkey(), owner.pubkey(), token_program_id());
+}
+
+#[test]
 fn direct_create_rejects_wrong_associated_token_program() {
     let (mut svm, payer) = setup();
     let mint_authority = keypair_for("spl-ata-mint-authority");

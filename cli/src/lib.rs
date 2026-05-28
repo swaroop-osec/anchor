@@ -326,7 +326,7 @@ pub enum Command {
         /// Directory containing register trace files.
         #[clap(long, default_value = "target/coverage/traces")]
         trace_dir: String,
-        /// Arguments to pass to the underlying `cargo build-sbf` command.
+        /// Arguments to pass to the underlying `cargo test` command.
         #[clap(required = false, last = true)]
         cargo_args: Vec<String>,
     },
@@ -4024,7 +4024,7 @@ fn run_coverage(
         if !skip_build {
             let build_cwd = ws.cargo_invocation_dir();
             eprintln!("building programs with DWARF...");
-            cargo_build_sbf(Some(build_cwd), &cargo_args)?;
+            cargo_build_sbf(Some(build_cwd), &[])?;
         }
 
         // Clear previous traces.
@@ -4061,6 +4061,7 @@ fn run_coverage(
         if let Some(pkg) = &ws.current_package {
             cmd.arg("-p").arg(pkg);
         }
+        cmd.args(&cargo_args);
         let status = cmd.status().context("spawn cargo test")?;
         if !status.success() {
             return Err(anyhow::anyhow!("cargo test failed"));

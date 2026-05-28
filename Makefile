@@ -70,7 +70,8 @@ coverage-v2-sbf: build-anchor-debug
 	cd $(PWD)/tests-v2 && $(PWD)/target/debug/anchor coverage \
 		--skip-build \
 		--trace-dir $(PWD)/$(COVERAGE_DIR)/traces \
-		--output $(PWD)/$(COVERAGE_DIR)/sbf.lcov
+		--output $(PWD)/$(COVERAGE_DIR)/sbf.lcov \
+		-- $(TESTS_V2_COVERAGE_ARGS)
 
 # Always invoke cargo (it handles incremental) so the anchor binary picks up
 # any changes to coverage.rs / source_resolver / etc.

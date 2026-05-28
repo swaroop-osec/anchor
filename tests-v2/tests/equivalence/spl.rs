@@ -63,6 +63,11 @@ const V2_DISC_INTERFACE_MINT: u8 = 2;
 const V2_DISC_INTERFACE_TOKEN_ACCOUNT: u8 = 3;
 const V2_DISC_INTERFACE_MINT_EXTENSION: u8 = 4;
 const V2_DISC_INTERFACE_TOKEN_ACCOUNT_EXTENSION: u8 = 5;
+const TAG_INTERFACE_MINT_EXTENSION: u8 = 5;
+const TAG_INTERFACE_TOKEN_EXTENSION: u8 = 6;
+const EXTENSION_STATUS_FOUND: u8 = 1;
+const EXTENSION_STATUS_ILLEGAL_OWNER: u8 = 2;
+const EXTENSION_STATUS_ACCESS_ERROR: u8 = 3;
 
 #[derive(Clone, Copy, Debug)]
 enum OracleVersion {
@@ -1479,6 +1484,206 @@ fn assert_v1_v2_equivalent(deploy_dir: &std::path::Path, case: &Case) -> Result<
         run_tx(deploy_dir, OracleVersion::V2, case),
     );
     Ok(())
+}
+
+fn deterministic_output_case(operation: Operation, target: AccountCase) -> Case {
+    Case {
+        operation,
+        payer_lamports: DEFAULT_PAYER_LAMPORTS,
+        target,
+        output: OutputAccountCase {
+            lamports: DEFAULT_ACCOUNT_LAMPORTS,
+            data: vec![0; OBSERVATION_LEN],
+            owner: OutputOwner::Oracle,
+            executable: false,
+            rent_epoch: 0,
+        },
+        target_signer: false,
+        target_writable: false,
+        output_signer: false,
+        output_writable: true,
+    }
+}
+
+fn deterministic_mint() -> Token2022Mint {
+    Token2022Mint {
+        mint_authority: Token2022COption::Some(Pubkey::new_from_array([1; 32])),
+        supply: 123,
+        decimals: 6,
+        is_initialized: true,
+        freeze_authority: Token2022COption::None,
+    }
+}
+
+fn deterministic_token_account() -> Token2022Account {
+    Token2022Account {
+        mint: Pubkey::new_from_array([2; 32]),
+        owner: Pubkey::new_from_array([3; 32]),
+        amount: 456,
+        delegate: Token2022COption::None,
+        state: Token2022AccountState::Initialized,
+        is_native: Token2022COption::None,
+        delegated_amount: 0,
+        close_authority: Token2022COption::None,
+    }
+}
+
+fn account_case(owner: Pubkey, data: Vec<u8>) -> AccountCase {
+    AccountCase {
+        lamports: DEFAULT_ACCOUNT_LAMPORTS,
+        data,
+        owner,
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+fn expect_output(case: &Case, expected_tag: u8, expected_operation: u8, expected_status: u8) {
+    let deploy_dir = setup();
+    let v1 = run_tx(&deploy_dir, OracleVersion::V1, case);
+    let v2 = run_tx(&deploy_dir, OracleVersion::V2, case);
+    assert_eq!(v1, v2, "v1 and v2 SPL observations diverged");
+    let NormalizedResult::Ok(accounts) = v2 else {
+        panic!("expected deterministic SPL observation to succeed");
+    };
+    let out = &accounts[2].data;
+    assert_eq!(out[0], expected_tag);
+    assert_eq!(out[1], expected_operation);
+    assert_eq!(out[2], expected_status);
+}
+
+#[test]
+fn interface_extension_readers_report_found_extensions() {
+    for observation in [
+        MintExtensionObservation::MetadataPointer,
+        MintExtensionObservation::GroupPointer,
+        MintExtensionObservation::GroupMemberPointer,
+        MintExtensionObservation::TransferHook,
+        MintExtensionObservation::MintCloseAuthority,
+        MintExtensionObservation::PermanentDelegate,
+        MintExtensionObservation::TransferFeeConfig,
+        MintExtensionObservation::PausableConfig,
+    ] {
+        let target = account_case(
+            token_2022_program_id(),
+            token_2022_mint_data_with_extension_cases(
+                deterministic_mint(),
+                &[mint_extension_case_for_observation(
+                    observation,
+                    vec![7; 128],
+                )],
+            ),
+        );
+        let case =
+            deterministic_output_case(Operation::InterfaceMintExtension(observation), target);
+        expect_output(
+            &case,
+            TAG_INTERFACE_MINT_EXTENSION,
+            observation as u8,
+            EXTENSION_STATUS_FOUND,
+        );
+    }
+
+    for observation in [
+        TokenAccountExtensionObservation::TransferFeeAmount,
+        TokenAccountExtensionObservation::CpiGuard,
+        TokenAccountExtensionObservation::TransferHookAccount,
+        TokenAccountExtensionObservation::PausableAccount,
+    ] {
+        let target = account_case(
+            token_2022_program_id(),
+            token_2022_token_account_data_with_extension_cases(
+                deterministic_token_account(),
+                &[token_account_extension_case_for_observation(
+                    observation,
+                    vec![9; 128],
+                )],
+            ),
+        );
+        let case = deterministic_output_case(
+            Operation::InterfaceTokenAccountExtension(observation),
+            target,
+        );
+        expect_output(
+            &case,
+            TAG_INTERFACE_TOKEN_EXTENSION,
+            observation as u8,
+            EXTENSION_STATUS_FOUND,
+        );
+    }
+}
+
+#[test]
+fn interface_extension_readers_report_missing_and_illegal_owner() {
+    let missing_mint = deterministic_output_case(
+        Operation::InterfaceMintExtension(MintExtensionObservation::TransferFeeConfig),
+        account_case(
+            token_2022_program_id(),
+            token_2022_mint_data_with_extension_cases(
+                deterministic_mint(),
+                &[MintExtensionCase::MetadataPointer(vec![0; 128])],
+            ),
+        ),
+    );
+    expect_output(
+        &missing_mint,
+        TAG_INTERFACE_MINT_EXTENSION,
+        MintExtensionObservation::TransferFeeConfig as u8,
+        EXTENSION_STATUS_ACCESS_ERROR,
+    );
+
+    let illegal_mint_owner = deterministic_output_case(
+        Operation::InterfaceMintExtension(MintExtensionObservation::MetadataPointer),
+        account_case(
+            token_program_id(),
+            token_2022_mint_data_with_extension_cases(
+                deterministic_mint(),
+                &[MintExtensionCase::MetadataPointer(vec![0; 128])],
+            ),
+        ),
+    );
+    expect_output(
+        &illegal_mint_owner,
+        TAG_INTERFACE_MINT_EXTENSION,
+        MintExtensionObservation::MetadataPointer as u8,
+        EXTENSION_STATUS_ILLEGAL_OWNER,
+    );
+
+    let missing_token_account = deterministic_output_case(
+        Operation::InterfaceTokenAccountExtension(
+            TokenAccountExtensionObservation::PausableAccount,
+        ),
+        account_case(
+            token_2022_program_id(),
+            token_2022_token_account_data_with_extension_cases(
+                deterministic_token_account(),
+                &[TokenAccountExtensionCase::TransferFeeAmount(vec![0; 128])],
+            ),
+        ),
+    );
+    expect_output(
+        &missing_token_account,
+        TAG_INTERFACE_TOKEN_EXTENSION,
+        TokenAccountExtensionObservation::PausableAccount as u8,
+        EXTENSION_STATUS_ACCESS_ERROR,
+    );
+
+    let illegal_token_account_owner = deterministic_output_case(
+        Operation::InterfaceTokenAccountExtension(TokenAccountExtensionObservation::CpiGuard),
+        account_case(
+            token_program_id(),
+            token_2022_token_account_data_with_extension_cases(
+                deterministic_token_account(),
+                &[TokenAccountExtensionCase::CpiGuard(vec![0; 128])],
+            ),
+        ),
+    );
+    expect_output(
+        &illegal_token_account_owner,
+        TAG_INTERFACE_TOKEN_EXTENSION,
+        TokenAccountExtensionObservation::CpiGuard as u8,
+        EXTENSION_STATUS_ILLEGAL_OWNER,
+    );
 }
 
 fn equivalence_proptest_cases() -> u32 {

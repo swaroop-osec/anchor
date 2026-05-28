@@ -14,7 +14,7 @@ pub mod token_2022_ext_transfer_fee {
         token_2022_ext::transfer_fee_initialize(
             CpiContext::new(ctx.accounts.token_program.address(), accs),
             Some(&config_authority),
-            None,
+            Some(&config_authority),
             111,
             42,
         )?;
@@ -47,7 +47,7 @@ pub mod token_2022_ext_transfer_fee {
             CpiContext::new(ctx.accounts.token_program.address(), accs),
             500,
             6,
-            5,
+            6,
         )?;
         Ok(())
     }
