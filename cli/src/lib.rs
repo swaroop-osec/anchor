@@ -5242,14 +5242,11 @@ fn airdrop(cfg_override: &ConfigOverride, amount: f64, pubkey: Option<Pubkey>) -
     client
         .confirm_transaction_with_spinner(&signature, &recent_blockhash, client.commitment())
         .map_err(|e| anyhow!("Transaction confirmation failed: {}", e))?;
-    if !confirmed {
-        return Err(anyhow!("Transaction was not confirmed"));
-    }
 
     println!("Airdrop confirmed!");
 
     // Get and display the new balance
-    let balance = client.get_balance(&recipient_pubkey)?;
+    let balance = wait_for_airdrop_balance(&client, &recipient_pubkey, starting_balance, lamports)?;
     println!("Balance: {}", format_sol(balance));
 
     Ok(())
