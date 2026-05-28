@@ -162,9 +162,7 @@ pub struct AccountsJsonField<'a> {
     pub docs: &'a [String],
     /// Token expression evaluating at IDL-build time to the `pda: {...}`
     /// object JSON body (no leading comma). `None` when the field has no
-    /// `seeds = [...]` attr. Built by [`pda_object_emission`]; runtime
-    /// rather than static so const-evaluatable seed expressions resolve
-    /// to their actual bytes via `__idl_const_seed_json`.
+    /// `seeds = [...]` attr. Built by [`pda_object_emission`].
     pub pda_json: Option<TokenStream2>,
     /// The wrapper `Type` (post-`Option` unwrap) whose trait consts we
     /// dispatch on at runtime. Should match `AccountField::idl_field_ty`.
@@ -243,8 +241,6 @@ pub fn build_accounts_emission(fields: &[AccountsJsonField<'_>]) -> TokenStream2
             } else {
                 format!(",\"docs\":{}", docs_to_json_array(f.docs))
             };
-            // `pda` body is now a runtime expression so const-fallback
-            // seeds resolve to their actual bytes via `__idl_const_seed_json`.
             // Static-only fields still pay one `String::from` allocation —
             // immaterial in the test-only IDL build path.
             let pda_json_expr = match &f.pda_json {
@@ -594,30 +590,22 @@ fn docs_value(docs: &[String]) -> Value {
 // Seed classification (Part E — `pda: {...}` emission)
 // ---------------------------------------------------------------------------
 
-/// Classified seed expression. Static cases carry pre-built JSON; the
-/// `Runtime` variant carries a token expression that evaluates to a JSON
-/// `String` at IDL-build time, used for arbitrary const-evaluatable
-/// expressions whose bytes the macro can't fold itself.
+/// Classified seed expression. Only explicitly recognized shapes carry
+/// structured IDL metadata; unsupported expressions are emitted as opaque
+/// `{"kind":"expr"}` placeholders.
 #[derive(Clone)]
 pub enum SeedJson {
     /// Pre-serialized JSON object — known at macro time.
     Static(String),
-    /// Token expression evaluating to `alloc::string::String` at runtime.
-    /// Built around `anchor_lang_v2::idl_build::__idl_const_seed_json` for
-    /// the const-fallback path.
-    Runtime(TokenStream2),
 }
 
 impl SeedJson {
-    /// Token expression evaluating to `String` at IDL-build time. Static
-    /// payloads become `String::from("<literal>")`; runtime payloads pass
-    /// through unchanged.
+    /// Token expression evaluating to `String` at IDL-build time.
     pub fn into_string_expr(self) -> TokenStream2 {
         match self {
             SeedJson::Static(s) => quote! {
                 anchor_lang_v2::__alloc::string::String::from(#s)
             },
-            SeedJson::Runtime(ts) => ts,
         }
     }
 }
@@ -640,13 +628,9 @@ impl SeedJson {
 ///   → `{"kind":"arg","path":"nonce"}`
 ///
 /// Anything else (a constant ref like `MY_PREFIX`, a const-fn call like
-/// `<Marker as Id>::id()`, etc.) is emitted as `SeedJson::Runtime`: the
-/// derive splices a call to
-/// `anchor_lang_v2::idl_build::__idl_const_seed_json(<expr>)` into
-/// `__idl_accounts()`. That helper accepts any `AsRef<[u8]>` value, so any
-/// const whose value implements `AsRef<[u8]>` (`Pubkey`, `[u8; N]`,
-/// `&[u8]`, `&str`, …) lands as a real `{"kind":"const","value":[...]}`
-/// entry rather than the empty placeholder we used to emit.
+/// `<Marker as Id>::id()`, wrapped account/arg field access, etc.) is opaque:
+/// `{"kind":"expr"}`. Runtime constraints still evaluate the original Rust
+/// expression; this only avoids over-promising IDL/client metadata.
 pub fn classify_seed(expr: &Expr, field_names: &[String], ix_arg_names: &[String]) -> SeedJson {
     classify_seed_inner(expr, field_names, ix_arg_names)
 }
@@ -693,8 +677,7 @@ fn classify_seed_inner(expr: &Expr, field_names: &[String], ix_arg_names: &[Stri
         }
     }
 
-    // Bare ident — field ref wins, then ix arg, otherwise it's a const
-    // path that falls through to the runtime helper below.
+    // Bare ident — field ref wins, then ix arg, otherwise it's opaque.
     if let Expr::Path(ep) = cur {
         if ep.qself.is_none() && ep.path.segments.len() == 1 && ep.path.leading_colon.is_none() {
             let seg = &ep.path.segments[0];
@@ -735,18 +718,7 @@ fn classify_seed_inner(expr: &Expr, field_names: &[String], ix_arg_names: &[Stri
         }
     }
 
-    // Const-evaluatable fallback. Anything that survives to here — a
-    // constant path (`MY_PREFIX`), a const-fn call (`<Marker as Id>::id()`),
-    // a `crate::seeds::TAG`, etc. — is forwarded to the runtime helper so
-    // its bytes land in the IDL. The `AsRef<[u8]>` bound covers
-    // `Pubkey` / `Address`, `[u8; N]`, `&[u8]`, `&str`, and any user type
-    // that implements it. Expressions whose value isn't `AsRef<[u8]>`
-    // become a compile error in the IDL-build test binary — strictly
-    // better than the previous silent-empty-bytes behavior, since the
-    // build surfaces it instead of shipping a broken IDL.
-    SeedJson::Runtime(quote! {
-        anchor_lang_v2::idl_build::__idl_const_seed_json(#expr)
-    })
+    static_seed(json!({ "kind": "expr" }))
 }
 
 /// Walk down a method-call / field-access / index chain and return the
@@ -795,11 +767,9 @@ fn arg_seed_value(path: &str) -> Value {
 /// evaluates to the JSON object string at IDL-build time (without the
 /// leading `,"pda":` — that's spliced by `build_accounts_emission`).
 ///
-/// Static seeds become string-literal pushes; runtime seeds (from
-/// const-evaluatable expressions classified into `SeedJson::Runtime`)
-/// invoke `__idl_const_seed_json` at runtime and have their result spliced
-/// in. The whole expression assembles a single `String` via `push_str`,
-/// avoiding intermediate `Vec` / `serde_json::Value` round-trips.
+/// Static seeds become string-literal pushes. The whole expression assembles a
+/// single `String` via `push_str`, avoiding intermediate `Vec` /
+/// `serde_json::Value` round-trips.
 pub fn pda_object_emission(seeds: &[SeedJson], program: Option<&SeedJson>) -> TokenStream2 {
     let seed_pushes: Vec<TokenStream2> = seeds
         .iter()
@@ -844,18 +814,6 @@ mod tests {
     fn expect_static(seed: SeedJson) -> String {
         match seed {
             SeedJson::Static(s) => s,
-            SeedJson::Runtime(ts) => {
-                panic!("expected Static seed, got Runtime: {}", ts);
-            }
-        }
-    }
-
-    /// Render a `Runtime` seed's TokenStream to its source-text form for
-    /// substring assertions. Panics if the seed was `Static`.
-    fn expect_runtime(seed: SeedJson) -> String {
-        match seed {
-            SeedJson::Static(s) => panic!("expected Runtime seed, got Static: {s}"),
-            SeedJson::Runtime(ts) => ts.to_string(),
         }
     }
 
@@ -893,12 +851,9 @@ mod tests {
     }
 
     #[test]
-    fn byte_array_with_non_u8_falls_through_to_runtime() {
-        // 999 doesn't fit in u8 so the fast path bails; the array
-        // expression survives as-is and is forwarded to the runtime
-        // helper.
-        let ts = expect_runtime(classify(syn::parse_quote!([999, 2]), &[], &[]));
-        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
+    fn byte_array_with_non_u8_is_opaque_expr() {
+        let s = expect_static(classify(syn::parse_quote!([999, 2]), &[], &[]));
+        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
@@ -949,36 +904,47 @@ mod tests {
     }
 
     #[test]
+    fn wrapped_account_ref_is_opaque_expr() {
+        let s = expect_static(classify(
+            syn::parse_quote!(u64::from(manager.next_oracle_id).to_le_bytes()),
+            &["manager"],
+            &[],
+        ));
+        assert_eq!(s, r#"{"kind":"expr"}"#);
+    }
+
+    #[test]
+    fn wrapped_arg_ref_is_opaque_expr() {
+        let s = expect_static(classify(
+            syn::parse_quote!(u64::from(next_oracle_id).to_le_bytes()),
+            &[],
+            &["next_oracle_id"],
+        ));
+        assert_eq!(s, r#"{"kind":"expr"}"#);
+    }
+
+    #[test]
     fn string_literal_as_bytes_method_is_static_const() {
         let s = expect_static(classify(syn::parse_quote!("hi".as_bytes()), &[], &[]));
         assert_eq!(s, r#"{"kind":"const","value":[104,105]}"#);
     }
 
     #[test]
-    fn const_path_falls_through_to_runtime_helper() {
-        // Bare ident not in field/arg lists is the const-fallback case.
-        let ts = expect_runtime(classify(syn::parse_quote!(MY_PREFIX), &[], &[]));
-        assert!(
-            ts.contains("__idl_const_seed_json"),
-            "missing helper call: {ts}"
-        );
-        assert!(ts.contains("MY_PREFIX"), "missing inner expr: {ts}");
+    fn const_path_is_opaque_expr() {
+        let s = expect_static(classify(syn::parse_quote!(MY_PREFIX), &[], &[]));
+        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
-    fn marker_id_call_falls_through_to_runtime() {
-        // Previously hit a hardcoded base58 allowlist; now flows through
-        // the `AsRef<[u8]>` runtime helper for any marker.
-        let ts = expect_runtime(classify(syn::parse_quote!(System::id()), &[], &[]));
-        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
-        assert!(ts.contains("System :: id"), "got: {ts}");
+    fn marker_id_call_is_opaque_expr() {
+        let s = expect_static(classify(syn::parse_quote!(System::id()), &[], &[]));
+        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
-    fn unknown_marker_id_call_also_flows_through_runtime() {
-        // Custom user marker — used to fall through to empty-bytes; now works.
-        let ts = expect_runtime(classify(syn::parse_quote!(MyCustomProgram::id()), &[], &[]));
-        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
+    fn unknown_marker_id_call_is_opaque_expr() {
+        let s = expect_static(classify(syn::parse_quote!(MyCustomProgram::id()), &[], &[]));
+        assert_eq!(s, r#"{"kind":"expr"}"#);
     }
 
     #[test]
@@ -1014,17 +980,5 @@ mod tests {
         // The program override gets its own runtime push under the
         // "program" key.
         assert!(ts.contains(r#",\"program\":"#), "missing program key: {ts}");
-    }
-
-    #[test]
-    fn pda_object_emission_propagates_runtime_seed() {
-        // Runtime seeds must appear verbatim inside the emission so the
-        // helper call survives macro expansion.
-        let seeds = vec![SeedJson::Runtime(quote! {
-            anchor_lang_v2::idl_build::__idl_const_seed_json(MY_CONST)
-        })];
-        let ts = pda_object_emission(&seeds, None).to_string();
-        assert!(ts.contains("__idl_const_seed_json"), "got: {ts}");
-        assert!(ts.contains("MY_CONST"), "got: {ts}");
     }
 }
