@@ -118,6 +118,11 @@ pub use wincode;
 /// is safe.
 pub const BORSH_CONFIG: BorshConfig = wincode::config::Configuration::new();
 
+/// Solana allows at most 16 seeds when deriving a PDA.
+pub const MAX_PAYER_SEEDS: usize = 16;
+/// PDA payers append the canonical bump as a final signer seed.
+pub const MAX_PAYER_SEEDS_WITH_BUMP: usize = MAX_PAYER_SEEDS + 1;
+
 /// Concrete type of [`BORSH_CONFIG`]. Spelled out so downstream callers can
 /// name it in trait bounds (e.g. `T: wincode::SchemaRead<'de, BorshConfig>`).
 pub type BorshConfig = wincode::config::Configuration<
@@ -139,16 +144,18 @@ pub type BorshConfig = wincode::config::Configuration<
 /// is gated on the **end-user crate's** local `idl-build` feature, so
 /// non-IDL builds pay nothing.
 pub use anchor_derive_accounts_v2::IdlType;
+// ---------------------------------------------------------------------------
+// Client-side types — for building instructions off-chain (tests, CPI, SDK)
+// ---------------------------------------------------------------------------
+pub use anchor_derive_accounts_v2::{emit_cpi, event_cpi};
+#[doc(hidden)]
+pub use cpi::create_account_with_signers;
 /// **Opaque / unstable.** Re-exported so derive-emitted code in user
 /// crates can name the trait. Do not implement this trait by hand or call
 /// its associated items — they are implementation details of the IDL
 /// build pipeline and will change without notice. See [`idl_build`] for
 /// the trait definition.
 pub use idl_build::IdlAccountType;
-// ---------------------------------------------------------------------------
-// Client-side types — for building instructions off-chain (tests, CPI, SDK)
-// ---------------------------------------------------------------------------
-pub use anchor_derive_accounts_v2::{emit_cpi, event_cpi};
 /// Metadata for a single account in a transaction instruction.
 ///
 /// Re-exported from `solana-instruction` so tests and CPI builders can pass
@@ -202,10 +209,9 @@ pub mod solana_program {
         pub use solana_instruction::*;
     }
 
-    pub use solana_system_interface::instruction as system_instruction;
-
     #[cfg(feature = "compat")]
     pub use crate::pubkey;
+    pub use solana_system_interface::instruction as system_instruction;
 
     #[cfg(feature = "compat")]
     pub mod pubkey {
