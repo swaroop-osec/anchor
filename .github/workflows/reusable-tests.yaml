@@ -458,6 +458,8 @@ jobs:
             path: tests/pyth
           - cmd: cd tests/realloc && anchor test --skip-lint && npx tsc --noEmit
             path: tests/realloc
+          - cmd: cd tests/accountloader-realloc && anchor test --skip-lint && npx tsc --noEmit
+            path: tests/accountloader-realloc
           - cmd: cd tests/system-accounts && anchor test --skip-lint
             path: tests/system-accounts
           - cmd: cd tests/misc && anchor test --skip-lint && npx tsc --noEmit
