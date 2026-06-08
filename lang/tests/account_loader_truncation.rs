@@ -33,7 +33,8 @@ macro_rules! setup_truncated_account {
 #[test]
 fn test_load_truncated() {
     setup_truncated_account!(key, owner, lamports, data, account_info);
-    let loader: AccountLoader<ZcStruct> = AccountLoader::try_from(&account_info).unwrap();
+    let loader: AccountLoader<ZcStruct> =
+        AccountLoader::try_from_unchecked(&crate::ID, &account_info).unwrap();
     assert_eq!(
         loader.load().unwrap_err(),
         ErrorCode::AccountDidNotDeserialize.into()
@@ -43,9 +44,19 @@ fn test_load_truncated() {
 #[test]
 fn test_load_mut_truncated() {
     setup_truncated_account!(key, owner, lamports, data, account_info);
-    let loader: AccountLoader<ZcStruct> = AccountLoader::try_from(&account_info).unwrap();
+    let loader: AccountLoader<ZcStruct> =
+        AccountLoader::try_from_unchecked(&crate::ID, &account_info).unwrap();
     assert_eq!(
         loader.load_mut().unwrap_err(),
+        ErrorCode::AccountDidNotDeserialize.into()
+    );
+}
+
+#[test]
+fn test_try_from_rejects_truncated() {
+    setup_truncated_account!(key, owner, lamports, data, account_info);
+    assert_eq!(
+        AccountLoader::<ZcStruct>::try_from(&account_info).unwrap_err(),
         ErrorCode::AccountDidNotDeserialize.into()
     );
 }
