@@ -142,10 +142,7 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
 
         // Reject undersized buffers up front so downstream load/exit can't
         // operate on a structurally invalid account.
-        let required = disc
-            .len()
-            .checked_add(mem::size_of::<T>())
-            .ok_or(ErrorCode::AccountDidNotDeserialize)?;
+        let required = T::DISCRIMINATOR.len() + mem::size_of::<T>();
         if data.len() < required {
             return Err(ErrorCode::AccountDidNotDeserialize.into());
         }
@@ -279,9 +276,8 @@ impl<'info, T: ZeroCopy + Owner> AccountsExit<'info> for AccountLoader<'info, T>
         // Only persist if the owner is the current program and the account is not closed.
         if &T::owner() == program_id && !crate::common::is_closed(self.acc_info) {
             // Guard against truncation: refuse to rewrite the discriminator over an undersized buffer.
-            let data_len = self.acc_info.try_data_len()?;
             let required = T::DISCRIMINATOR.len() + mem::size_of::<T>();
-            if data_len < required {
+            if self.acc_info.try_data_len()? < required {
                 return Err(ErrorCode::AccountDidNotDeserialize.into());
             }
             let mut data = self.acc_info.try_borrow_mut_data()?;
