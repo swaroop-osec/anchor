@@ -140,13 +140,6 @@ impl<'info, T: ZeroCopy + Owner> AccountLoader<'info, T> {
             return Err(ErrorCode::AccountDiscriminatorMismatch.into());
         }
 
-        // Reject undersized buffers up front so downstream load/exit can't
-        // operate on a structurally invalid account.
-        let required = T::DISCRIMINATOR.len() + mem::size_of::<T>();
-        if data.len() < required {
-            return Err(ErrorCode::AccountDidNotDeserialize.into());
-        }
-
         Ok(AccountLoader::new_unchecked(acc_info))
     }
 

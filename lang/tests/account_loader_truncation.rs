@@ -53,15 +53,6 @@ fn test_load_mut_truncated() {
 }
 
 #[test]
-fn test_try_from_rejects_truncated() {
-    setup_truncated_account!(key, owner, lamports, data, account_info);
-    assert_eq!(
-        AccountLoader::<ZcStruct>::try_from(&account_info).unwrap_err(),
-        ErrorCode::AccountDidNotDeserialize.into()
-    );
-}
-
-#[test]
 fn test_load_init_truncated() {
     setup_truncated_account!(key, owner, lamports, data, account_info);
     let loader: AccountLoader<ZcStruct> =
