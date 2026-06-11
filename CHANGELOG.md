@@ -30,7 +30,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
-- lang: Pin `rust-version = "1.89"` on `anchor-lang` so consumers on older toolchains get a clear cargo error instead of a transitive `extract_if` E0658 ([#4638](https://github.com/otter-sec/anchor/pull/4638)).
+- lang: Set `anchor-lang` Minimum Supported Rust Version to `1.89` ([#4638](https://github.com/otter-sec/anchor/pull/4638)).
 - lang: Shorten invariant lifetimes during `Context` creation ([#4363](https://github.com/solana-foundation/anchor/pull/4363)).
 - ts: Guard recursive IDL layouts against stack overflows while preserving supported recursive types ([#4604](https://github.com/solana-foundation/anchor/pull/4604)).
 - idl: Bump version to 0.1.3 ([#4453](https://github.com/solana-foundation/anchor/pull/4453)).
