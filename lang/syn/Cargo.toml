@@ -28,7 +28,6 @@ idl-build = ["cargo_toml"]
 init-if-needed = []
 
 [dependencies]
-anyhow = "1"
 bs58 = "0.5"
 
 # `idl-build` feature only
@@ -41,3 +40,7 @@ serde = { version = "1", features = ["derive"] }
 sha2 = "0.11"
 syn = { workspace = true, features = ["full", "extra-traits", "parsing"] }
 thiserror = "1"
+
+[[test]]
+name = "idl_attributes"
+required-features = ["idl-build"]
