@@ -34,6 +34,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Guard `AccountLoader<T>::exit` against zero-copy buffer truncation and bail with `AccountDidNotDeserialize` instead of rewriting the discriminator over an undersized buffer ([#4633](https://github.com/otter-sec/anchor/pull/4633)).
 - lang: Set `anchor-lang` Minimum Supported Rust Version to `1.89` ([#4638](https://github.com/otter-sec/anchor/pull/4638)).
 - lang: Shorten invariant lifetimes during `Context` creation ([#4363](https://github.com/solana-foundation/anchor/pull/4363)).
+- lang: Qualify bare `error!` calls in require macros so they don't depend on global prelude imports ([#4639](https://github.com/otter-sec/anchor/pull/4639)).
 - ts: Guard recursive IDL layouts against stack overflows while preserving supported recursive types ([#4604](https://github.com/solana-foundation/anchor/pull/4604)).
 - lang: Fix missing error messages of the generated errors in `declare_program!` ([#4652](https://github.com/solana-foundation/anchor/pull/4652)).
 - idl: Bump version to 0.1.3 ([#4453](https://github.com/solana-foundation/anchor/pull/4453)).
