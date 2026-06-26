@@ -19,6 +19,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
 - lang: Remove cloning `AccountInfo` to read lamports in `init_if_needed` codegen ([#4675](https://github.com/solana-foundation/anchor/pull/4675)).
 - lang: Guard `AccountLoader<T>::exit` against zero-copy buffer truncation and bail with `AccountDidNotDeserialize` instead of rewriting the discriminator over an undersized buffer ([#4633](https://github.com/otter-sec/anchor/pull/4633)).
 - lang: Shorten invariant lifetimes during `Context` creation ([#4363](https://github.com/solana-foundation/anchor/pull/4363)).
