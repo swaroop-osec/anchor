@@ -32,6 +32,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang: Pin internal `anchor-attribute-*`, `anchor-derive-*`, and `anchor-syn` dependencies with `=` so they always resolve to the same version as `anchor-lang`, preventing macro/lang version mismatches that break `declare_program!` ([#4725](https://github.com/otter-sec/anchor/issues/4725)).
 - lang: Remove cloning `AccountInfo` to read lamports in `init_if_needed` codegen ([#4675](https://github.com/solana-foundation/anchor/pull/4675)).
 - ts: Remove `cross-fetch` dependency ([#4671](https://github.com/solana-foundation/anchor/pull/4671)).
 - lang: Guard `AccountLoader<T>::exit` against zero-copy buffer truncation and bail with `AccountDidNotDeserialize` instead of rewriting the discriminator over an undersized buffer ([#4633](https://github.com/otter-sec/anchor/pull/4633)).
