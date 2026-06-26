@@ -19,7 +19,6 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
-- deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
 - lang: Remove cloning `AccountInfo` to read lamports in `init_if_needed` codegen ([#4675](https://github.com/solana-foundation/anchor/pull/4675)).
 - lang: Guard `AccountLoader<T>::exit` against zero-copy buffer truncation and bail with `AccountDidNotDeserialize` instead of rewriting the discriminator over an undersized buffer ([#4633](https://github.com/otter-sec/anchor/pull/4633)).
 - lang: Shorten invariant lifetimes during `Context` creation ([#4363](https://github.com/solana-foundation/anchor/pull/4363)).
@@ -32,6 +31,16 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Reduce cloning in `realloc` constraint when shrinking ([#4642](https://github.com/solana-foundation/anchor/pull/4642)).
 - syn: Remove `anyhow` ([#4640](https://github.com/solana-foundation/anchor/pull/4640)).
 - lang: Sync type derives and simplify internal args creation in `declare_program!` ([#4667](https://github.com/solana-foundation/anchor/pull/4667)).
+
+### Breaking
+
+## [1.1.2] - 2026-06-26
+
+### Features
+
+### Fixes
+
+- deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
 
 ### Breaking
 
@@ -74,6 +83,16 @@ The minor version will be incremented upon a breaking change and the patch versi
 - ts: Align TS `camelCase` conversion with Rust `heck` for digit-letter identifiers so generated client names match Rust identifiers ([#4571](https://github.com/solana-foundation/anchor/pull/4571)).
 - cli: Warn if `event-cpi` instruction is unreachable with custom discriminators ([#4614](https://github.com/solana-foundation/anchor/pull/4614)).
 - ts: Update `engines.node` to `>= 20.18` ([#4647](https://github.com/solana-foundation/anchor/pull/4647)).
+
+### Breaking
+
+## [1.0.3] - 2026-06-26
+
+### Features
+
+### Fixes
+
+- deps: Tighten dependencies between `anchor-*` crates to reduce breakage ([#4726](https://github.com/otter-sec/anchor/pull/4726)).
 
 ### Breaking
 
