@@ -16,6 +16,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - spl: Added `token_metadata_remove_key` to support removing keys from token metadata extension ([#3717](https://github.com/solana-foundation/anchor/pull/3717)).
 - lang: Add `AccountLoader::new_unchecked` for constructing an `AccountLoader` without performing owner or discriminator checks ([#4162](https://github.com/solana-foundation/anchor/pull/4162)).
 - lang: Provide better error messages for `token` constraints ([#4698](https://github.com/solana-foundation/anchor/pull/4698)).
+- ts: Improve account resolution error of self-referencing PDAs ([#4711](https://github.com/solana-foundation/anchor/pull/4711)).
 
 ### Fixes
 
