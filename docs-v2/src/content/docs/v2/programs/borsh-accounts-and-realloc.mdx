@@ -64,7 +64,7 @@ pub struct Grow {
 
 The `8` is the Anchor discriminator. The `4` is the borsh length prefix for `Vec<u8>{:rs}`.
 
-The `account-resize{:toml}` feature is on by default because realloc needs pinocchio's account-resize hook. Do not disable that feature while the program still uses realloc helpers.
+Realloc support is always compiled in — `anchor-lang-v2` enables pinocchio's `account-resize{:toml}` feature unconditionally.
 
 ## CPI re-entry
 
