@@ -75,14 +75,14 @@ pub struct TransferTokens {
 The handler builds the CPI accounts, wraps them in `CpiContext{:rs}`, then calls the SPL helper:
 
 ```rust showLineNumbers=false
-use anchor_spl_v2::token::{self, cpi as token_cpi};
+use anchor_spl_v2::token;
 
 pub fn transfer_tokens(
     ctx: &mut Context<TransferTokens>,
     amount: u64,
     decimals: u8,
 ) -> Result<()> {
-    let accounts = token_cpi::accounts::TransferChecked {
+    let accounts = token::accounts::TransferChecked {
         from: ctx.accounts.from.cpi_handle_mut(),
         mint: ctx.accounts.mint.cpi_handle(),
         to: ctx.accounts.to.cpi_handle_mut(),
@@ -90,7 +90,7 @@ pub fn transfer_tokens(
     };
 
     let cpi = CpiContext::new(ctx.accounts.token_program.address(), accounts);
-    token_cpi::transfer_checked(cpi, amount, decimals)
+    token::transfer_checked(cpi, amount, decimals)
 }
 ```
 
@@ -142,7 +142,7 @@ If a CPI mutates an account that the current handler holds as `BorshAccount<T>{:
 ```rust showLineNumbers=false
 ctx.accounts.profile.release_borrow()?;
 some_program::cpi::update_profile(cpi_ctx)?;
-ctx.accounts.profile.reacquire_borrow_mut(ctx.program_id)?;
+ctx.accounts.profile.reacquire_borrow_mut()?;
 ```
 
 `Account<T>{:rs}` does not need this because its zero-copy fields read from the underlying buffer directly.

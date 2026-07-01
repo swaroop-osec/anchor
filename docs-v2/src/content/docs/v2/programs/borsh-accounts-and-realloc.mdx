@@ -73,7 +73,7 @@ The `account-resize{:toml}` feature is on by default because realloc needs pinoc
 ```rust showLineNumbers=false
 ctx.accounts.profile.release_borrow()?;
 other_program::cpi::update_profile(cpi_ctx)?;
-ctx.accounts.profile.reacquire_borrow_mut(ctx.program_id)?;
+ctx.accounts.profile.reacquire_borrow_mut()?;
 ```
 
 `release_borrow(){:rs}` commits in-memory changes first, so the CPI sees the latest state. `reacquire_borrow_mut(){:rs}` reruns owner, discriminator, and size checks before deserializing the post-CPI bytes.
