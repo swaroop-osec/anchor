@@ -167,7 +167,9 @@ export class AccountsResolver<IDL extends Idl> {
       return relevantErrors[0].error;
     }
 
-    return new Error(this.formatResolutionErrorDetails(relevantErrors).join("; "));
+    return new Error(
+      this.formatResolutionErrorDetails(relevantErrors).join("; ")
+    );
   }
 
   private pathKey(path: string[]): string {
