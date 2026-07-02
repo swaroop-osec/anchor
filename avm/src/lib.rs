@@ -994,7 +994,7 @@ fn fetch_nightly_manifest() -> Result<NightlyManifest> {
         .get(NIGHTLY_MANIFEST_URL)
         .header(
             USER_AGENT,
-            "avm https://github.com/solana-foundation/anchor",
+            "avm https://github.com/otter-sec/anchor",
         )
         .send()
         .with_context(|| format!("Sending GET {NIGHTLY_MANIFEST_URL}"))?;

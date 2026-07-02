@@ -9,7 +9,7 @@ export const SITE: Site = {
 }
 
 export const SOCIAL_LINKS: SocialLink[] = [
-  { href: 'https://github.com/solana-foundation/anchor', label: 'GitHub' },
+  { href: 'https://github.com/otter-sec/anchor', label: 'GitHub' },
   { href: 'https://discord.com/invite/NHHGSXAnXk', label: 'Discord' },
 ]
 
@@ -24,9 +24,9 @@ export const ICON_MAP: IconMap = {
 }
 
 export const DOCS: DocsConfig = {
-  repoUrl: 'https://github.com/solana-foundation/anchor',
+  repoUrl: 'https://github.com/otter-sec/anchor',
   editUrlBase:
-    'https://github.com/solana-foundation/anchor/edit/anchor-next/docs-v3/src/content/docs/',
+    'https://github.com/otter-sec/anchor/edit/anchor-next/docs-v2/src/content/docs/',
   defaultEditUrl: true,
   defaultLastUpdated: true,
   defaultTableOfContents: { minDepth: 2, maxDepth: 4 },
