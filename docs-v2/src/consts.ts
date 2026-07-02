@@ -4,7 +4,7 @@ export const SITE: Site = {
   title: 'Anchor Docs',
   description: 'Anchor is the leading development framework for building Solana programs.',
   href: 'https://v2.anchor-lang.com',
-  author: 'solana-foundation',
+  author: 'otter-sec',
   locale: 'en-US',
 }
 
