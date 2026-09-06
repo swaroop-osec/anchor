@@ -922,7 +922,7 @@ use anchor_lang::prelude::*;
 
 declare_id!("11111111111111111111111111111111");
 
-#[derive(anchor_lang::wincode::SchemaRead, anchor_lang::wincode::SchemaWrite)]
+#[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct Data {
     pub value: u64,
 }
