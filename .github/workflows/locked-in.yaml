@@ -11,9 +11,7 @@ on:
     paths-ignore:
       - "docs/**"
       - "docs-v2/**"
-      - "*.md"
       - "**/*.md"
-      - "*.mdx"
       - "**/*.mdx"
       - ".cspell-anchor-dictionary.txt"
   pull_request:
