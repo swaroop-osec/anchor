@@ -5,10 +5,23 @@ on:
     branches:
       - master
     paths-ignore:
+      # Docs/changelog cannot affect these tests.
       - "docs/**"
+      - "docs-v2/**"
+      - "*.md"
+      - "**/*.md"
+      - "*.mdx"
+      - "**/*.mdx"
+      - ".cspell-anchor-dictionary.txt"
   pull_request:
     paths-ignore:
       - "docs/**"
+      - "docs-v2/**"
+      - "*.md"
+      - "**/*.md"
+      - "*.mdx"
+      - "**/*.mdx"
+      - ".cspell-anchor-dictionary.txt"
   workflow_dispatch:
 
 permissions:
