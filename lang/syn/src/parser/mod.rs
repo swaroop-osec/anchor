@@ -18,8 +18,21 @@ pub fn expr_is_none(expr: &Expr) -> bool {
     if path.qself.is_some() {
         return false;
     }
-    path.path
+    let idents = path
+        .path
         .segments
-        .last()
-        .is_some_and(|segment| segment.ident == "None" && segment.arguments.is_empty())
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    matches!(
+        idents
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .as_slice(),
+        ["None"]
+            | ["Option", "None"]
+            | ["std", "option", "Option", "None"]
+            | ["core", "option", "Option", "None"]
+    )
 }
