@@ -723,6 +723,46 @@ pub struct Noop {}
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn cfg_gated_discriminator_validation() {
+    compile_fail_case(
+        "cfg_gated_discriminator_collision",
+        r#"
+use anchor_lang::prelude::*;
+
+declare_id!("11111111111111111111111111111111");
+
+#[program]
+pub mod collision_program {
+    use super::*;
+
+    #[cfg(unix)]
+    pub fn protected(_ctx: &mut Context<Noop>) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 214]
+    pub fn decoy(_ctx: &mut Context<Noop>) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(any())]
+    pub fn disabled(_ctx: &mut Context<Noop>) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Noop {}
+"#,
+        &["instruction `protected` is missing `#[discrim = N]`"],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn cfg_disabled_members_are_omitted_from_idl_and_error_codes() {
     cargo_test_pass_case(
         "cfg_filtered_idl",
