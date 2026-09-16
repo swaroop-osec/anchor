@@ -390,7 +390,7 @@ fn impl_to_cpi_accounts(input: &DeriveInput) -> TokenStream2 {
         },
         CpiFieldKind::OptionalReadonly => quote! {
             if let ::core::option::Option::Some(__account) = self.#ident {
-                __handles.push(__account);
+                __handles.push(__account.into_readonly());
             }
         },
         CpiFieldKind::OptionalWritable => quote! {
