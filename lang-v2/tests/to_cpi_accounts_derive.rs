@@ -180,12 +180,12 @@ fn derive_to_cpi_accounts_duplicate_readonly_erases_handle_mut() {
 
 #[test]
 fn derive_to_cpi_accounts_optional_readonly_normalizes_writable_handles() {
-    // let writable_buffer = account([1; 32], false, true);
-    // let mut writable_view = unsafe { writable_buffer.view() };
-    // let from_writable = OptionalReadonlyCpi {
-    //     optional_readonly: Some(CpiHandle::writable(&mut writable_view)),
-    // };
-    // assert_optional_readonly_is_readonly(&from_writable);
+    let writable_buffer = account([1; 32], false, true);
+    let mut writable_view = unsafe { writable_buffer.view() };
+    let from_writable = OptionalReadonlyCpi {
+        optional_readonly: Some(CpiHandle::writable(&mut writable_view)),
+    };
+    assert_optional_readonly_is_readonly(&from_writable);
 
     let mut_buffer = account([2; 32], false, true);
     let mut mut_view = unsafe { mut_buffer.view() };
