@@ -44,16 +44,15 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
         }
         let variant_ident = variant.ident.clone();
         let cfg_attrs = crate::cfg_attrs(&variant.attrs);
-        let escaped_name = escape_json(&variant.ident.to_string());
-        let suffix = match message {
-            Some(message) => {
-                format!(
-                    ",\"name\":\"{}\",\"msg\":\"{}\"}}",
-                    escaped_name,
-                    escape_json(&message),
+        let variant_name = variant.ident.to_string();
+        let msg_field = match message {
+            Some(message) => quote! {
+                anchor_lang::__alloc::format!(
+                    ",\"msg\":{}",
+                    anchor_lang::idl_build::__idl_json_string(#message),
                 )
-            }
-            None => format!(",\"name\":\"{}\"}}", escaped_name),
+            },
+            None => quote! { "" },
         };
         idl_entry_pushes.push(quote! {
             #(#cfg_attrs)*
@@ -62,9 +61,10 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
                     .checked_add(#offset)
                     .expect("error code overflowed");
                 __parts.push(anchor_lang::__alloc::format!(
-                    "{{\"code\":{}{}",
+                    "{{\"code\":{},\"name\":{}{}}}",
                     __code,
-                    #suffix,
+                    anchor_lang::idl_build::__idl_json_string(#variant_name),
+                    #msg_field,
                 ));
             }
         });
@@ -187,10 +187,6 @@ fn extract_msg(attrs: &[Attribute]) -> Option<String> {
             _ => None,
         }
     })
-}
-
-fn escape_json(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[cfg(test)]
