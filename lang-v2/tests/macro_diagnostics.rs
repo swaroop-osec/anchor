@@ -481,6 +481,41 @@ pub enum MyError {
     miri,
     ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
 )]
+fn malformed_error_code_msg_is_rejected() {
+    compile_fail_case(
+        "malformed_error_code_msg",
+        r#"
+use anchor_lang::prelude::*;
+
+#[error_code]
+pub enum BadMsg {
+    #[msg = "oops"]
+    NameValue,
+    #[msg]
+    Path,
+    #[msg("a", "b")]
+    Multi,
+    #[msg(SOME_CONST)]
+    Ident,
+    #[msg(1)]
+    Int,
+    #[msg("a")]
+    #[msg("b")]
+    Duplicate,
+}
+"#,
+        &[
+            r#"expected `#[msg("...")]`"#,
+            "duplicate `#[msg]` attribute",
+        ],
+    );
+}
+
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "spawns cargo and writes temporary workspaces; covered by normal cargo test"
+)]
 fn instruction_args_must_match_zero_arg_handler() {
     compile_fail_case(
         "instruction_args_without_handler_args",
