@@ -1000,7 +1000,8 @@ fn parse_instruction_attrs(attrs: &[syn::Attribute]) -> syn::Result<Vec<(Ident, 
 /// stamps generated structs with the IDL program's `ID`. Hand-written
 /// interface crates should set it to the same `X` as
 /// `#[program(interface, program_id = X)]`. Unannotated structs default to
-/// `crate::ID`.
+/// `crate::ID`. `X` must be a compile-time `Address` (`const` item,
+/// `crate::ID`, or `address!("...")`).
 fn parse_accounts_program_id_attr(attrs: &[syn::Attribute]) -> syn::Result<Expr> {
     let mut program_id = None;
     for attr in attrs {
