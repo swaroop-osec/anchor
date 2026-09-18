@@ -67,7 +67,7 @@ $ <blue>anchor</blue> fuzz tmin <program_name> <test_name> <crash_file> <dim>--r
 A fuzz harness defines a fixture with actions (state transitions) and invariants (properties that must always hold).
 
 ```rust showLineNumbers=false
-use crucible_fuzzer::prelude::*;
+use crucible_fuzzer::*;
 
 #[derive(Clone)]
 struct MyFixture {
@@ -93,7 +93,7 @@ impl MyFixture {
 #[invariant_test]
 fn check_invariants(fixture: &mut MyFixture) {
     // Runs after each action — assert properties that must always hold
-    assert!(fixture.total_deposited() >= fixture.total_withdrawn());
+    fuzz_assert_ge!(fixture.total_deposited(), fixture.total_withdrawn());
 }
 ```
 
