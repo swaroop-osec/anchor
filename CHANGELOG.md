@@ -13,6 +13,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 ### Features
 
 - cli: Add `NO_DNA` mode to disable supported interactive prompts for CI, scripts, and agent runs ([#4773](https://github.com/otter-sec/anchor/pull/4773)).
+- lang: Use `CreateAccountAllowPrefund` to initialize accounts that already hold lamports, replacing the `Transfer` + `Allocate` + `Assign` CPIs ([#5057](https://github.com/otter-sec/anchor/pull/5057)).
 - lang: Allow `None` in `mint::authority` and `mint::freeze_authority` constraints ([#5007](https://github.com/otter-sec/anchor/pull/5007)).
 
 ### Fixes
@@ -20,6 +21,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Accept arbitrary expressions in `declare_id!`. ([#5010](https://github.com/otter-sec/anchor/pull/5010)).
 - lang: Avoid an unnecessary stack allocation when snapshotting CPI return data ([#4931](https://github.com/otter-sec/anchor/pull/4931)).
 - lang: Raise an error when modifying data in an account that has had its ownership changed. ([#5011](https://github.com/otter-sec/anchor/pull/5011)).
+- cli: Redact the query string and userinfo from cluster/RPC URLs printed by `anchor deploy` and `anchor keys sync` so credentials embedded in the URL (e.g. `?api-key=...`) aren't leaked into terminal scrollback or CI logs. ([#5061](https://github.com/otter-sec/anchor/pull/5061)).
 
 ### Breaking
 
@@ -39,6 +41,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Provide better error messages for `token` constraints ([#4698](https://github.com/solana-foundation/anchor/pull/4698)).
 - ts: Improve account resolution error of self-referencing PDAs ([#4711](https://github.com/solana-foundation/anchor/pull/4711)).
 - cli: Warn unused `Anchor.toml` fields ([#4749](https://github.com/solana-foundation/anchor/pull/4749)).
+- cli: Generate a `security.json` template on `anchor init` (skip with `--no-security-metadata`) and upload it on-chain through program-metadata with `anchor deploy --security-metadata` / `anchor program deploy --security-metadata` ([#4177](https://github.com/otter-sec/anchor/pull/4177)).
 
 ### Fixes
 
@@ -64,9 +67,11 @@ The minor version will be incremented upon a breaking change and the patch versi
 - lang: Reduce cloning in `realloc` constraint when shrinking ([#4642](https://github.com/solana-foundation/anchor/pull/4642)).
 - syn: Remove `anyhow` ([#4640](https://github.com/solana-foundation/anchor/pull/4640)).
 - lang: Sync type derives and simplify internal args creation in `declare_program!` ([#4667](https://github.com/solana-foundation/anchor/pull/4667)).
+- lang: Fix path hygiene in `#[derive(Accounts)]` for composite fields using segmented paths.
 - lang: Improve `std` hygiene inside macros ([#4700](https://github.com/solana-foundation/anchor/pull/4700)).
 - cli: Honor the SIMD-0431 minimum extend program size when extending program data ([#4785](https://github.com/otter-sec/anchor/pull/4785)).
 - client: Do not panic in `parse_logs_response` when logs continue after a top-level instruction returns, e.g. the runtime's trailing `"Log truncated"` marker ([#4967](https://github.com/solana-foundation/anchor/pull/4967)).
+- lang: Fix CPI client generation for accounts structs with no fields ([#4737](https://github.com/otter-sec/anchor/pull/4737)).
 
 ### Breaking
 

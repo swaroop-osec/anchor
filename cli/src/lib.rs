@@ -50,7 +50,8 @@ use {
         string::ToString,
         sync::{LazyLock, OnceLock},
     },
-    template::{AnchorVersion, ProgramTemplate, TestTemplate},
+    template::{get_security_metadata_content, AnchorVersion, ProgramTemplate, TestTemplate},
+    url::Url,
 };
 
 mod abs_path;
@@ -269,6 +270,9 @@ pub enum Command {
         /// Install Solana agent skills
         #[clap(long)]
         install_agent_skills: bool,
+        /// Skip generating the default `security.json` metadata template
+        #[clap(long)]
+        no_security_metadata: bool,
     },
     /// Builds the workspace.
     #[clap(name = "build", alias = "b")]
@@ -488,6 +492,9 @@ pub enum Command {
         /// Don't upload IDL during deployment (IDL is uploaded by default)
         #[clap(long)]
         no_idl: bool,
+        /// Upload `security.json` on-chain after deployment
+        #[clap(long)]
+        security_metadata: bool,
         /// Arguments to pass to the underlying `solana program deploy` command.
         #[clap(required = false, last = true)]
         solana_args: Vec<String>,
@@ -734,6 +741,9 @@ pub enum ProgramCommand {
         /// Don't upload IDL during deployment (IDL is uploaded by default)
         #[clap(long)]
         no_idl: bool,
+        /// Upload `security.json` on-chain after deployment
+        #[clap(long)]
+        security_metadata: bool,
         /// Make the program immutable after deployment (cannot be upgraded)
         #[clap(long = "final")]
         make_final: bool,
@@ -1463,6 +1473,7 @@ fn process_command(opts: Opts) -> Result<()> {
             test_template,
             force,
             install_agent_skills,
+            no_security_metadata,
         } => init(
             &opts.cfg_override,
             name,
@@ -1475,6 +1486,7 @@ fn process_command(opts: Opts) -> Result<()> {
             test_template,
             force,
             install_agent_skills,
+            no_security_metadata,
         ),
         Command::Fuzz(cli) => crucible_fuzz_cli::run(cli),
         Command::New {
@@ -1540,6 +1552,7 @@ fn process_command(opts: Opts) -> Result<()> {
             program_keypair,
             verifiable,
             no_idl,
+            security_metadata,
             solana_args,
         } => {
             eprintln!(
@@ -1551,6 +1564,7 @@ fn process_command(opts: Opts) -> Result<()> {
                 program_keypair,
                 verifiable,
                 no_idl,
+                security_metadata,
                 solana_args,
             )
         }
@@ -1732,6 +1746,7 @@ fn init(
     test_template: TestTemplate,
     force: bool,
     install_agent_skills: bool,
+    no_security_metadata: bool,
 ) -> Result<()> {
     if !force {
         if Config::discover(cfg_override)?.is_some() {
@@ -1892,6 +1907,12 @@ fn init(
 
     if install_agent_skills {
         install_solana_skill();
+    }
+
+    if !no_security_metadata {
+        let content = get_security_metadata_content(&project_name);
+        let content = serde_json::to_vec_pretty(&content)?;
+        fs::write("security.json", content)?;
     }
 
     println!("{project_name} initialized");
@@ -4328,7 +4349,7 @@ fn test(
             config_skip_local_validator,
         );
         if validator_plan.predeploy {
-            deploy(cfg_override, None, None, false, true, vec![])?;
+            deploy(cfg_override, None, None, false, true, false, vec![])?;
         }
 
         cfg.run_hooks(HookType::PreTest)?;
@@ -6218,6 +6239,23 @@ pub(crate) fn cluster_url(
     }
 }
 
+/// Strips the query string, fragment and any userinfo from `url` so that
+/// secrets embedded in RPC URLs (e.g. `?api-key=...`) aren't printed to
+/// stdout, terminal scrollback or CI logs. Falls back to the original
+/// string if it isn't a parseable URL.
+pub(crate) fn redact_url(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(mut parsed) => {
+            parsed.set_query(None);
+            parsed.set_fragment(None);
+            let _ = parsed.set_username("");
+            let _ = parsed.set_password(None);
+            parsed.to_string()
+        }
+        Err(_) => url.to_string(),
+    }
+}
+
 fn clean(cfg_override: &ConfigOverride) -> Result<()> {
     // Get workspace root - either from Anchor.toml or use current directory
     let workspace_root = if let Ok(Some(cfg)) = Config::discover(cfg_override) {
@@ -6275,6 +6313,7 @@ fn deploy(
     program_keypair: Option<PathBuf>,
     verifiable: bool,
     no_idl: bool,
+    security_metadata: bool,
     solana_args: Vec<String>,
 ) -> Result<()> {
     // Execute the code within the workspace
@@ -6284,7 +6323,7 @@ fn deploy(
 
         cfg.run_hooks(HookType::PreDeploy)?;
         // Deploy the programs.
-        println!("Deploying cluster: {url}");
+        println!("Deploying cluster: {}", redact_url(&url));
         println!("Upgrade authority: {keypair}");
 
         for program in cfg.get_programs(program_name)? {
@@ -6310,6 +6349,7 @@ fn deploy(
                 None,  // max_len
                 false, // use_rpc
                 no_idl,
+                security_metadata,
                 false, // make_final
                 solana_args.clone(),
             )?;
@@ -6767,7 +6807,10 @@ fn keys_sync(cfg_override: &ConfigOverride, program_name: Option<String>) -> Res
             .unwrap();
 
         let cfg_cluster = cfg.provider.cluster.to_owned();
-        println!("Syncing program ids for the configured cluster ({cfg_cluster})\n");
+        println!(
+            "Syncing program ids for the configured cluster ({})\n",
+            redact_url(&cfg_cluster.to_string())
+        );
 
         let mut changed_src = false;
         for program in cfg.get_programs(program_name)? {
@@ -7452,6 +7495,39 @@ mod tests {
     };
 
     #[test]
+    fn test_redact_url_strips_query_string() {
+        assert_eq!(
+            redact_url("https://devnet.helius-rpc.com/?api-key=super-secret"),
+            "https://devnet.helius-rpc.com/"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_strips_userinfo() {
+        assert_eq!(
+            redact_url("https://user:pass@my-rpc.example.com/rpc"),
+            "https://my-rpc.example.com/rpc"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_leaves_plain_url_untouched() {
+        assert_eq!(
+            redact_url("https://api.devnet.solana.com"),
+            "https://api.devnet.solana.com/"
+        );
+        assert_eq!(
+            redact_url("http://127.0.0.1:8899"),
+            "http://127.0.0.1:8899/"
+        );
+    }
+
+    #[test]
+    fn test_redact_url_falls_back_on_unparseable_input() {
+        assert_eq!(redact_url("not-a-url"), "not-a-url");
+    }
+
+    #[test]
     fn test_init_accepts_anchor_version() {
         let opts =
             Opts::try_parse_from(["anchor", "init", "example", "--anchor-version", "v2"]).unwrap();
@@ -7654,6 +7730,7 @@ mod tests {
             TestTemplate::default(),
             true,
             true,
+            true,
         )
         .unwrap();
     }
@@ -7677,6 +7754,7 @@ mod tests {
             TestTemplate::default(),
             true,
             true,
+            true,
         )
         .unwrap();
     }
@@ -7698,6 +7776,7 @@ mod tests {
             ProgramTemplate::default(),
             AnchorVersion::default(),
             TestTemplate::default(),
+            true,
             true,
             true,
         )
