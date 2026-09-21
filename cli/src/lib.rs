@@ -3267,38 +3267,21 @@ fn write_idl(idl: &Idl, out: OutFile) -> Result<()> {
     Ok(())
 }
 
-/// Authenticate an `anchor account` fetch against the IDL before decoding.
+/// Check the requested IDL account type and strip its discriminator.
 ///
-/// Mirrors on-chain `Account<T>`: the account must be owned by the IDL
-/// program, and its leading bytes must equal the requested type's
-/// discriminator. `strip_prefix` also rejects data shorter than the
-/// discriminator instead of panicking on `&data[disc_len..]`.
+/// `strip_prefix` rejects data shorter than the discriminator instead of
+/// panicking on `&data[disc_len..]`.
 fn validate_and_strip_account_data<'a>(
     idl: &Idl,
     account_type_name: &str,
     address: &Pubkey,
-    owner: &Pubkey,
     data: &'a [u8],
 ) -> Result<&'a [u8]> {
-    // Parse the program ID from the IDL
-    let program_id = idl
-        .address
-        .parse::<Pubkey>()
-        .with_context(|| format!("invalid program address in IDL: {}", idl.address))?;
-    // Validate the owner matches the program ID
-    if owner != &program_id {
-        return Err(anyhow!(
-            "Account {address} owner {owner} does not match IDL program id {program_id}"
-        ));
-    }
-    // Find the account type in the IDL
     let acc = idl
         .accounts
         .iter()
         .find(|acc| acc.name == account_type_name)
         .ok_or_else(|| anyhow!("Account `{account_type_name}` not found in IDL"))?;
-    // Strip the discriminator from the data and return the remaining data or
-    // an error if the data is too short or the account type is wrong
     data.strip_prefix(acc.discriminator.as_slice())
         .ok_or_else(|| {
             anyhow!(
@@ -3362,14 +3345,8 @@ fn account(
             .unwrap_or(Cluster::Localnet),
     };
 
-    let account = create_client(cluster.url()).get_account(&address)?;
-    let mut data_view = validate_and_strip_account_data(
-        &idl,
-        account_type_name,
-        &address,
-        &account.owner,
-        &account.data,
-    )?;
+    let data = create_client(cluster.url()).get_account_data(&address)?;
+    let mut data_view = validate_and_strip_account_data(&idl, account_type_name, &address, &data)?;
 
     let deserialized_json =
         deserialize_idl_defined_type_to_json(&idl, account_type_name, &mut data_view)?;
@@ -6602,45 +6579,35 @@ mod tests {
         }
     }
 
-    fn program_pubkey() -> Pubkey {
-        PROGRAM_ID.parse().unwrap()
-    }
-
-    fn decode_account<'a>(owner: &Pubkey, data: &'a [u8]) -> Result<&'a [u8]> {
+    fn decode_account(data: &[u8]) -> Result<&[u8]> {
         let address = Pubkey::new_from_array([9; 32]);
-        validate_and_strip_account_data(&account_decode_idl(), ACCOUNT_TYPE, &address, owner, data)
+        validate_and_strip_account_data(&account_decode_idl(), ACCOUNT_TYPE, &address, data)
     }
 
     #[test]
-    fn account_decode_accepts_matching_owner_and_discriminator() {
-        let owner = program_pubkey();
+    fn account_decode_accepts_matching_discriminator() {
         let mut data = ACCOUNT_DISC.to_vec();
         data.extend_from_slice(&[42, 43, 44]);
 
-        let payload = decode_account(&owner, &data).unwrap();
+        let payload = decode_account(&data).unwrap();
         assert_eq!(payload, &[42, 43, 44]);
     }
 
     #[test]
-    fn account_decode_rejects_foreign_owner() {
-        let owner = Pubkey::new_from_array([1; 32]);
+    fn account_decode_accepts_foreign_owner_bytes() {
         let mut data = ACCOUNT_DISC.to_vec();
         data.extend_from_slice(&[42]);
 
-        let err = decode_account(&owner, &data).unwrap_err().to_string();
-        assert!(
-            err.contains("does not match IDL program id"),
-            "unexpected error: {err}"
-        );
+        let payload = decode_account(&data).unwrap();
+        assert_eq!(payload, &[42]);
     }
 
     #[test]
     fn account_decode_rejects_wrong_discriminator() {
-        let owner = program_pubkey();
         let mut data = vec![0u8; 8];
         data.extend_from_slice(&[42]);
 
-        let err = decode_account(&owner, &data).unwrap_err().to_string();
+        let err = decode_account(&data).unwrap_err().to_string();
         assert!(
             err.contains("does not match discriminator"),
             "unexpected error: {err}"
@@ -6649,9 +6616,8 @@ mod tests {
 
     #[test]
     fn account_decode_rejects_short_and_empty_data_without_panic() {
-        let owner = program_pubkey();
         for data in [Vec::new(), vec![0u8; 4], ACCOUNT_DISC[..4].to_vec()] {
-            let err = decode_account(&owner, &data).unwrap_err().to_string();
+            let err = decode_account(&data).unwrap_err().to_string();
             assert!(
                 err.contains("does not match discriminator"),
                 "unexpected error for {data:?}: {err}"
@@ -6661,13 +6627,11 @@ mod tests {
 
     #[test]
     fn account_decode_rejects_unknown_account_type() {
-        let owner = program_pubkey();
         let address = Pubkey::new_from_array([9; 32]);
         let err = validate_and_strip_account_data(
             &account_decode_idl(),
             "Missing",
             &address,
-            &owner,
             &ACCOUNT_DISC,
         )
         .unwrap_err()
