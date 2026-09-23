@@ -570,3 +570,34 @@ impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::TokenProgramCons
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mint_init_space_without_extensions_is_base_mint_len() {
+        let params = InterfaceMintInitParams::default();
+        assert_eq!(
+            mint_init_space(&params).unwrap(),
+            core::mem::size_of::<crate::Mint>()
+        );
+    }
+
+    #[test]
+    fn mint_init_space_grows_for_metadata_pointer() {
+        let params = InterfaceMintInitParams {
+            metadata_pointer_authority: Some(Address::new_from_array([1; 32])),
+            ..Default::default()
+        };
+        let space = mint_init_space(&params).unwrap();
+        assert!(space > core::mem::size_of::<crate::Mint>());
+        assert_eq!(
+            space,
+            Token2022ExtensionType::try_calculate_account_len::<PodMint>(&[
+                Token2022ExtensionType::MetadataPointer
+            ])
+            .unwrap()
+        );
+    }
+}

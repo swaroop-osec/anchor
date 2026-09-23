@@ -3773,6 +3773,189 @@ mod tests {
     }
 
     #[test]
+    fn extensions_init_attrs_flatten_to_params_fields() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(
+                init,
+                payer = payer,
+                mint::decimals = 0,
+                mint::authority = authority,
+                extensions::metadata_pointer::authority = authority,
+                extensions::metadata_pointer::metadata_address = authority,
+                extensions::transfer_hook::program_id = crate::ID,
+            )]
+        )];
+        let parsed = parse_account_attrs(&attrs).expect("extensions::* should parse");
+        let keys: Vec<(&str, &str)> = parsed
+            .namespaced
+            .iter()
+            .map(|nc| (nc.namespace.as_str(), nc.raw_key.as_str()))
+            .collect();
+        assert!(keys.contains(&("mint", "decimals")));
+        assert!(keys.contains(&("extensions", "metadata_pointer_authority")));
+        assert!(keys.contains(&("extensions", "metadata_pointer_metadata_address")));
+        assert!(keys.contains(&("extensions", "transfer_hook_program_id")));
+        assert!(
+            !is_runtime_only_constraint_ns("extensions"),
+            "extensions::* must thread through init Params, not AccountConstraint::init"
+        );
+    }
+
+    #[test]
+    fn unknown_extension_init_attr_is_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(init, payer = payer, extensions::pausable::authority = authority)]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("unknown extensions::* must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("unknown token extension constraint `extensions::pausable::authority`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn two_segment_extensions_attr_is_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(init, payer = payer, extensions::metadata_pointer = authority)]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("two-segment extensions::* must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("token extension constraints must be `extensions::<extension>::<field>`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn extension_pointer_may_not_reference_the_mint_being_initialized() {
+        use syn::parse::Parser;
+
+        let mint: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(
+                    init,
+                    payer = payer,
+                    mint::decimals = 0,
+                    mint::authority = authority,
+                    extensions::metadata_pointer::authority = authority,
+                    extensions::metadata_pointer::metadata_address = mint,
+                )]
+                pub mint: InterfaceAccount<Mint>
+            })
+            .unwrap();
+        let payer: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! { pub payer: Signer })
+            .unwrap();
+        let authority: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! { pub authority: UncheckedAccount })
+            .unwrap();
+        let summaries = vec![
+            FieldSummary {
+                name: syn::parse_quote!(payer),
+                ty: syn::parse_quote!(Signer),
+                attrs: parse_account_attrs(&payer.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(authority),
+                ty: syn::parse_quote!(UncheckedAccount),
+                attrs: parse_account_attrs(&authority.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(mint),
+                ty: syn::parse_quote!(InterfaceAccount<Mint>),
+                attrs: parse_account_attrs(&mint.attrs).unwrap(),
+            },
+        ];
+        let mint_attrs = parse_account_attrs(&mint.attrs).unwrap();
+        let err = match parse_field(
+            &mint,
+            &mint_attrs,
+            &["payer".into(), "authority".into(), "mint".into()],
+            &[],
+            quote::quote!(0usize),
+            &[],
+            &summaries,
+        ) {
+            Ok(_) => panic!("metadata_address = mint must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains(
+                "`extensions::metadata_pointer_metadata_address` cannot reference `mint` while that account is still being initialized"
+            ),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn extension_authority_may_not_reference_the_mint_being_initialized() {
+        use syn::parse::Parser;
+
+        let mint: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! {
+                #[account(
+                    init,
+                    payer = payer,
+                    mint::decimals = 0,
+                    mint::authority = authority,
+                    extensions::metadata_pointer::authority = mint,
+                    extensions::metadata_pointer::metadata_address = authority,
+                )]
+                pub mint: InterfaceAccount<Mint>
+            })
+            .unwrap();
+        let payer: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! { pub payer: Signer })
+            .unwrap();
+        let authority: syn::Field = syn::Field::parse_named
+            .parse2(quote::quote! { pub authority: UncheckedAccount })
+            .unwrap();
+        let summaries = vec![
+            FieldSummary {
+                name: syn::parse_quote!(payer),
+                ty: syn::parse_quote!(Signer),
+                attrs: parse_account_attrs(&payer.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(authority),
+                ty: syn::parse_quote!(UncheckedAccount),
+                attrs: parse_account_attrs(&authority.attrs).unwrap(),
+            },
+            FieldSummary {
+                name: syn::parse_quote!(mint),
+                ty: syn::parse_quote!(InterfaceAccount<Mint>),
+                attrs: parse_account_attrs(&mint.attrs).unwrap(),
+            },
+        ];
+        let mint_attrs = parse_account_attrs(&mint.attrs).unwrap();
+        let err = match parse_field(
+            &mint,
+            &mint_attrs,
+            &["payer".into(), "authority".into(), "mint".into()],
+            &[],
+            quote::quote!(0usize),
+            &[],
+            &summaries,
+        ) {
+            Ok(_) => panic!("metadata_pointer::authority = mint must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string().contains(
+                "`extensions::metadata_pointer_authority` cannot reference `mint` while that account is still being initialized"
+            ),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn runtime_only_init_namespaces_use_as_ref_for_field_refs() {
         let attrs: Vec<Attribute> = vec![syn::parse_quote!(
             #[account(init, payer = payer, custom::foo = authority)]
