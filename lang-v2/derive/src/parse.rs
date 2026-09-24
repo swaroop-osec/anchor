@@ -579,6 +579,19 @@ pub fn parse_account_attrs(attrs: &[Attribute]) -> syn::Result<AccountAttrs> {
         ));
     }
 
+    if let Some(nc) = result
+        .namespaced
+        .iter()
+        .find(|nc| nc.namespace == "extensions")
+    {
+        if !(result.is_init || result.is_init_if_needed) {
+            return Err(syn::Error::new(
+                nc.value.span(),
+                "`extensions::*` requires `init` or `init_if_needed`",
+            ));
+        }
+    }
+
     if result.bump.is_some() && result.seeds.is_none() {
         let span = match result.bump.as_ref().unwrap() {
             Some(expr) => syn::spanned::Spanned::span(expr),
@@ -3830,6 +3843,40 @@ mod tests {
                 .contains("token extension constraints must be `extensions::<extension>::<field>`"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn extensions_without_init_are_rejected() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(extensions::metadata_pointer::authority = expected)]
+        )];
+        let err = match parse_account_attrs(&attrs) {
+            Ok(_) => panic!("extensions::* without init must be rejected"),
+            Err(err) => err,
+        };
+        assert!(
+            err.to_string()
+                .contains("`extensions::*` requires `init` or `init_if_needed`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn extensions_with_init_if_needed_are_accepted() {
+        let attrs: Vec<Attribute> = vec![syn::parse_quote!(
+            #[account(
+                init_if_needed,
+                payer = payer,
+                mint::decimals = 0,
+                mint::authority = authority,
+                extensions::metadata_pointer::authority = authority,
+            )]
+        )];
+        let parsed = parse_account_attrs(&attrs).expect("init_if_needed + extensions::*");
+        assert!(parsed.is_init_if_needed);
+        assert!(parsed.namespaced.iter().any(|nc| {
+            nc.namespace == "extensions" && nc.raw_key == "metadata_pointer_authority"
+        }));
     }
 
     #[test]
