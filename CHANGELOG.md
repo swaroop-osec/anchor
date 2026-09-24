@@ -12,10 +12,15 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+- client: Expose `parse_logs` to decode events from transaction logs while tracking the CPI stack ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
+
 ### Fixes
+
+- lang-v2: Restore `AnchorSerialize` and `AnchorDeserialize` as traits for generic bounds alongside the derive macros ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 
 ### Breaking
 
+- lang-v2: Default `#[event]` structs now derive `AnchorDeserialize` as well as `AnchorSerialize`. Remove any explicit `AnchorDeserialize` derive from these structs to avoid conflicting implementations; `#[event(bytemuck)]` is unchanged ([#5078](https://github.com/otter-sec/anchor/pull/5078)).
 - ts: Rewrite the program namespaces on `@solana/kit` ([#5060](https://github.com/otter-sec/anchor/pull/5060)).
 - ts: Rewrite the provider on `@solana/kit` ([#5008](https://github.com/otter-sec/anchor/pull/5008)).
 - ts: Require Node.js >=22.12 ([#5005](https://github.com/otter-sec/anchor/pull/5005)).
