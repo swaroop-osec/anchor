@@ -3,7 +3,7 @@
 use {
     anchor_lang::prelude::*,
     anchor_spl::{
-        mint,
+        extensions, mint,
         token::{self, MintTo},
         token_interface::{Mint, TokenAccount, TokenInterface},
     },
@@ -113,6 +113,13 @@ pub mod token_interface_test {
     #[discrim = 13]
     pub fn init_interface_mint_with_extensions(
         _ctx: &mut Context<InitInterfaceMintWithExtensions>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    #[discrim = 14]
+    pub fn init_if_needed_interface_mint_with_extensions(
+        _ctx: &mut Context<InitIfNeededInterfaceMintWithExtensions>,
     ) -> Result<()> {
         Ok(())
     }
@@ -323,6 +330,31 @@ pub struct InitInterfaceMintWithExtensions {
     pub token_program: Interface<TokenInterface>,
     #[account(
         init,
+        payer = payer,
+        mint::decimals = 0,
+        mint::authority = authority,
+        mint::token_program = token_program,
+        extensions::metadata_pointer::authority = authority,
+        extensions::metadata_pointer::metadata_address = authority,
+        extensions::group_member_pointer::authority = authority,
+        extensions::group_member_pointer::member_address = authority,
+        extensions::transfer_hook::authority = authority,
+        extensions::transfer_hook::program_id = crate::ID,
+        extensions::close_authority::authority = authority,
+        extensions::permanent_delegate::delegate = authority,
+    )]
+    pub mint: InterfaceAccount<Mint>,
+    pub system_program: Program<System>,
+}
+
+#[derive(Accounts)]
+pub struct InitIfNeededInterfaceMintWithExtensions {
+    #[account(mut)]
+    pub payer: Signer,
+    pub authority: UncheckedAccount,
+    pub token_program: Interface<TokenInterface>,
+    #[account(
+        init_if_needed,
         payer = payer,
         mint::decimals = 0,
         mint::authority = authority,

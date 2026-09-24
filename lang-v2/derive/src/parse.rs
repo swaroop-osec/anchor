@@ -806,9 +806,8 @@ fn builtin_constraint_value_kind(
     match (namespace, raw_key) {
         ("mint", "authority" | "freeze_authority" | "token_program")
         | ("token", "mint" | "authority" | "token_program")
-        | ("associated_token", "mint" | "authority" | "token_program") => {
-            Some(BuiltinConstraintValueKind::Address)
-        }
+        | ("associated_token", "mint" | "authority" | "token_program")
+        | ("extensions", _) => Some(BuiltinConstraintValueKind::Address),
         ("mint", "decimals") => Some(BuiltinConstraintValueKind::Direct),
         _ => None,
     }
@@ -3212,7 +3211,7 @@ pub fn parse_field(
     // `V` is inferred from the `AccountConstraint::Value` associated
     // type. Literals / expressions pass through verbatim.
     for nc in &attrs.namespaced {
-        if nc.namespace == "associated_token" || nc.namespace == "extensions" {
+        if nc.namespace == "associated_token" {
             continue;
         }
         // TODO: Improve diagnostics for missing SPL namespace imports.
@@ -3877,6 +3876,18 @@ mod tests {
         assert!(parsed.namespaced.iter().any(|nc| {
             nc.namespace == "extensions" && nc.raw_key == "metadata_pointer_authority"
         }));
+    }
+
+    #[test]
+    fn extensions_constraint_values_use_address_kind() {
+        assert!(matches!(
+            builtin_constraint_value_kind("extensions", "metadata_pointer_authority"),
+            Some(BuiltinConstraintValueKind::Address)
+        ));
+        assert!(matches!(
+            builtin_constraint_value_kind("extensions", "permanent_delegate_delegate"),
+            Some(BuiltinConstraintValueKind::Address)
+        ));
     }
 
     #[test]

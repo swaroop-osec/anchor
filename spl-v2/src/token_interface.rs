@@ -573,3 +573,75 @@ impl AccountConstraint<InterfaceAccount<Mint>> for crate::mint::TokenProgramCons
         Ok(())
     }
 }
+
+macro_rules! impl_mint_extension_constraint {
+    ($constraint:ty, $ext:ty, $field:ident) => {
+        impl AccountConstraint<InterfaceAccount<Mint>> for $constraint {
+            type Value = Address;
+            #[inline(always)]
+            fn check(
+                account: &InterfaceAccount<Mint>,
+                expected: &Address,
+            ) -> Result<(), ProgramError> {
+                let ext = account.get_extension::<$ext>()?;
+                require_eq!(
+                    crate::extensions::optional_address(&ext.$field),
+                    Some(expected),
+                    ProgramError::InvalidAccountData
+                );
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_mint_extension_constraint!(
+    crate::extensions::MetadataPointerAuthorityConstraint,
+    crate::extensions::MetadataPointer,
+    authority
+);
+impl_mint_extension_constraint!(
+    crate::extensions::MetadataPointerMetadataAddressConstraint,
+    crate::extensions::MetadataPointer,
+    metadata_address
+);
+impl_mint_extension_constraint!(
+    crate::extensions::GroupPointerAuthorityConstraint,
+    crate::extensions::GroupPointer,
+    authority
+);
+impl_mint_extension_constraint!(
+    crate::extensions::GroupPointerGroupAddressConstraint,
+    crate::extensions::GroupPointer,
+    group_address
+);
+impl_mint_extension_constraint!(
+    crate::extensions::GroupMemberPointerAuthorityConstraint,
+    crate::extensions::GroupMemberPointer,
+    authority
+);
+impl_mint_extension_constraint!(
+    crate::extensions::GroupMemberPointerMemberAddressConstraint,
+    crate::extensions::GroupMemberPointer,
+    member_address
+);
+impl_mint_extension_constraint!(
+    crate::extensions::CloseAuthorityAuthorityConstraint,
+    crate::extensions::MintCloseAuthority,
+    close_authority
+);
+impl_mint_extension_constraint!(
+    crate::extensions::TransferHookAuthorityConstraint,
+    crate::extensions::TransferHook,
+    authority
+);
+impl_mint_extension_constraint!(
+    crate::extensions::TransferHookProgramIdConstraint,
+    crate::extensions::TransferHook,
+    program_id
+);
+impl_mint_extension_constraint!(
+    crate::extensions::PermanentDelegateDelegateConstraint,
+    crate::extensions::PermanentDelegate,
+    delegate
+);
