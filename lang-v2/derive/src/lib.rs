@@ -4950,13 +4950,9 @@ fn wincode_idl_override_tokens_for_fields(
     fields
         .iter()
         .filter_map(|field| {
-            let err_tokens =
-                unsupported_wincode_idl_attr_error(surface, &field.attrs)?.to_compile_error();
-            let cfg_attrs = cfg_attrs(&field.attrs);
-            Some(quote! {
-                #(#cfg_attrs)*
-                const _: () = { #err_tokens };
-            })
+            // Leave the error ungated so `#[wincode(skip)]` still fails when
+            // it sits next to a disabled `#[cfg]`.
+            Some(unsupported_wincode_idl_attr_error(surface, &field.attrs)?.to_compile_error())
         })
         .collect()
 }
@@ -4968,16 +4964,10 @@ fn wincode_idl_override_tokens_for_variants(
     variants
         .iter()
         .flat_map(|variant| {
-            let variant_cfg_attrs = cfg_attrs(&variant.attrs);
             variant.fields.iter().filter_map(move |field| {
-                let err_tokens =
-                    unsupported_wincode_idl_attr_error(surface, &field.attrs)?.to_compile_error();
-                let field_cfg_attrs = cfg_attrs(&field.attrs);
-                Some(quote! {
-                    #(#variant_cfg_attrs)*
-                    #(#field_cfg_attrs)*
-                    const _: () = { #err_tokens };
-                })
+                Some(
+                    unsupported_wincode_idl_attr_error(surface, &field.attrs)?.to_compile_error(),
+                )
             })
         })
         .collect()
