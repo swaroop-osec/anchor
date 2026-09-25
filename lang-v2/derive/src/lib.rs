@@ -4419,6 +4419,12 @@ fn gen_declare_program_pod_impls(
     };
     // Item-level `const _: ()` is always evaluated. An unused associated const
     // on an `impl` is not, so the previous padding `assert!` never ran.
+    //
+    // Same host-wide padding rule as `#[account]` / `#[event(bytemuck)]`
+    // (#4794): `repr(C)` padding follows the *host* backend, so a `u64`
+    // then `u128` layout that is packed on SBF fails here on x86. Unlike
+    // those macros, `declare_program!` cannot rewrite IDL fields to
+    // `PodU128`; padded layouts need `bytemuckunsafe` or a hand-written type.
     let touch_no_padding = if impl_generics.is_empty() {
         quote! {
             const _: () = #ident::__ANCHOR_DECLARE_PROGRAM_NO_PADDING;
