@@ -4417,17 +4417,30 @@ fn gen_declare_program_pod_impls(
                 + anchor_lang::bytemuck::Zeroable),*
         }
     };
+    // Item-level `const _: ()` is always evaluated. An unused associated const
+    // on an `impl` is not, so the previous padding `assert!` never ran.
+    let touch_no_padding = if impl_generics.is_empty() {
+        quote! {
+            const _: () = #ident::__ANCHOR_DECLARE_PROGRAM_NO_PADDING;
+        }
+    } else {
+        quote! {}
+    };
     quote! {
-        impl #impl_generics #ident #ty_generics #where_clause {
-            const __ANCHOR_DECLARE_PROGRAM_POD_ASSERT: fn() = || {
+        const _: fn() = || {
+            fn __assert_declare_program_pod_fields #impl_generics () #where_clause {
                 fn assert_pod<T: anchor_lang::bytemuck::Pod>() {}
                 #( assert_pod::<#field_types>(); )*
-            };
-            const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = assert!(
-                core::mem::size_of::<Self>() == 0 #(+ core::mem::size_of::<#field_types>())*,
+            }
+        };
+        impl #impl_generics #ident #ty_generics #where_clause {
+            const __ANCHOR_DECLARE_PROGRAM_NO_PADDING: () = ::core::assert!(
+                ::core::mem::size_of::<Self>()
+                    == 0 #(+ ::core::mem::size_of::<#field_types>())*,
                 "declared bytemuck type has padding bytes"
             );
         }
+        #touch_no_padding
         unsafe impl #impl_generics anchor_lang::bytemuck::Pod for #ident #ty_generics #where_clause {}
         unsafe impl #impl_generics anchor_lang::bytemuck::Zeroable for #ident #ty_generics #where_clause {}
     }
