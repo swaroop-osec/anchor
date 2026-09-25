@@ -32,6 +32,13 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut idl_entry_pushes = Vec::new();
     // First implicit variant is 0; an explicit discriminant resets the
     // counter to literal + 1. `None` means the previous value was u32::MAX.
+    //
+    // A proc macro cannot evaluate `#[cfg]` (features reach rustc as `--cfg`
+    // flags, never the macro), so this counter assumes every gated variant is
+    // enabled — matching rustc only in the all-features build. It feeds the
+    // eager diagnostic below and nothing else: generated code reads
+    // `Variant as u32`, so the codes that ship are whatever rustc assigns
+    // after cfg stripping, per configuration.
     let mut next_discrim: Option<u32> = Some(0);
     for variant in item.variants.iter_mut() {
         let message = match extract_msg(&variant.attrs) {
@@ -67,6 +74,9 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
             );
         }
 
+        // Authoritative overflow check: cfg-wrapped and reading the
+        // post-stripping discriminant, so it is exact in every configuration
+        // where `next_discrim` above is only an assumption.
         const_guards.push(quote! {
             #(#cfg_attrs)*
             const _: () = assert!(
@@ -108,7 +118,8 @@ pub fn expand(args: TokenStream, input: TokenStream) -> TokenStream {
         impl From<#name> for anchor_lang::Error {
             #[inline(always)]
             fn from(e: #name) -> Self {
-                // Expansion-time checks prove `e as u32 + offset` fits in u32.
+                // The cfg-wrapped `const` guards prove `e as u32 + offset`
+                // fits in u32 for whichever variants this build compiles.
                 anchor_lang::Error::Custom(e as u32 + #offset)
             }
         }
