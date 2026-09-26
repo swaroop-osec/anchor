@@ -155,7 +155,8 @@ fn collect_asm(dir: &Path) -> String {
 fn collect_asm_inner(dir: &Path) -> Result<String> {
     let canonical_root = canonicalize_path(dir);
     let mut files: Vec<PathBuf> = Vec::new();
-    walk_dir(dir, &mut files);
+    let mut seen_dirs = HashSet::new();
+    walk_dir(dir, dir, &canonical_root, &mut seen_dirs, &mut files)?;
     files.sort();
 
     let root_file = find_root_file(dir, &files);
@@ -278,19 +279,30 @@ fn resolve_include_path(
     Ok(None)
 }
 
-fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) {
+fn walk_dir(
+    dir: &Path,
+    base_dir: &Path,
+    canonical_root: &Path,
+    seen_dirs: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) -> Result<()> {
+    let canonical = ensure_inside_assembly_dir(dir, base_dir, canonical_root)?;
+    if !seen_dirs.insert(canonical) {
+        return Ok(());
+    }
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
-        Err(_) => return,
+        Err(_) => return Ok(()),
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            walk_dir(&path, out);
+            walk_dir(&path, base_dir, canonical_root, seen_dirs, out)?;
         } else if path.extension().and_then(|e| e.to_str()) == Some("s") {
             out.push(path);
         }
     }
+    Ok(())
 }
 
 fn canonicalize_path(path: &Path) -> PathBuf {
@@ -565,6 +577,29 @@ mod tests {
         let err = panic::catch_unwind(|| build_to(&dir, &output))
             .err()
             .expect("symlinked fallback files outside the assembly dir should panic");
+        let message = panic_message(err);
+        assert!(message.contains("resolves outside the assembly directory"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_walk_dir_symlink_outside_assembly_dir_is_rejected() {
+        let root = temp_test_dir("walk-dir-symlink");
+        let dir = root.join("asm");
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("combined.s");
+        let outside = root.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+
+        std::fs::write(dir.join("entrypoint.s"), "entry:\n").unwrap();
+        std::fs::write(outside.join("leaked.s"), "leaked:\n").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("vendor")).unwrap();
+
+        let err = panic::catch_unwind(|| build_to(&dir, &output))
+            .err()
+            .expect("symlinked directories outside the assembly dir should panic");
         let message = panic_message(err);
         assert!(message.contains("resolves outside the assembly directory"));
 
