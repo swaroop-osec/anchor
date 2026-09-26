@@ -150,7 +150,7 @@ v2 emits a compile error when the two IDs disagree.
 
 ## `declare_program!`
 
-Imported `bytemuck` types use the same host-side no-padding assert as `#[account]` / `#[event]`. A `u64` then `u128` layout is packed on SBF but padded on x86, so the client crate fails to compile. `declare_program!` cannot swap those fields for `PodU128`. Use `bytemuckunsafe` in the IDL or a hand-written type.
+Imported `bytemuck` types use the same host-side no-padding assert as `#[account]` / `#[event]`. A `u64` then `u128` layout is packed on SBF but padded on x86, so the client crate fails to compile. `declare_program!` cannot swap those fields for `PodU128`. Generic `repr(C)` types are rejected because `T: Pod` does not rule out padding between fields; packed and transparent stay. Use `bytemuckunsafe` in the IDL or a hand-written type. `PodVec` is emitted as `bytemuckunsafe` for that reason.
 
 ## Extensibility
 
