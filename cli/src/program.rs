@@ -791,8 +791,8 @@ fn security_metadata_path(config: Option<&WithPath<Config>>) -> Result<PathBuf> 
 
     if has_default_values(&value)? {
         bail!(
-            "Security metadata in `{}` still matches the `anchor init` template. \
-             Replace the default fields before uploading with `--security-metadata`",
+            "Security metadata in `{}` still matches the `anchor init` template. Replace the \
+             default fields before uploading with `--security-metadata`",
             path.display()
         );
     }
