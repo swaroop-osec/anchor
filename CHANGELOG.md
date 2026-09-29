@@ -12,6 +12,8 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features
 
+- cli: Add `anchor security fetch` to read on-chain `security.json` ([#5124](https://github.com/otter-sec/anchor/issues/5124)).
+- cli: Warn on mainnet deploy without `--security-metadata`, and reject a `security.json` that still matches the `anchor init` template ([#5124](https://github.com/otter-sec/anchor/issues/5124)).
 - cli: Add `NO_DNA` mode to disable supported interactive prompts for CI, scripts, and agent runs ([#4773](https://github.com/otter-sec/anchor/pull/4773)).
 - lang: Use `CreateAccountAllowPrefund` to initialize accounts that already hold lamports, replacing the `Transfer` + `Allocate` + `Assign` CPIs ([#5057](https://github.com/otter-sec/anchor/pull/5057)).
 
