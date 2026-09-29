@@ -12,6 +12,9 @@
 //! # Cargo.toml
 //! [build-dependencies]
 //! anchor-asm-v2 = { path = "..." }
+//!
+//! [dependencies]
+//! anchor-asm-v2-runtime = { path = "..." }
 //! ```
 //!
 //! ```rust,ignore
@@ -27,7 +30,7 @@
 //! #![no_main]
 //! #![feature(asm_experimental_arch)]
 //!
-//! anchor_asm_v2::include_asm!();
+//! anchor_asm_v2_runtime::include_asm!();
 //!
 //! #[panic_handler]
 //! fn panic(_: &core::panic::PanicInfo) -> ! { loop {} }
@@ -35,7 +38,9 @@
 //!
 //! `build()` walks the assembly directory, expands `.include` directives,
 //! and writes `$OUT_DIR/combined.s` plus a Rust wrapper containing
-//! `global_asm!` const operands. `include_asm!()` includes that wrapper.
+//! `global_asm!` const operands. `anchor_asm_v2_runtime::include_asm!()`
+//! includes that wrapper. Depend on `anchor-asm-v2-runtime` from the program
+//! so this build helper stays out of the program.
 //!
 //! ## Full mode — new programs with compile-time constants
 //!
@@ -61,18 +66,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
-// Simple mode: build() + include_asm!()
+// Simple mode: build()
 // ---------------------------------------------------------------------------
-
-/// Emit `global_asm!` linking the combined assembly from `build()`.
-///
-/// Call at crate root scope. Requires `#![feature(asm_experimental_arch)]`.
-#[macro_export]
-macro_rules! include_asm {
-    () => {
-        include!(concat!(env!("OUT_DIR"), "/combined.rs"));
-    };
-}
 
 /// Build-time entry point. Call from `build.rs` with the path to the
 /// assembly source directory (relative to the crate root).
