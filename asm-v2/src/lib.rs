@@ -159,7 +159,20 @@ fn collect_asm_inner(dir: &Path) -> Result<String> {
     if let Some(root) = root_file {
         let mut stack = Vec::new();
         let mut seen = HashSet::new();
-        expand_includes(&root, dir, &canonical_root, &mut stack, &mut seen)
+        let out = expand_includes(&root, dir, &canonical_root, &mut stack, &mut seen)?;
+        let dropped: Vec<String> = files
+            .iter()
+            .filter(|file| !seen.contains(&canonicalize_path(file)))
+            .map(|file| display_path(file, dir))
+            .collect();
+        if !dropped.is_empty() {
+            println!(
+                "assembly files not reachable from root file {}: {} (add an `.include` from the root, or remove them)",
+                display_path(&root, dir),
+                dropped.join(", ")
+            );
+        }
+        Ok(out)
     } else {
         let mut out = String::new();
         for file in &files {
@@ -681,6 +694,23 @@ mod tests {
         assert!(message.contains("malformed .include directive in entrypoint.s"));
         assert!(message.contains("expected a single quoted string"));
         assert!(message.contains("got `missing.s`"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn test_root_file_mode_warns_on_unreachable_sibling() {
+        let dir = temp_test_dir("unreachable");
+        let output = dir.join("combined.s");
+
+        std::fs::write(dir.join("main.s"), "nop\n").unwrap();
+        std::fs::write(dir.join("extra.s"), ".equ VALUE, 1\n").unwrap();
+
+        build_to(&dir, &output);
+
+        let combined = std::fs::read_to_string(&output).unwrap();
+        assert!(combined.contains("nop"));
+        assert!(!combined.contains(".equ VALUE"));
 
         std::fs::remove_dir_all(dir).ok();
     }
