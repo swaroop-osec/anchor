@@ -14,8 +14,11 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 - cli: Add `anchor security fetch` to read on-chain `security.json` ([#5124](https://github.com/otter-sec/anchor/issues/5124)).
 - cli: Warn on mainnet deploy without `--security-metadata`, and reject a `security.json` that still matches the `anchor init` template ([#5124](https://github.com/otter-sec/anchor/issues/5124)).
+- client: Add support for v1 transactions ([#5076](https://github.com/otter-sec/anchor/pull/5076)).
+- lang: Add support for Solana v4 crates using the `solana-v4` feature ([#5081](https://github.com/otter-sec/anchor/pull/5081)).
 - cli: Add `NO_DNA` mode to disable supported interactive prompts for CI, scripts, and agent runs ([#4773](https://github.com/otter-sec/anchor/pull/4773)).
 - lang: Use `CreateAccountAllowPrefund` to initialize accounts that already hold lamports, replacing the `Transfer` + `Allocate` + `Assign` CPIs ([#5057](https://github.com/otter-sec/anchor/pull/5057)).
+- lang: Allow `None` in `mint::authority` and `mint::freeze_authority` constraints ([#5007](https://github.com/otter-sec/anchor/pull/5007)).
 
 ### Fixes
 
@@ -27,6 +30,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - cli: Redact cluster/RPC URLs printed by the CLI so credentials/secrets aren't leaked into terminal scrollback or CI logs. ([#5061](https://github.com/otter-sec/anchor/pull/5061)), ([#5030](https://github.com/otter-sec/anchor/issues/5030)).
 - lang: Validate Token-2022 mint extension constraints when reusing existing mints with `init_if_needed` ([#4845](https://github.com/otter-sec/anchor/pull/4845)).
 - cli: Make `anchor keygen new --silent` withhold the seed phrase instead of only the pubkey, matching `solana-keygen new --silent`. ([#5080](https://github.com/otter-sec/anchor/pull/5080)).
+- deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
 
 ### Breaking
 
@@ -50,6 +54,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Fixes
 
+- lang, ts: Improve error message wording, and sync messages between TS and Rust ([#4772](https://github.com/otter-sec/anchor/pull/4772)).
 - spl: Fix `anchor-spl` failing to build with only the `metadata` feature ([#4742](https://github.com/solana-foundation/anchor/pull/4742)).
 - lang: Honor `is_signer` in generated client and CPI account metas, enabling PDA signer usage ([#3322](https://github.com/otter-sec/anchor/pull/3322)).
 - lang: Report invalid instruction arguments instead of silently omitting their instructions during parsing ([#4008](https://github.com/otter-sec/anchor/pull/4008)).

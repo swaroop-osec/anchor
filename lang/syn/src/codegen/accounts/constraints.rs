@@ -843,7 +843,7 @@ fn generate_constraint_init_group(
             };
             let owner_optional_check = check_scope.generate_check(owner);
             let freeze_authority_optional_check = match freeze_authority {
-                Some(fa) => check_scope.generate_check(fa),
+                Some(fa) => generate_optional_account_check(&mut check_scope, fa),
                 None => quote! {},
             };
 
@@ -973,10 +973,7 @@ fn generate_constraint_init_group(
                 quote! {Option::<&::anchor_spl::token_interface::ExtensionsVec>::Some(&vec![#(#extensions),*])}
             };
 
-            let freeze_authority = match freeze_authority {
-                Some(fa) => quote! { Option::<&anchor_lang::prelude::Pubkey>::Some(&#fa.key()) },
-                None => quote! { Option::<&anchor_lang::prelude::Pubkey>::None },
-            };
+            let freeze_authority = generate_option_pubkey_ref(freeze_authority.as_ref());
 
             let group_pointer_authority = match group_pointer_authority {
                 Some(gpa) => quote! { Option::<anchor_lang::prelude::Pubkey>::Some(#gpa.key()) },
@@ -1511,10 +1508,12 @@ fn generate_constraint_mint(
     let mut optional_check_scope = OptionalCheckScope::new_with_field(accs, name);
     let mint_authority_check = match &c.mint_authority {
         Some(mint_authority) => {
-            let mint_authority_optional_check = optional_check_scope.generate_check(mint_authority);
+            let mint_authority_optional_check =
+                generate_optional_account_check(&mut optional_check_scope, mint_authority);
+            let expected = generate_coption_pubkey(mint_authority);
             quote! {
                 #mint_authority_optional_check
-                if #name.mint_authority != anchor_lang::solana_program::program_option::COption::Some(#mint_authority.key()) {
+                if #name.mint_authority != #expected {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintMintAuthority.into());
                 }
             }
@@ -1524,10 +1523,11 @@ fn generate_constraint_mint(
     let freeze_authority_check = match &c.freeze_authority {
         Some(freeze_authority) => {
             let freeze_authority_optional_check =
-                optional_check_scope.generate_check(freeze_authority);
+                generate_optional_account_check(&mut optional_check_scope, freeze_authority);
+            let expected = generate_coption_pubkey(freeze_authority);
             quote! {
                 #freeze_authority_optional_check
-                if #name.freeze_authority != anchor_lang::solana_program::program_option::COption::Some(#freeze_authority.key()) {
+                if #name.freeze_authority != #expected {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintFreezeAuthority.into());
                 }
             }
@@ -1555,7 +1555,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupPointerExtension.into());
                 }
                 #group_pointer_authority_optional_check
-                if #group_pointer_value.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_pointer_authority.key()))? {
+                if #group_pointer_value.unwrap().authority != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#group_pointer_authority.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintGroupPointerExtensionAuthority)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupPointerExtensionAuthority.into());
                 }
             }
@@ -1573,7 +1573,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupPointerExtension.into());
                 }
                 #group_pointer_group_address_optional_check
-                if #group_pointer_value.unwrap().group_address != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_pointer_group_address.key()))? {
+                if #group_pointer_value.unwrap().group_address != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#group_pointer_group_address.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintGroupPointerExtensionGroupAddress)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupPointerExtensionGroupAddress.into());
                 }
             }
@@ -1591,7 +1591,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupMemberPointerExtension.into());
                 }
                 #group_member_pointer_authority_optional_check
-                if #group_member_pointer_value.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_member_pointer_authority.key()))? {
+                if #group_member_pointer_value.unwrap().authority != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#group_member_pointer_authority.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintGroupMemberPointerExtensionAuthority)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupMemberPointerExtensionAuthority.into());
                 }
             }
@@ -1609,7 +1609,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupMemberPointerExtension.into());
                 }
                 #group_member_pointer_member_address_optional_check
-                if #group_member_pointer_value.unwrap().member_address != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#group_member_pointer_member_address.key()))? {
+                if #group_member_pointer_value.unwrap().member_address != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#group_member_pointer_member_address.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintGroupMemberPointerExtensionMemberAddress)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintGroupMemberPointerExtensionMemberAddress.into());
                 }
             }
@@ -1627,7 +1627,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintMetadataPointerExtension.into());
                 }
                 #metadata_pointer_authority_optional_check
-                if #metadata_pointer_value.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#metadata_pointer_authority.key()))? {
+                if #metadata_pointer_value.unwrap().authority != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#metadata_pointer_authority.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintMetadataPointerExtensionAuthority)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintMetadataPointerExtensionAuthority.into());
                 }
             }
@@ -1645,7 +1645,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintMetadataPointerExtension.into());
                 }
                 #metadata_pointer_metadata_address_optional_check
-                if #metadata_pointer_value.unwrap().metadata_address != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#metadata_pointer_metadata_address.key()))? {
+                if #metadata_pointer_value.unwrap().metadata_address != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#metadata_pointer_metadata_address.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintMetadataPointerExtensionMetadataAddress)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintMetadataPointerExtensionMetadataAddress.into());
                 }
             }
@@ -1663,7 +1663,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintCloseAuthorityExtension.into());
                 }
                 #close_authority_optional_check
-                if #close_authority_value.unwrap().close_authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#close_authority.key()))? {
+                if #close_authority_value.unwrap().close_authority != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#close_authority.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintCloseAuthorityExtensionAuthority)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintCloseAuthorityExtensionAuthority.into());
                 }
             }
@@ -1681,7 +1681,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintPermanentDelegateExtension.into());
                 }
                 #permanent_delegate_optional_check
-                if #permanent_delegate_value.unwrap().delegate != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#permanent_delegate.key()))? {
+                if #permanent_delegate_value.unwrap().delegate != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#permanent_delegate.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintPermanentDelegateExtensionDelegate)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintPermanentDelegateExtensionDelegate.into());
                 }
             }
@@ -1699,7 +1699,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintTransferHookExtension.into());
                 }
                 #transfer_hook_authority_optional_check
-                if #transfer_hook_value.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#transfer_hook_authority.key()))? {
+                if #transfer_hook_value.unwrap().authority != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#transfer_hook_authority.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintTransferHookExtensionAuthority)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintTransferHookExtensionAuthority.into());
                 }
             }
@@ -1717,7 +1717,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintTransferHookExtension.into());
                 }
                 #transfer_hook_program_id_optional_check
-                if #transfer_hook_value.unwrap().program_id != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#transfer_hook_program_id.key()))? {
+                if #transfer_hook_value.unwrap().program_id != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#transfer_hook_program_id.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintTransferHookExtensionProgramId)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintTransferHookExtensionProgramId.into());
                 }
             }
@@ -1735,7 +1735,7 @@ fn generate_constraint_mint(
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintPausableExtension.into());
                 }
                 #pausable_authority_optional_check
-                if #pausable_value.unwrap().authority != ::anchor_spl::token_2022_extensions::spl_pod::optional_keys::OptionalNonZeroPubkey::try_from(Some(#pausable_authority.key()))? {
+                if #pausable_value.unwrap().authority != ::anchor_spl::token_2022_extensions::solana_nullable::MaybeNull::try_from(Some(#pausable_authority.key())).map_err(|_| anchor_lang::error::ErrorCode::ConstraintMintPausableAuthority)? {
                     return Err(anchor_lang::error::ErrorCode::ConstraintMintPausableAuthority.into());
                 }
             }
@@ -1800,6 +1800,31 @@ impl<'a> OptionalCheckScope<'a> {
                 quote! {}
             }
         }
+    }
+}
+
+fn generate_optional_account_check(scope: &mut OptionalCheckScope, expr: &Expr) -> TokenStream {
+    if parser::expr_is_none(expr) {
+        quote! {}
+    } else {
+        scope.generate_check(expr)
+    }
+}
+
+fn generate_coption_pubkey(expr: &Expr) -> TokenStream {
+    if parser::expr_is_none(expr) {
+        quote! { anchor_lang::solana_program::program_option::COption::None }
+    } else {
+        quote! { anchor_lang::solana_program::program_option::COption::Some(#expr.key()) }
+    }
+}
+
+fn generate_option_pubkey_ref(expr: Option<&Expr>) -> TokenStream {
+    match expr {
+        Some(fa) if !parser::expr_is_none(fa) => {
+            quote! { Option::<&anchor_lang::prelude::Pubkey>::Some(&#fa.key()) }
+        }
+        _ => quote! { Option::<&anchor_lang::prelude::Pubkey>::None },
     }
 }
 
