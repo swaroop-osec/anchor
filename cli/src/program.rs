@@ -917,7 +917,7 @@ pub fn program_deploy(
             &rpc_client.url(),
         )
     {
-        println!(
+        eprintln!(
             "Warning: deploying to mainnet without `--security-metadata`. Publish a reviewed \
              `security.json` with `anchor program deploy --security-metadata`."
         );
