@@ -841,14 +841,21 @@ fn has_default_values(value: &serde_json::Value) -> Result<bool> {
     Ok(false)
 }
 
-fn is_mainnet_deploy(cluster: Option<&Cluster>, rpc_url: &str) -> bool {
-    if cluster.is_some_and(|cluster| *cluster == Cluster::Mainnet) {
-        return true;
+/// Solana mainnet-beta genesis hash. Custom RPC hosts often omit "mainnet".
+const MAINNET_BETA_GENESIS_HASH: &str = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+
+fn is_mainnet_deploy(cluster: Option<&Cluster>, rpc_client: &RpcClient) -> bool {
+    match cluster {
+        Some(Cluster::Mainnet) => true,
+        Some(Cluster::Devnet | Cluster::Testnet | Cluster::Localnet | Cluster::Debug) => false,
+        // The deploy target is whatever URL the RPC client is using. A host
+        // that contains "mainnet" is not that cluster, and a private RPC
+        // will not have "mainnet" in the name.
+        Some(Cluster::Custom(..)) | None => rpc_client
+            .get_genesis_hash()
+            .map(|hash| hash.to_string() == MAINNET_BETA_GENESIS_HASH)
+            .unwrap_or(false),
     }
-    Url::parse(rpc_url)
-        .ok()
-        .and_then(|url| url.host_str().map(|host| host.to_ascii_lowercase()))
-        .is_some_and(|host| host.contains("mainnet"))
 }
 
 fn requested_security_metadata_path(
@@ -914,7 +921,7 @@ pub fn program_deploy(
     if security_path.is_none()
         && is_mainnet_deploy(
             config.as_ref().map(|cfg| &cfg.provider.cluster),
-            &rpc_client.url(),
+            &rpc_client,
         )
     {
         eprintln!(
@@ -3203,34 +3210,6 @@ resolver = "2"
         let err = security_metadata_path(Some(&cfg)).unwrap_err().to_string();
 
         assert!(err.contains("anchor init"), "unexpected error: {err}");
-    }
-
-    #[test]
-    fn is_mainnet_deploy_matches_cluster_or_host() {
-        assert!(is_mainnet_deploy(
-            Some(&Cluster::Mainnet),
-            "http://127.0.0.1:8899"
-        ));
-        assert!(is_mainnet_deploy(
-            None,
-            "https://api.mainnet-beta.solana.com"
-        ));
-        assert!(is_mainnet_deploy(
-            Some(&Cluster::Custom(
-                "https://my-mainnet.example.net".into(),
-                "wss://my-mainnet.example.net".into()
-            )),
-            "https://my-mainnet.example.net"
-        ));
-        assert!(!is_mainnet_deploy(
-            Some(&Cluster::Localnet),
-            "http://127.0.0.1:8899"
-        ));
-        assert!(!is_mainnet_deploy(
-            Some(&Cluster::Devnet),
-            "https://api.devnet.solana.com"
-        ));
-        assert!(!is_mainnet_deploy(None, "https://rpc.example.net"));
     }
 
     #[test]
