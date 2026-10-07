@@ -841,16 +841,15 @@ fn has_default_values(value: &serde_json::Value) -> Result<bool> {
     Ok(false)
 }
 
-/// Solana mainnet-beta genesis hash. Custom RPC hosts often omit "mainnet".
-const MAINNET_BETA_GENESIS_HASH: &str = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
-
 fn is_mainnet_deploy(cluster: Option<&Cluster>, rpc_client: &RpcClient) -> bool {
+    const MAINNET_GENESIS_HASH: &str = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+
     match cluster {
         Some(Cluster::Mainnet) => true,
         Some(Cluster::Devnet | Cluster::Testnet | Cluster::Localnet | Cluster::Debug) => false,
         Some(Cluster::Custom(..)) | None => rpc_client
             .get_genesis_hash()
-            .map(|hash| hash.to_string() == MAINNET_BETA_GENESIS_HASH)
+            .map(|hash| hash.to_string() == MAINNET_GENESIS_HASH)
             .unwrap_or(false),
     }
 }
