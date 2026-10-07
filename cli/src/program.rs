@@ -55,7 +55,6 @@ use {
         thread,
         time::Duration,
     },
-    url::Url,
 };
 
 /// Outer retry cap on the full deploy/upgrade cycle; inner per-batch resign is `max_sign_attempts`.
