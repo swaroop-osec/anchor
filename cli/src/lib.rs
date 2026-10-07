@@ -3929,6 +3929,7 @@ fn write_idl(idl: &Idl, out: OutFile) -> Result<()> {
 
     Ok(())
 }
+
 fn account(
     cfg_override: &ConfigOverride,
     account_type: String,
@@ -4001,11 +4002,10 @@ fn account(
     };
 
     let data = create_client(cluster.url()).get_account_data(&address)?;
-    let disc_len = idl
+    let idl_account = idl
         .accounts
         .iter()
         .find(|acc| acc.name == *account_type_name)
-        .map(|acc| acc.discriminator.len())
         .ok_or_else(|| {
             let mut available_accounts: Vec<String> =
                 idl.accounts.iter().map(|acc| acc.name.clone()).collect();
@@ -4024,7 +4024,14 @@ fn account(
                 )
             }
         })?;
-    let mut data_view = &data[disc_len..];
+    let mut data_view = data
+        .strip_prefix(idl_account.discriminator.as_slice())
+        .ok_or_else(|| {
+            anyhow!(
+                "Account {address} does not match discriminator of `{account_type_name}` \
+                 (data too short or wrong account type)"
+            )
+        })?;
 
     let deserialized_json =
         deserialize_idl_defined_type_to_json(&idl, account_type_name, &mut data_view)?;
