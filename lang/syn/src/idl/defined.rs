@@ -572,13 +572,25 @@ pub fn gen_idl_type(
             Ok((quote! { #idl::IdlType::I128 }, vec![]))
         }
         syn::Type::Path(path)
-            if path_is_builtin(path, "String", &[&["std", "string", "String"]])
-                || the_only_segment_is(path, "str") =>
+            if path_is_builtin(
+                path,
+                "String",
+                &[&["std", "string", "String"], &["alloc", "string", "String"]],
+            ) || the_only_segment_is(path, "str") =>
         {
             Ok((quote! { #idl::IdlType::String }, vec![]))
         }
         syn::Type::Path(path)
-            if path_is_builtin(path, "Pubkey", &[&["anchor_lang", "prelude", "Pubkey"]]) =>
+            if path_is_builtin(
+                path,
+                "Pubkey",
+                &[
+                    &["anchor_lang", "prelude", "Pubkey"],
+                    &["anchor_lang", "solana_program", "pubkey", "Pubkey"],
+                    &["solana_program", "pubkey", "Pubkey"],
+                    &["solana_pubkey", "Pubkey"],
+                ],
+            ) =>
         {
             Ok((quote! { #idl::IdlType::Pubkey }, vec![]))
         }
