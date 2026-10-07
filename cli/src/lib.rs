@@ -4028,8 +4028,8 @@ fn account(
         .strip_prefix(idl_account.discriminator.as_slice())
         .ok_or_else(|| {
             anyhow!(
-                "Account {address} does not match discriminator of `{account_type_name}` \
-                 (data too short or wrong account type)"
+                "Account {address} does not match discriminator of `{account_type_name}` (data \
+                 too short or wrong account type)"
             )
         })?;
 
