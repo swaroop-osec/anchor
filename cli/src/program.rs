@@ -848,9 +848,6 @@ fn is_mainnet_deploy(cluster: Option<&Cluster>, rpc_client: &RpcClient) -> bool 
     match cluster {
         Some(Cluster::Mainnet) => true,
         Some(Cluster::Devnet | Cluster::Testnet | Cluster::Localnet | Cluster::Debug) => false,
-        // The deploy target is whatever URL the RPC client is using. A host
-        // that contains "mainnet" is not that cluster, and a private RPC
-        // will not have "mainnet" in the name.
         Some(Cluster::Custom(..)) | None => rpc_client
             .get_genesis_hash()
             .map(|hash| hash.to_string() == MAINNET_BETA_GENESIS_HASH)
