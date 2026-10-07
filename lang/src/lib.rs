@@ -617,7 +617,7 @@ pub mod __private {
     pub use {
         crate::{
             bpf_writer::BpfWriter,
-            common::{exit_unowned, is_closed},
+            common::{exit_unowned, find_duplicate_key, is_closed},
         },
         anchor_attribute_account::ZeroCopyAccessor,
         base64, bytemuck,

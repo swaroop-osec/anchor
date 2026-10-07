@@ -1952,7 +1952,7 @@ fn generate_custom_error(
     }
 }
 
-fn generate_account_ref(field: &Field) -> proc_macro2::TokenStream {
+pub(crate) fn generate_account_ref(field: &Field) -> proc_macro2::TokenStream {
     let name = &field.ident;
 
     match &field.ty {
