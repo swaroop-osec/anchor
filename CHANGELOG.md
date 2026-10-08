@@ -37,6 +37,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 - cli: Make `anchor keygen new --silent` withhold the seed phrase instead of only the pubkey, matching `solana-keygen new --silent`. ([#5080](https://github.com/otter-sec/anchor/pull/5080)).
 - deps: Bump `heck` to 0.5 to avoid incompatible dependencies ([#4960](https://github.com/otter-sec/anchor/pull/4960)).
 - idl: Fail with an error when a type alias name is defined differently in more than one module, instead of silently using the first definition ([#5131](https://github.com/otter-sec/anchor/pull/5131)).
+- avm: Validate and normalize `platform-tools` versions before building install and uninstall paths, so a version like `v1.54/../../../victim` cannot delete outside `$AVM_HOME/platform-tools` ([#4806](https://github.com/otter-sec/anchor/pull/4806)).
 
 ### Breaking
 
