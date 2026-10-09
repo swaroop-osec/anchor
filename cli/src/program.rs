@@ -941,22 +941,6 @@ pub fn program_deploy(
         ));
     }
 
-    let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
-    let payer = get_payer_keypair(cfg_override, &config)?;
-    // Resolve requested metadata before performing any on-chain mutations.
-    let security_path = requested_security_metadata_path(security_metadata, config.as_ref())?;
-    if security_path.is_none()
-        && is_mainnet_deploy(
-            config.as_ref().map(|cfg| &cfg.provider.cluster),
-            &rpc_client,
-        )
-    {
-        eprintln!(
-            "Warning: deploying to mainnet without `--security-metadata`. Publish a reviewed \
-             `security.json` with `anchor program deploy --security-metadata`."
-        );
-    }
-
     // Determine the program filepath
     let program_filepath = if let Some(filepath) = program_filepath {
         // Explicit filepath provided
@@ -973,10 +957,9 @@ pub fn program_deploy(
         binary_path
     };
 
-    // Determine program keypair (loaded before fee discovery so program_id can
-    // scope the recent-prioritization-fees query to this program's contention).
+    // Load the keypair and reject a mismatched --program-id before any cluster
+    // connection. The same keypair signs a fresh deploy later.
     let loaded_program_keypair = if let Some(keypair_path) = program_keypair {
-        // Load from specified keypair file
         Keypair::read_from_file(&keypair_path).map_err(|e| {
             anyhow!(
                 "Failed to read program keypair from {}: {}",
@@ -1003,8 +986,23 @@ pub fn program_deploy(
             )
         })?
     };
-
     let program_id = resolve_program_id(&loaded_program_keypair, program_id)?;
+
+    let (rpc_client, config) = get_rpc_client_and_config(cfg_override)?;
+    let payer = get_payer_keypair(cfg_override, &config)?;
+    // Resolve requested metadata before performing any on-chain mutations.
+    let security_path = requested_security_metadata_path(security_metadata, config.as_ref())?;
+    if security_path.is_none()
+        && is_mainnet_deploy(
+            config.as_ref().map(|cfg| &cfg.provider.cluster),
+            &rpc_client,
+        )
+    {
+        eprintln!(
+            "Warning: deploying to mainnet without `--security-metadata`. Publish a reviewed \
+             `security.json` with `anchor program deploy --security-metadata`."
+        );
+    }
 
     // Inject per-program --buffer keypair so retries
     // within and across runs share the same on-chain buffer.
@@ -3052,14 +3050,12 @@ mod tests {
         let keypair_path = dir.path().join("program-keypair.json");
         let program_keypair = Keypair::new();
         program_keypair.write_to_file(&keypair_path).unwrap();
-        let payer_path = dir.path().join("payer.json");
-        Keypair::new().write_to_file(&payer_path).unwrap();
         let mismatching_program_id = Pubkey::new_unique();
 
         let err = program_deploy(
             &ConfigOverride {
-                cluster: Some(Cluster::Localnet),
-                wallet: Some(payer_path.to_str().unwrap().parse().unwrap()),
+                cluster: None,
+                wallet: None,
                 commitment: None,
             },
             Some(dir.path().join("program.so")),
