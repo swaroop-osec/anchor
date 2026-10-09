@@ -739,6 +739,12 @@ fn get_payer_keypair(
     cfg_override: &ConfigOverride,
     config: &Option<WithPath<Config>>,
 ) -> Result<Keypair> {
+    if let Some(wallet) = &cfg_override.wallet {
+        let wallet_path = wallet.to_string();
+        return Keypair::read_from_file(&wallet_path)
+            .map_err(|e| anyhow!("Failed to read wallet keypair from {}: {}", wallet_path, e));
+    }
+
     if let Some(cfg) = config {
         cfg.wallet_kp()
     } else {
@@ -3046,12 +3052,14 @@ mod tests {
         let keypair_path = dir.path().join("program-keypair.json");
         let program_keypair = Keypair::new();
         program_keypair.write_to_file(&keypair_path).unwrap();
+        let payer_path = dir.path().join("payer.json");
+        Keypair::new().write_to_file(&payer_path).unwrap();
         let mismatching_program_id = Pubkey::new_unique();
 
         let err = program_deploy(
             &ConfigOverride {
-                cluster: None,
-                wallet: None,
+                cluster: Some(Cluster::Localnet),
+                wallet: Some(payer_path.to_str().unwrap().parse().unwrap()),
                 commitment: None,
             },
             Some(dir.path().join("program.so")),
