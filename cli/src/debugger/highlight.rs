@@ -1,7 +1,7 @@
 //! Syntax highlighting for the source + instruction panes.
 //!
 //! Backed by [`syntect`] (Sublime-syntax engine, used by `bat`, `delta`,
-//! `gitui`) with [`two-face`] for grammar coverage.
+//! `gitui`) with [`two-face`](two_face) for grammar coverage.
 //! No tokenizer or grammar is implemented here — we don't ship any custom
 //! parsing logic.
 //!

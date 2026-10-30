@@ -2,7 +2,7 @@
 //! the TUI consumes.
 //!
 //! Shares the core PC-driven call-stack algorithm with the flamegraph
-//! renderer via [`crate::flamegraph::trace::stream_trace`]. The two
+//! renderer via `crate::flamegraph::trace::stream_trace`. The two
 //! consumers differ only in their sink: the SVG folder aggregates into
 //! flat `(stack → cu)` maps, and this module emits one [`DebugStep`] per
 //! traced instruction plus DWARF-resolved source locations.
@@ -32,7 +32,7 @@ use {
 ///
 /// `programs` maps base58 program_id → deployed `.so` path. `manifest_dir`
 /// points the unstripped-binary search toward the right workspace root (same
-/// convention as [`crate::profile::render_all_tests`]).
+/// convention as `crate::profile::render_all_tests`).
 pub fn build_session(
     profile_dir: &Path,
     programs: &BTreeMap<String, PathBuf>,

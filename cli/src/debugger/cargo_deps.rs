@@ -4,7 +4,7 @@
 //!
 //! Strategy: parse the workspace `Cargo.lock`, locate each registry or git
 //! dep in the local cargo cache, and hand back those directories. The
-//! resolver in [`super::tui::resolve_src_path`] tries each as a join-root
+//! resolver in `super::tui::resolve_src_path` tries each as a join-root
 //! and uses the first match.
 //!
 //! **Ambiguity note.** Relative paths like `src/lib.rs` exist in almost

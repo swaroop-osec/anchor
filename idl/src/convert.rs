@@ -5,7 +5,7 @@
 //! - [`convert_idl_to_legacy`]: current spec -> legacy.
 //!
 //! The legacy spec types and both `impl` directions live inside the
-//! private [`legacy`] module so that all of the schema's quirks stay in
+//! private `legacy` module so that all of the schema's quirks stay in
 //! one place.
 
 use {

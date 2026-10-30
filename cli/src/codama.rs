@@ -140,7 +140,7 @@ pub fn convert(path: String, out: Option<String>) -> Result<()> {
 /// `<base_path>/<language>`.
 ///
 /// Implementation notes:
-/// - Conversion happens in-process via [`root_node_from_anchor`]. The
+/// - Conversion happens in-process via `root_node_from_anchor`. The
 ///   converted Codama IDL is staged under `<base_path>/.codama/idl.json`
 ///   alongside a generated `codama.json` config so the user can inspect or
 ///   re-run the rendering manually with `codama run --all`.

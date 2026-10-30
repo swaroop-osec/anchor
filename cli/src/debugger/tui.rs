@@ -2,10 +2,10 @@
 //!
 //! Two screens drive the whole experience:
 //!
-//! - [`Screen::Picker`] — startup. Lists every captured `(test, tx)` pair
+//! - `Screen::Picker` — startup. Lists every captured `(test, tx)` pair
 //!   with total CU; user picks one to step into. Also reachable from the
 //!   stepper via `t`, so jumping across txs within a session is one keypress.
-//! - [`Screen::Stepper`] — foundry-style instruction stepper with panes for
+//! - `Screen::Stepper` — foundry-style instruction stepper with panes for
 //!   the instruction list, registers, call stack, and source.
 //!
 //! Keybinds mirror `forge test --debug` where it makes sense:
