@@ -31,6 +31,11 @@ exclude = [
   '^mailto:',
   '^https?://(www\.)?example\.(com|org|net)(/|$)',
   '^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|/|$)',
+  # Rustdoc copies dependency docs into our pages (re-exports, blanket impls).
+  # These upstream links are dead and can only be fixed upstream.
+  '^https://rust-random\.github\.io/rand/',
+  '^https://docs\.rs/solana-program/latest/solana_program/message/legacy/',
+  '^https://docs\.rs/solana-rpc-client-nonce-utils/latest/solana_rpc_client_nonce_utils/fn\.data_from_account\.html',
 ]
 
 remap = [
