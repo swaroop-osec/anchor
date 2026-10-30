@@ -36,7 +36,8 @@ jobs:
           strict: false
 
   # Dead links in the docs and docs-v2 sites, including changelog and
-  # release notes (lychee, config in .lychee.toml).
+  # release notes, and in the root README and CHANGELOG (lychee, config in
+  # .lychee.toml).
   # Rustdoc links are checked by `cargo doc` in Core Tests.
   docs:
     name: docs links
@@ -73,3 +74,14 @@ jobs:
             --root-dir ${{ github.workspace }}/docs-v2/src/content
             --fallback-extensions md,mdx
             docs-v2/src/content
+
+      - name: Check README and CHANGELOG links
+        if: ${{ !cancelled() }}
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          output: lychee/root.md
+          args: >-
+            --config .lychee.toml
+            README.md
+            CHANGELOG.md
