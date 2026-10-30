@@ -1,4 +1,4 @@
-# Used by .github/workflows/docs-links.yaml.
+# Used by the docs link jobs in .github/workflows/global-lint.yaml.
 # Fragments stay off: the failures we care about are missing pages, and
 # fragment checks are much slower.
 # Each site job passes --root-dir set to its content folder, so a link like

@@ -35,3 +35,52 @@ jobs:
 
           # Do not error out on failures, only complain
           strict: false
+
+  # Dead links in the docs and docs-v2 sites, including changelog and
+  # release notes (lychee, config in .lychee.toml).
+  # Rustdoc links are checked by `cargo doc` in Core Tests.
+  docs:
+    name: docs links
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          output: lychee/docs.md
+          args: >-
+            --config .lychee.toml
+            --root-dir ${{ github.workspace }}/docs/content
+            --fallback-extensions md,mdx
+            docs/content
+
+  docs-v2:
+    name: docs-v2 links
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          output: lychee/docs-v2.md
+          args: >-
+            --config .lychee.toml
+            --root-dir ${{ github.workspace }}/docs-v2/src/content
+            --fallback-extensions md,mdx
+            docs-v2/src/content
