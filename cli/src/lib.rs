@@ -877,14 +877,15 @@ pub enum ProgramCommand {
         bypass_warning: bool,
     },
     /// Extend the length of an upgradeable program
+    // Allows Clap to accept the missing `program_id` arg.
+    #[clap(allow_missing_positional = true)]
     Extend {
-        /// Program id to extend.
-        /// If not provided, discovers program from workspace using program_name
+        /// Program ID to extend.
         program_id: Option<Pubkey>,
-        /// Program name to extend (from workspace). Used when program_id is not provided
+        /// Workspace program name to extend when program_id is not provided.
         #[clap(short, long)]
         program_name: Option<String>,
-        /// Additional bytes to allocate
+        /// Additional bytes to allocate.
         additional_bytes: usize,
     },
 }
@@ -7689,6 +7690,39 @@ mod tests {
         };
 
         assert_eq!(anchor_version, AnchorVersion::V2);
+    }
+
+    #[test]
+    fn test_program_extend_accepts_explicit_id_or_workspace_program() {
+        for args in [
+            vec![
+                "anchor",
+                "program",
+                "extend",
+                "11111111111111111111111111111111",
+                "1024",
+            ],
+            vec![
+                "anchor",
+                "program",
+                "extend",
+                "--program-name",
+                "demo",
+                "1024",
+            ],
+        ] {
+            let opts = Opts::try_parse_from(args).unwrap();
+            let Command::Program {
+                subcmd:
+                    ProgramCommand::Extend {
+                        additional_bytes, ..
+                    },
+            } = opts.command
+            else {
+                panic!("expected program extend");
+            };
+            assert_eq!(additional_bytes, 1024);
+        }
     }
 
     #[test]
