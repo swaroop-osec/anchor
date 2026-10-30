@@ -1,4 +1,4 @@
-# Dead links in the docs site, the docs-v2 site, and rustdoc.
+# Dead links in the docs and docs-v2 sites. Rustdoc links are checked in Core Tests.
 # Changelog and release notes are reported and do not fail the run.
 name: Docs links
 
@@ -94,61 +94,3 @@ jobs:
             --fallback-extensions md,mdx
             docs-v2/src/content/docs/updates/changelog.mdx
             docs-v2/src/content/docs/updates/release-notes
-
-  rustdoc:
-    name: Rustdoc links
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    env:
-      RUSTDOCFLAGS: -D warnings
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
-        with:
-          toolchain: stable
-
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev
-
-      - name: Cache cargo registry
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: cargo-docs-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: cargo-docs-${{ runner.os }}-
-
-      # --keep-going and !cancelled() let one run report every crate's
-      # warnings and still check the HTML that did build.
-      - name: Build workspace docs
-        run: cargo doc --workspace --no-deps --keep-going --exclude avm --features allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account
-
-      - name: Build docs.rs feature sets
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: |
-          status=0
-          cargo doc -p anchor-lang --no-deps --features allow-missing-optionals,anchor-debug,derive,event-cpi,idl-build,init-if-needed,lazy-account || status=1
-          cargo doc -p anchor-client --no-deps --features async,debug,mock || status=1
-          cargo doc -p anchor-spl --no-deps --features anchor-debug,devnet,governance,idl-build,memo,metadata,stake || status=1
-          exit "$status"
-
-      - name: Check rustdoc HTML
-        if: ${{ !cancelled() }}
-        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
-        with:
-          lycheeVersion: v0.24.2
-          output: lychee/rustdoc.md
-          args: >-
-            --config .lychee.toml
-            --extensions html
-            target/doc

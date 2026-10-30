@@ -148,7 +148,7 @@ impl<'a, T> Program<'a, T> {
 impl<'a, T: Id> TryFrom<&'a AccountInfo<'a>> for Program<'a, T> {
     type Error = Error;
     /// Deserializes the given `info` into a `Program`, checking the pubkey matches
-    /// `T::id`;
+    /// [`T::id()`](crate::Id::id);
     fn try_from(info: &'a AccountInfo<'a>) -> Result<Self> {
         if info.key != &T::id() {
             return Err(Error::from(ErrorCode::InvalidProgramId).with_pubkeys((*info.key, T::id())));

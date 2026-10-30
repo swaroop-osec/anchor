@@ -25,7 +25,7 @@ use {
 /// `trace_dir` — directory containing `.regs` files (litesvm `SBF_TRACE_DIR`).
 /// `programs` — map of program_id (base58) → deployed `.so` path (from
 /// `discover_programs`). The unstripped version is resolved automatically
-/// via `find_unstripped_binary`.
+/// via [`find_unstripped_binary`].
 /// `manifest_dir` — workspace manifest dir; used to (1) locate unstripped
 /// binaries and (2) resolve relative source paths emitted by DWARF (Solana's
 /// cargo passes `-Zremap-cwd-prefix=` which strips `DW_AT_comp_dir`, so
@@ -188,7 +188,7 @@ fn resolve_source_path(file: &Path, workspace_root: Option<&Path>) -> Option<Pat
     candidate.exists().then_some(candidate)
 }
 
-/// Walk trace directory recursively, collecting all unique PCs (reg[11])
+/// Walk trace directory recursively, collecting all unique PCs (`reg[11]`)
 /// per program_id from `.regs` files.
 ///
 /// Handles both trace-dir layouts:

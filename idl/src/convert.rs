@@ -5,7 +5,7 @@
 //! - [`convert_idl_to_legacy`]: current spec -> legacy.
 //!
 //! The legacy spec types and both `impl` directions live inside the
-//! private `legacy` module so that all of the schema's quirks stay in
+//! private [`legacy`] module so that all of the schema's quirks stay in
 //! one place.
 
 use {
@@ -51,7 +51,7 @@ pub fn convert_idl_to_legacy(idl: &Idl) -> Result<Vec<u8>> {
 /// 1. The legacy schema types (`Idl`, `IdlInstruction`, ...).
 /// 2. `legacy -> current` conversions (`impl From<...> for t::...`).
 /// 3. `current -> legacy` conversions (`impl TryFrom<t::...> for ...`)
-///    plus the entry point [`to_legacy`].
+///    plus the entry point [`to_legacy`](legacy::to_legacy).
 mod legacy {
     use {
         crate::types as t,
