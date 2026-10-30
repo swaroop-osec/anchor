@@ -13,9 +13,8 @@ accept_timeouts = true
 accept = ["200", "206", "401", "403", "429", "500..=599"]
 
 scheme = ["http", "https"]
-include_fragments = "none"
+include_fragments = "anchor-only"
 include_verbatim = false
-include_mail = false
 exclude_loopback = true
 
 exclude = [
