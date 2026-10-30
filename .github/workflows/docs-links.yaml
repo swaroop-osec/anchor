@@ -1,0 +1,154 @@
+# Dead links in the docs site, the docs-v2 site, and rustdoc.
+# Changelog and release notes are reported and do not fail the run.
+name: Docs links
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  docs:
+    name: docs links
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Current pages
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          output: lychee/docs-current.md
+          args: >-
+            --config .lychee.toml
+            --root-dir ${{ github.workspace }}/docs/content
+            --fallback-extensions md,mdx
+            --exclude-path docs/content/docs/updates/changelog\.mdx
+            --exclude-path docs/content/docs/updates/release-notes/
+            docs/content
+
+      - name: Changelog and release notes
+        if: ${{ !cancelled() }}
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          fail: false
+          jobSummary: false
+          lycheeVersion: v0.24.2
+          output: lychee/docs-history.md
+          args: >-
+            --config .lychee.toml
+            --root-dir ${{ github.workspace }}/docs/content
+            --fallback-extensions md,mdx
+            docs/content/docs/updates/changelog.mdx
+            docs/content/docs/updates/release-notes
+
+  docs-v2:
+    name: docs-v2 links
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Current pages
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          output: lychee/docs-v2-current.md
+          args: >-
+            --config .lychee.toml
+            --root-dir ${{ github.workspace }}/docs-v2/src/content
+            --fallback-extensions md,mdx
+            --exclude-path docs-v2/src/content/docs/updates/changelog\.mdx
+            --exclude-path docs-v2/src/content/docs/updates/release-notes/
+            docs-v2/src/content
+
+      - name: Changelog and release notes
+        if: ${{ !cancelled() }}
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          fail: false
+          jobSummary: false
+          lycheeVersion: v0.24.2
+          output: lychee/docs-v2-history.md
+          args: >-
+            --config .lychee.toml
+            --root-dir ${{ github.workspace }}/docs-v2/src/content
+            --fallback-extensions md,mdx
+            docs-v2/src/content/docs/updates/changelog.mdx
+            docs-v2/src/content/docs/updates/release-notes
+
+  rustdoc:
+    name: Rustdoc links
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config build-essential libudev-dev
+
+      - name: Cache cargo registry
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-docs-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-docs-${{ runner.os }}-
+
+      # --keep-going and !cancelled() let one run report every crate's
+      # warnings and still check the HTML that did build.
+      - name: Build workspace docs
+        run: cargo doc --workspace --no-deps --keep-going --exclude avm --features allow-missing-optionals,anchor-debug,derive,event-cpi,init-if-needed,lazy-account
+
+      - name: Build docs.rs feature sets
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          status=0
+          cargo doc -p anchor-lang --no-deps --features allow-missing-optionals,anchor-debug,derive,event-cpi,idl-build,init-if-needed,lazy-account || status=1
+          cargo doc -p anchor-client --no-deps --features async,debug,mock || status=1
+          cargo doc -p anchor-spl --no-deps --features anchor-debug,devnet,governance,idl-build,memo,metadata,stake || status=1
+          exit "$status"
+
+      - name: Check rustdoc HTML
+        if: ${{ !cancelled() }}
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          output: lychee/rustdoc.md
+          args: >-
+            --config .lychee.toml
+            --extensions html
+            target/doc
