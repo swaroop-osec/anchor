@@ -1,12 +1,3 @@
-# Used by the docs link jobs in .github/workflows/global-lint.yaml.
-# Fragments stay off: the failures we care about are missing pages, and
-# fragment checks are much slower.
-# Each site job passes --root-dir set to its content folder, so a link like
-# /docs/foo/ resolves to that folder's docs/foo, and --fallback-extensions
-# md,mdx finds docs/foo.mdx. Pages have no extension in their URL, so a link
-# with one is a static file, and the remaps below send it to the site's public
-# folder. docs/public is served at the site root, and docs-v2/public under /docs.
-
 verbose = "error"
 no_progress = true
 
@@ -28,7 +19,6 @@ include_mail = false
 exclude_loopback = true
 
 exclude = [
-  '^mailto:',
   '^https?://(www\.)?example\.(com|org|net)(/|$)',
   '^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|/|$)',
 ]
