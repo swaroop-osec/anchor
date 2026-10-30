@@ -1,10 +1,8 @@
 # Linters that run on everything and don't exclude docs/**
 name: Global Linters
-# TEMP: triggers disabled while testing docs-links.yaml. Restore before merging.
-on: workflow_dispatch
-# on:
-#   workflow_dispatch:
-#   pull_request:
+on:
+  workflow_dispatch:
+  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}

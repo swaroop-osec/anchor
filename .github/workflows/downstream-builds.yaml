@@ -1,15 +1,13 @@
 name: Downstream Builds
 
-# TEMP: triggers disabled while testing docs-links.yaml. Restore before merging.
-on: workflow_dispatch
-# on:
-#   pull_request:
-#     paths:
-#       - "avm/**"
-#       - ".github/workflows/downstream-builds.yaml"
-#   workflow_dispatch:
-#   schedule:
-#     - cron: "0 0 * * *"
+on:
+  pull_request:
+    paths:
+      - "avm/**"
+      - ".github/workflows/downstream-builds.yaml"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
 
 permissions:
   contents: read
