@@ -1,9 +1,11 @@
 name: Nightly Attested Binaries
 
-on:
-  schedule:
-    - cron: "0 2 * * *"
-  workflow_dispatch:
+# TEMP: triggers disabled while testing docs-links.yaml. Restore before merging.
+on: workflow_dispatch
+# on:
+#   schedule:
+#     - cron: "0 2 * * *"
+#   workflow_dispatch:
 
 env:
   AWS_REGION: ${{ vars.RELEASES_S3_REGION }}

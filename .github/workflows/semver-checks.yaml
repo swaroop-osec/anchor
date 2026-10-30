@@ -1,14 +1,16 @@
 name: Semver Checks
 
-on:
-  pull_request:
-    branches:
-      - master
-    paths:
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "**/Cargo.toml"
-      - "**/*.rs"
+# TEMP: triggers disabled while testing docs-links.yaml. Restore before merging.
+on: workflow_dispatch
+# on:
+#   pull_request:
+#     branches:
+#       - master
+#     paths:
+#       - "Cargo.toml"
+#       - "Cargo.lock"
+#       - "**/Cargo.toml"
+#       - "**/*.rs"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}

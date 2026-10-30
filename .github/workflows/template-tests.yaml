@@ -1,24 +1,26 @@
 name: Template Tests
 
-on:
-  push:
-    branches:
-      - master
-    paths-ignore:
-      # Docs/changelog cannot affect these tests.
-      - "docs/**"
-      - "docs-v2/**"
-      - "**/*.md"
-      - "**/*.mdx"
-      - ".cspell-anchor-dictionary.txt"
-  pull_request:
-    paths-ignore:
-      - "docs/**"
-      - "docs-v2/**"
-      - "**/*.md"
-      - "**/*.mdx"
-      - ".cspell-anchor-dictionary.txt"
-  workflow_dispatch:
+# TEMP: triggers disabled while testing docs-links.yaml. Restore before merging.
+on: workflow_dispatch
+# on:
+#   push:
+#     branches:
+#       - master
+#     paths-ignore:
+#       # Docs/changelog cannot affect these tests.
+#       - "docs/**"
+#       - "docs-v2/**"
+#       - "**/*.md"
+#       - "**/*.mdx"
+#       - ".cspell-anchor-dictionary.txt"
+#   pull_request:
+#     paths-ignore:
+#       - "docs/**"
+#       - "docs-v2/**"
+#       - "**/*.md"
+#       - "**/*.mdx"
+#       - ".cspell-anchor-dictionary.txt"
+#   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}

@@ -1,9 +1,11 @@
 name: Network Deploy
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "0 0 * * *"
+# TEMP: triggers disabled while testing docs-links.yaml. Restore before merging.
+on: workflow_dispatch
+# on:
+#   workflow_dispatch:
+#   schedule:
+#     - cron: "0 0 * * *"
 
 permissions:
   contents: read

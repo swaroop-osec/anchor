@@ -1,17 +1,19 @@
 name: Benchmark Sync
 
-on:
-  push:
-    branches:
-      - master
-    paths:
-      - 'tests/bench/**'
-  pull_request:
-    branches:
-      - master
-      - anchor-next
-    paths:
-      - 'tests/bench/**'
+# TEMP: triggers disabled while testing docs-links.yaml. Restore before merging.
+on: workflow_dispatch
+# on:
+#   push:
+#     branches:
+#       - master
+#     paths:
+#       - 'tests/bench/**'
+#   pull_request:
+#     branches:
+#       - master
+#       - anchor-next
+#     paths:
+#       - 'tests/bench/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}

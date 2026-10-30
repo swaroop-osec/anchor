@@ -1,26 +1,28 @@
 name: Tests
 
-on:
-  push:
-    branches:
-      - master
-    paths-ignore:
-      # Docs/changelog cannot affect these tests.
-      - "docs/**"
-      - "docs-v2/**"
-      - "**/*.md"
-      - "**/*.mdx"
-      - ".cspell-anchor-dictionary.txt"
-  pull_request:
-    branches:
-      - master
-      - anchor-next
-    paths-ignore:
-      - "docs/**"
-      - "docs-v2/**"
-      - "**/*.md"
-      - "**/*.mdx"
-      - ".cspell-anchor-dictionary.txt"
+# TEMP: triggers disabled while testing docs-links.yaml. Restore before merging.
+on: workflow_dispatch
+# on:
+#   push:
+#     branches:
+#       - master
+#     paths-ignore:
+#       # Docs/changelog cannot affect these tests.
+#       - "docs/**"
+#       - "docs-v2/**"
+#       - "**/*.md"
+#       - "**/*.mdx"
+#       - ".cspell-anchor-dictionary.txt"
+#   pull_request:
+#     branches:
+#       - master
+#       - anchor-next
+#     paths-ignore:
+#       - "docs/**"
+#       - "docs-v2/**"
+#       - "**/*.md"
+#       - "**/*.mdx"
+#       - ".cspell-anchor-dictionary.txt"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}

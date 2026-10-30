@@ -1,9 +1,11 @@
 name: No Unpinned Docker Images
 
-on:
-  push:
-    branches:
-      - master
+# TEMP: triggers disabled while testing docs-links.yaml. Restore before merging.
+on: workflow_dispatch
+# on:
+#   push:
+#     branches:
+#       - master
 
 permissions: {}
 
