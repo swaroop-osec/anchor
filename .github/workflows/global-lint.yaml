@@ -29,7 +29,6 @@ jobs:
             **/*.md
             **/*.mdx
           inline: warning
-
           # Only check files in the PR or push
           incremental_files_only: true
 
@@ -51,7 +50,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check links
+      - name: Check docs links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           lycheeVersion: v0.24.2
@@ -62,19 +61,9 @@ jobs:
             --fallback-extensions md,mdx
             docs/content
 
-  docs-v2:
-    name: docs-v2 links
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      - name: Check links
+      # Runs even if the docs step failed, so one run reports both sites.
+      - name: Check docs-v2 links
+        if: ${{ !cancelled() }}
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           lycheeVersion: v0.24.2
